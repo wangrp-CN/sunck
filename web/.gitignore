@@ -1,0 +1,14 @@
+# 依赖
+node_modules/
+
+# 构建产物
+dist/
+dist-ssr/
+
+# 缓存
+*.local
+.vite/
+
+# 环境变量（可含密钥）
+.env.local
+.env.*.local
