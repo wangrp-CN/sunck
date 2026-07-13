@@ -1,0 +1,134 @@
+{
+  "python": {
+    "version": "3.13.12",
+    "executable": "/Users/wangpeng/PycharmProjects/RimpCode/rail_monitor/.venv/bin/python",
+    "status": "OK"
+  },
+  "packages": {
+    "fastapi": {
+      "status": "OK",
+      "detail": "v0.139.0"
+    },
+    "uvicorn": {
+      "status": "OK",
+      "detail": "v0.51.0"
+    },
+    "gunicorn": {
+      "status": "OK",
+      "detail": "v26.0.0"
+    },
+    "sqlalchemy": {
+      "status": "OK",
+      "detail": "v2.0.51"
+    },
+    "alembic": {
+      "status": "OK",
+      "detail": "v1.18.5"
+    },
+    "psycopg2": {
+      "status": "OK",
+      "detail": "v2.9.12 (dt dec pq3 ext lo64)"
+    },
+    "redis": {
+      "status": "OK",
+      "detail": "v8.0.1"
+    },
+    "paho.mqtt": {
+      "status": "OK",
+      "detail": "v2.1.0"
+    },
+    "minio": {
+      "status": "OK",
+      "detail": "v7.2.20"
+    },
+    "pydantic": {
+      "status": "OK",
+      "detail": "v2.13.4"
+    },
+    "pydantic_settings": {
+      "status": "OK",
+      "detail": "v2.14.2"
+    },
+    "httpx": {
+      "status": "OK",
+      "detail": "v0.28.1"
+    },
+    "pyjwt": {
+      "status": "OK",
+      "detail": "v2.13.0"
+    },
+    "passlib": {
+      "status": "OK",
+      "detail": "v1.7.4"
+    },
+    "pillow": {
+      "status": "OK",
+      "detail": "v12.3.0"
+    },
+    "captcha": {
+      "status": "OK",
+      "detail": "v0.7.1"
+    },
+    "shapely": {
+      "status": "OK",
+      "detail": "v2.1.2"
+    },
+    "geopy": {
+      "status": "OK",
+      "detail": "v2.4.1"
+    },
+    "celery": {
+      "status": "OK",
+      "detail": "v5.6.3"
+    },
+    "opencv": {
+      "status": "OK",
+      "detail": "v5.0.0"
+    },
+    "pytest": {
+      "status": "OK",
+      "detail": "v9.1.1"
+    },
+    "pytest_asyncio": {
+      "status": "OK",
+      "detail": "v1.4.0"
+    },
+    "prometheus_client": {
+      "status": "OK",
+      "detail": "v?"
+    },
+    "locust": {
+      "status": "OK",
+      "detail": "2.45.0"
+    }
+  },
+  "services": {
+    "redis": {
+      "status": "OK",
+      "detail": "redis://:dev_local_redis@127.0.0.1:6379/0"
+    },
+    "postgresql": {
+      "status": "OK",
+      "detail": "postgresql+psycopg2://dev:dev123@127.0.0.1:5432/rail_monitor"
+    },
+    "mqtt": {
+      "status": "OK",
+      "detail": "127.0.0.1:1883"
+    },
+    "minio": {
+      "status": "OK",
+      "detail": "127.0.0.1:9000"
+    }
+  },
+  "ffmpeg": {
+    "ffmpeg+ffprobe": {
+      "status": "OK",
+      "detail": "/opt/homebrew/bin/ffmpeg"
+    }
+  },
+  "summary": {
+    "OK": 29,
+    "WARN": 0,
+    "FAIL": 0
+  }
+}

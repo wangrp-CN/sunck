@@ -1,0 +1,35 @@
+# 涉铁工程智能监控平台 —— Python 依赖清单
+# 按《开发环境分析》报告优先级分类。安装后以 requirements.lock.txt 记录实际锁定版本。
+# 运行环境：Python 3.11+（本项目 venv 基于 3.13.12 受管解释器）
+
+# ===================== P0 必装（核心后端与基础设施客户端） =====================
+fastapi>=0.115.0          # Web 框架（REST + WebSocket）
+uvicorn[standard]>=0.32.0 # ASGI 服务器（含 websockets 等标准依赖）
+gunicorn>=23.0.0          # 生产 WSGI/ASGI 进程管理（与 uvicorn worker 配合）
+sqlalchemy>=2.0.30        # ORM
+alembic>=1.13.0           # 数据库迁移
+psycopg2-binary>=2.9.9    # PostgreSQL 驱动
+redis>=5.0.0              # Redis 客户端（缓存/消息代理）
+paho-mqtt>=2.1.0          # MQTT 客户端（设备实时上行/下发）
+minio>=7.2.7              # 对象存储客户端（图片/视频）
+python-dotenv>=1.0.1      # 环境变量管理
+
+# ===================== P1 强烈建议 =====================
+pydantic>=2.7.0           # 数据校验/序列化（FastAPI 内置，可单独升级）
+pydantic-settings>=2.3.0  # 配置项管理
+httpx>=0.27.0             # 异步 HTTP 客户端（高德地图 Web 服务、设备网关）
+pyjwt>=2.8.0              # JWT 鉴权
+passlib>=1.7.4            # 密码哈希
+bcrypt==4.0.1             # 与 passlib 1.7.4 已知兼容版本（避免 4.1+ API 变更报错）
+pillow>=10.3.0            # 图像处理（验证码/截图）
+captcha>=0.6.0            # 登录验证码
+shapely>=2.0.4            # 地理几何（围栏计算）
+geopy>=2.4.1              # 地理编码/逆地理编码
+celery>=5.4.0             # 异步任务
+opencv-python-headless>=4.9.0  # 视频抽帧/截图（headless 版，无 GUI 依赖）
+
+# ===================== P2 可选/进阶 =====================
+pytest>=8.2.0             # 单元测试
+pytest-asyncio>=0.23.0    # 异步测试
+locust>=2.24.0            # 压测（模拟设备并发上报）
+prometheus-client>=0.20.0 # 指标暴露（配合 Prometheus）

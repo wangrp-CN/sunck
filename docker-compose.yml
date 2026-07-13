@@ -1,0 +1,127 @@
+# 涉铁工程智能监控平台 —— 基础设施服务编排（【可选 / 容器化参考，非默认路径】）
+#
+# ⚠️ 本文件属于方案A范围外的"可选容器化替代"，不是本项目默认的开发/部署方式。
+#    项目已绑定【方案A：原生服务】（见 OPTION_A.md）——直接用 PostgreSQL / Redis / Mosquitto / MinIO 原生服务，
+#    部署入口为 scripts/native-services.sh。请勿将本 compose 作为日常开发或生产部署依赖。
+#    注意：本文件内含 emqx / rabbitmq / timescaledb，均不在方案A的技术选型范围内。
+#
+# 仅供需要在容器里对照运行的场景参考：
+#   启动核心：  docker compose up -d
+#   含可选：    docker compose --profile optional up -d
+#   停止：      docker compose down
+#   查看日志：  docker compose logs -f <service>
+
+services:
+  # ---------- P0 核心 ----------
+  postgres:
+    image: postgres:16
+    container_name: rail_pg
+    environment:
+      POSTGRES_DB: rail_monitor
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev -d rail_monitor"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    container_name: rail_redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  emqx:
+    image: emqx/emqx:5
+    container_name: rail_emqx
+    ports:
+      - "1883:1883"    # MQTT TCP
+      - "8083:8083"    # MQTT WebSocket
+      - "8084:8084"    # MQTT SSL
+      - "18083:18083"  # 管理控制台
+    healthcheck:
+      test: ["CMD", "emqx", "ctl", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: rail_minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # API
+      - "9001:9001"   # 控制台
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------- P2 可选（--profile optional） ----------
+  timescaledb:
+    image: timescale/timescaledb:2-postgis
+    container_name: rail_tsdb
+    profiles: ["optional"]
+    environment:
+      POSTGRES_DB: rail_ts
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev123
+    ports:
+      - "5433:5432"
+    volumes:
+      - tsdata:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rail_rabbit
+    profiles: ["optional"]
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - mqdata:/var/lib/rabbitmq
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: rail_prom
+    profiles: ["optional"]
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: rail_grafana
+    profiles: ["optional"]
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafanadata:/var/lib/grafana
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
+  tsdata:
+  mqdata:
+  grafanadata:

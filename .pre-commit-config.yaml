@@ -1,0 +1,37 @@
+# 涉铁工程智能监控平台 —— 提交前自动门禁
+# 安装：pip install pre-commit && pre-commit install
+# 手动全量：pre-commit run --all-files
+# 说明：在方案 A（原生服务）下使用，不依赖 Docker。
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-added-large-files
+        args: ["--maxkb=2000"]
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: ["--fix", "--exit-non-zero-on-fix"]
+      - id: ruff-format
+
+  - repo: https://github.com/psf/black
+    rev: 24.8.0
+    hooks:
+      - id: black
+        args: ["--line-length=100"]
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest
+        entry: .venv/bin/python -m pytest tests/ -q
+        language: system
+        pass_filenames: false
+        always_run: false
+        stages: [pre-push]

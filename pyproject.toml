@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rail-monitor"
+version = "0.1.0"
+description = "涉铁工程智能监控平台 后端服务"
+readme = "README.md"
+requires-python = ">=3.11"
+# 依赖与 requirements.txt 保持一致；venv 安装以 requirements.txt 为准。
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "gunicorn>=23.0.0",
+    "sqlalchemy>=2.0.30",
+    "alembic>=1.13.0",
+    "psycopg2-binary>=2.9.9",
+    "redis>=5.0.0",
+    "paho-mqtt>=2.1.0",
+    "minio>=7.2.7",
+    "python-dotenv>=1.0.1",
+    "pydantic>=2.7.0",
+    "pydantic-settings>=2.3.0",
+    "httpx>=0.27.0",
+    "pyjwt>=2.8.0",
+    "passlib>=1.7.4",
+    "bcrypt==4.0.1",
+    "pillow>=10.3.0",
+    "captcha>=0.6.0",
+    "shapely>=2.0.4",
+    "geopy>=2.4.1",
+    "celery>=5.4.0",
+    "opencv-python-headless>=4.9.0",
+    "prometheus-client>=0.20.0",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["scripts", ".venv", ".idea"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# app/main.py 顶部需先注入项目根路径再导入，故忽略 E402
+"app/main.py" = ["E402"]
+# alembic env.py 在运行时动态导入，忽略 E402
+"alembic/env.py" = ["E402"]
+
+[tool.black]
+line-length = 100
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-q"
