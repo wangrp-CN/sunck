@@ -84,10 +84,12 @@ alembic upgrade head
 | POST | `/login` | 登录，返回 access/refresh 令牌 | 公开 |
 | POST | `/refresh` | 用刷新令牌换取新令牌 | 公开 |
 | GET  | `/me` | 当前用户信息（含角色/权限） | 登录 |
+| PATCH | `/me` | 修改个人资料（昵称/头像/邮箱/手机） | 登录 |
 | POST | `/logout` | 退出登录（无状态） | 登录 |
-| POST | `/change-password` | 修改密码 | 登录 |
+| POST | `/change-password` | 修改密码（校验密码复杂度） | 登录 |
+| GET  | `/captcha` | 获取图形验证码（base64 + key，存 Redis） | 公开 |
 | GET  | `/permissions` | 权限列表 | 登录 |
-| POST | `/register` | 新建用户并分配角色 | `user:add` |
+| POST | `/register` | 新建用户并分配角色（校验密码复杂度） | `user:add` |
 | GET  | `/users` | 用户分页列表 | `user:list` |
 | GET  | `/roles` | 角色列表 | `role:list` |
 | POST | `/roles` | 新建角色 | `role:add` |
@@ -98,6 +100,8 @@ alembic upgrade head
 ### 关键特性
 - **密码加密**：bcrypt 哈希存储，登录校验不回显账号是否存在。
 - **登录失败重试限制**：连续失败达到 `max_login_attempts`(默认5)次锁定 `account_lock_minutes`(默认15)分钟（返回 423）。
+- **图形验证码**：`GET /captcha` 生成（base64 图片 + key 存 Redis，TTL 可配），登录按 `captcha_enabled` 开关校验；测试环境默认关闭（见 `tests/conftest.py`）。
+- **密码强度策略**：注册/改密校验最小长度 + 大小写/数字/特殊字符开关（取自 `app/config.py` 的 `password_*` 配置），含弱密码黑名单。
 - **统一错误响应**：所有响应均为 `ApiResponse` 结构 `{code, message, data}`，HTTP 异常也统一转换。
 - **访问控制**：`require_permissions(*codes)` / `require_roles(*codes)` 依赖；超级管理员自动通过。
 
@@ -150,7 +154,18 @@ curl http://127.0.0.1:8000/api/v1/auth/me \
   -H "Authorization: Bearer <access_token>"
 ```
 
+## 前端工程 `web/`（已实现骨架）
+
+基于 **Vite + Vue3 + TypeScript + Pinia + Vue Router + Element Plus** 的 SPA 骨架，已打通路由守卫、Pinia 状态、Axios（`/api` 代理到 FastAPI）与统一响应解包。
+详见 [`web/README.md`](web/README.md)。开发：`cd web && npm install && npm run dev`（http://localhost:5173）。
+
+## 工程门禁（pre-commit，已实现）
+
+提交前自动执行：`ruff`(lint+format) + `black` + 基础钩子（行尾/EOF/YAML/大文件/合并冲突）；`pytest` 挂在 `pre-push`。
+配置文件 `.pre-commit-config.yaml`，本地安装：`pip install pre-commit && pre-commit install`。
+> 注：仓库已 `git init` 并打好基线提交；首次提交会触发钩子自动格式化（属正常行为，按提示重新 `add` 提交即可）。
+
 ## 下一步（按开发计划阶段推进）
-- 阶段0：部门数据隔离、各模块 CRUD（基于已完成的 RBAC）
+- 阶段0：✅ 骨架 / RBAC / 部门数据隔离 / 验证码+密码强度 / 个人中心 / 前端骨架 / pre-commit 门禁 已全部完成
 - 阶段1：实时链路闭环（MQTT 上报→落库→规则判定→WebSocket 推送）
 - 阶段2~5：主数据、作业/告警、大屏、加固上线
