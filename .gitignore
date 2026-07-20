@@ -33,3 +33,9 @@ htmlcov/
 data/
 media/
 uploads/
+
+# WorkBuddy 项目内部数据（记忆/日志，非项目源码，严禁入库）
+.workbuddy/
+
+# 本地 IDE 运行配置（含绝对路径，非功能必需）
+.run/
