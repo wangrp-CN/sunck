@@ -1,0 +1,22 @@
+# 涉铁工程智能监控平台 —— 设备模拟器守护单元（systemd / Linux 生产）
+# 真实设备接入后此服务可停用（此时由真实 MQTT 设备上报，无需模拟器）。
+# 部署步骤同 api 单元，安装后：sudo systemctl enable --now rail-monitor-simulator
+# 注意：模拟器依赖 MQTT broker 与后端 API 已就绪，故 After 两者。
+[Unit]
+Description=Rail Monitor Device Simulator (MQTT uplink)
+After=network.target rail-monitor-api.service mosquitto.service
+Wants=rail-monitor-api.service
+
+[Service]
+Type=simple
+User=railmonitor
+Group=railmonitor
+WorkingDirectory=/opt/rail_monitor
+EnvironmentFile=/opt/rail_monitor/.env
+ExecStart=/opt/rail_monitor/.venv/bin/python /opt/rail_monitor/scripts/device_simulator.py
+Restart=always
+RestartSec=10
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,27 @@
+# 涉铁工程智能监控平台 —— 后端 API 守护单元（systemd / Linux 生产）
+# 部署步骤：
+#   1) 将项目部署到 /opt/rail_monitor（本例路径，请按实际修改下方所有 /opt/rail_monitor）
+#   2) 创建专用用户：sudo useradd -r -s /bin/false railmonitor
+#   3) 赋权：sudo chown -R railmonitor:railmonitor /opt/rail_monitor
+#   4) 放置 .env 到 /opt/rail_monitor/.env（切勿提交，权限 600）
+#   5) 安装单元：sudo cp deploy/rail-monitor-api.service /etc/systemd/system/
+#   6) 启用开机自启：sudo systemctl enable --now rail-monitor-api
+# 说明：After/Wants 仅声明顺序，不强制依赖；后端自身会在中间件不可用时重试/报错。
+[Unit]
+Description=Rail Monitor API (FastAPI)
+After=network.target postgresql.service redis.service
+Wants=postgresql.service redis.service
+
+[Service]
+Type=simple
+User=railmonitor
+Group=railmonitor
+WorkingDirectory=/opt/rail_monitor
+EnvironmentFile=/opt/rail_monitor/.env
+ExecStart=/opt/rail_monitor/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

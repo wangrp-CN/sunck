@@ -1,0 +1,133 @@
+# 涉铁工程智能监控平台 —— CI 门禁（GitHub Actions）
+# 触发：推送到 main/master/develop 或对其 PR。
+# 说明：
+#   - 应用本身不容器化（遵循「不引入 Docker」约定）；此处 PG/Redis 用 GitHub 托管的
+#     service container 仅作 CI 基础设施，Mosquitto/MinIO 在 runner 上原生安装/启动。
+#   - 端到端门禁直接复用 scripts/run_demo.sh（迁移→种子→pytest→前端 build+vitest→
+#     起后端+模拟器→live 自证），保证 CI 与本地验证口径一致。
+#   - 需先将本仓库推到 GitHub（git remote add origin <url> && git push）才会触发。
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: rail_monitor
+          POSTGRES_PASSWORD: rail_monitor_ci
+          POSTGRES_DB: rail_monitor
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: rail_monitor
+      POSTGRES_USER: rail_monitor
+      POSTGRES_PASSWORD: rail_monitor_ci
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      REDIS_PASSWORD: ""
+      REDIS_URL: redis://localhost:6379/0
+      MQTT_BROKER: localhost
+      MQTT_PORT: "1883"
+      MINIO_ENDPOINT: localhost:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET: rail-monitor
+      MINIO_SECURE: "false"
+      AMAP_WEB_KEY: ""
+      SECRET_KEY: ci-test-secret-key-not-for-prod
+      APP_ENV: test
+      DEBUG: "false"
+      CAPTCHA_ENABLED: "false"
+      CORS_ORIGINS: "*"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install Python deps (venv)
+        run: |
+          python -m venv .venv
+          . .venv/bin/activate
+          pip install -r requirements.txt
+
+      - name: Install Frontend deps
+        working-directory: web
+        run: npm ci
+
+      - name: Start Mosquitto (MQTT, anonymous)
+        run: |
+          sudo apt-get update
+          echo "allow_anonymous true" | sudo tee /etc/mosquitto/conf.d/ci.conf
+          sudo apt-get install -y mosquitto mosquitto-clients
+          sudo systemctl enable --now mosquitto
+          sleep 3
+          mosquitto_pub -h localhost -p 1883 -t ci/test -m hello || true
+
+      - name: Start MinIO
+        run: |
+          wget -q https://dl.min.io/server/minio/release/linux-amd64/minio
+          chmod +x minio
+          mkdir -p /tmp/minio-data
+          ./minio server /tmp/minio-data --address :9000 --console-address :9002 &
+          sleep 5
+          wget -q https://dl.min.io/client/mc/release/linux-amd64/mc
+          chmod +x mc
+          ./mc alias set local http://localhost:9000 minioadmin minioadmin
+          ./mc mb --ignore-existing local/rail-monitor
+
+      - name: Generate .env for CI (from .env.example, no real secrets)
+        run: |
+          cp .env.example .env
+          cp web/.env.example web/.env
+          sed -i "s#^POSTGRES_HOST=.*#POSTGRES_HOST=localhost#" .env
+          sed -i "s#^POSTGRES_USER=.*#POSTGRES_USER=rail_monitor#" .env
+          sed -i "s#^POSTGRES_PASSWORD=.*#POSTGRES_PASSWORD=rail_monitor_ci#" .env
+          sed -i "s#^REDIS_PASSWORD=.*#REDIS_PASSWORD=#" .env
+          sed -i "s#^REDIS_URL=.*#REDIS_URL=redis://localhost:6379/0#" .env
+          sed -i "s#^SECRET_KEY=.*#SECRET_KEY=ci-test-secret-key-not-for-prod#" .env
+          sed -i "s#^MINIO_ENDPOINT=.*#MINIO_ENDPOINT=localhost:9000#" .env
+          sed -i "s#^MINIO_ACCESS_KEY=.*#MINIO_ACCESS_KEY=minioadmin#" .env
+          sed -i "s#^MINIO_SECRET_KEY=.*#MINIO_SECRET_KEY=minioadmin#" .env
+          sed -i "s#^APP_ENV=.*#APP_ENV=test#" .env
+          sed -i "s#^DEBUG=.*#DEBUG=false#" .env
+          echo "CAPTCHA_ENABLED=false" >> .env
+          echo "---- effective .env (keys only) ----"
+          grep -oE '^[A-Z_]+=' .env | tr -d '=' | sort
+
+      - name: Run end-to-end gate (migrate/seed/pytest/build/vitest/live)
+        run: bash scripts/run_demo.sh --skip-services --port 8011

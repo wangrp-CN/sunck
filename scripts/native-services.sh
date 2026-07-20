@@ -8,8 +8,9 @@
 set -euo pipefail
 
 MINIO_PLIST="$HOME/Library/LaunchAgents/com.railmonitor.minio.plist"
-MINIO_BIN="${MINIO_BIN:-/tmp/minio}"
-MINIO_DATA="${MINIO_DATA:-/tmp/minio_data}"
+# 持久化路径（/tmp 在重启后会被清空，导致 launchd 启动失败、9000/9002 无监听）
+MINIO_BIN="${MINIO_BIN:-$HOME/.local/bin/minio}"
+MINIO_DATA="${MINIO_DATA:-$HOME/minio_data}"
 
 start() {
   echo ">>> 启动 PostgreSQL / Redis / Mosquitto (brew)"
@@ -18,6 +19,10 @@ start() {
   brew services start mosquitto
 
   echo ">>> 启动 MinIO (launchd 守护)"
+  if [ ! -x "$MINIO_BIN" ]; then
+    echo "    ⚠️ MinIO 二进制不存在: $MINIO_BIN（请下载到该持久路径，勿放 /tmp）"
+  fi
+  mkdir -p "$MINIO_DATA"
   if launchctl list | grep -q com.railmonitor.minio; then
     echo "    minio 已在运行"
   else
