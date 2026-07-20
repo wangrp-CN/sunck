@@ -1,5 +1,13 @@
 import { http } from "@/utils/request";
-import type { LoginRequest, TokenResponse, UserInfo } from "@/types";
+import type { CaptchaResponse, LoginRequest, TokenResponse, UserInfo } from "@/types";
+
+// 获取验证码
+export function getCaptcha(): Promise<CaptchaResponse> {
+  return http<CaptchaResponse>({
+    url: "/v1/auth/captcha",
+    method: "GET",
+  });
+}
 
 // 登录
 export function login(data: LoginRequest): Promise<TokenResponse> {

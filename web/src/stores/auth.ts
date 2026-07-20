@@ -22,7 +22,13 @@ export const useAuthStore = defineStore("auth", () => {
     const resp = await apiLogin(data);
     token.value = resp.access_token;
     setToken(resp.access_token);
-    await loadProfile();
+    // 拉取用户信息失败不应阻断登录态建立与跳转；
+    // DashboardView.onMounted 会在 user 为空时兜底重新加载。
+    try {
+      await loadProfile();
+    } catch {
+      // 拦截器已统一提示，此处吞掉避免阻断导航
+    }
   }
 
   // 拉取当前用户信息（登录后或刷新页面时调用）

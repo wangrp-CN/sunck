@@ -1,7 +1,17 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import {
+  DataLine,
+  Position,
+  Folder,
+  Cpu,
+  User,
+  Setting,
+  Location,
+  Notebook,
+  Warning,
+} from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage } from "element-plus";
 import { useAuthStore } from "@/stores/auth";
 
 const route = useRoute();
@@ -28,6 +38,51 @@ async function handleLogout() {
           <el-icon><DataLine /></el-icon>
           <span>监控大屏</span>
         </el-menu-item>
+        <el-menu-item index="/realtime">
+          <el-icon><Position /></el-icon>
+          <span>实时监控</span>
+        </el-menu-item>
+        <el-menu-item index="/projects">
+          <el-icon><Folder /></el-icon>
+          <span>项目管理</span>
+        </el-menu-item>
+        <el-sub-menu index="/devices-group">
+          <template #title>
+            <el-icon><Cpu /></el-icon>
+            <span>设备管理</span>
+          </template>
+          <el-menu-item index="/devices">设备列表</el-menu-item>
+          <el-menu-item index="/devices/online">在线看板</el-menu-item>
+        </el-sub-menu>
+        <el-menu-item index="/persons">
+          <el-icon><User /></el-icon>
+          <span>人员管理</span>
+        </el-menu-item>
+        <el-menu-item index="/machines">
+          <el-icon><Setting /></el-icon>
+          <span>机械管理</span>
+        </el-menu-item>
+        <el-menu-item index="/fences">
+          <el-icon><Location /></el-icon>
+          <span>电子围栏</span>
+        </el-menu-item>
+        <el-menu-item index="/jobs">
+          <el-icon><Notebook /></el-icon>
+          <span>作业计划</span>
+        </el-menu-item>
+        <el-menu-item index="/alarms">
+          <el-icon><Warning /></el-icon>
+          <span>告警管理</span>
+        </el-menu-item>
+        <el-sub-menu index="/system">
+          <template #title>
+            <el-icon><Setting /></el-icon>
+            <span>系统管理</span>
+          </template>
+          <el-menu-item index="/system/users">用户管理</el-menu-item>
+          <el-menu-item index="/system/roles">角色管理</el-menu-item>
+          <el-menu-item index="/system/departments">部门管理</el-menu-item>
+        </el-sub-menu>
       </el-menu>
     </el-aside>
     <el-container>

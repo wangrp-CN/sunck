@@ -3,9 +3,11 @@ import axios, {
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from "axios";
-import { ElMessage } from "element-plus";
+import type { Router } from "vue-router";
+import type { ApiResponse } from "@/types";
 
 const TOKEN_KEY = "rm_token";
+let routerInstance: Router | null = null;
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -17,6 +19,10 @@ export function setToken(token: string): void {
 
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+}
+
+export function setRouterInstance(router: Router): void {
+  routerInstance = router;
 }
 
 // 统一 API 前缀：开发走 Vite 代理 /api，生产可配置 VITE_API_BASE
@@ -55,13 +61,9 @@ request.interceptors.response.use(
     if (status === 401) {
       clearToken();
       ElMessage.error("登录已过期，请重新登录");
-      // 动态引入 router，避免与 router 模块形成循环依赖
-      void import("@/router").then((m) => {
-        const r = m.default;
-        if (r.currentRoute.value.name !== "login") {
-          r.push({ name: "login" });
-        }
-      });
+      if (routerInstance && routerInstance.currentRoute.value.name !== "login") {
+        routerInstance.push({ name: "login" });
+      }
     } else if (status === 403) {
       ElMessage.error("无权限访问");
     } else if (status === 423) {
