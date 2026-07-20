@@ -44,7 +44,7 @@
 | Redis | 127.0.0.1:6379（密码 dev_local_redis） | homebrew redis | ✅ set/get 通过 |
 | PostgreSQL | 127.0.0.1:5432（库 rail_monitor，角色 dev） | homebrew postgresql@17 | ✅ 连接 + ORM 建表/删表通过 |
 | MQTT（Mosquitto） | 127.0.0.1:1883（匿名） | homebrew mosquitto，非 EMQX | ✅ connect 通过 |
-| MinIO | 127.0.0.1:9000 | 原生 minio 二进制（数据 /tmp/minio_data） | ✅ list_buckets 通过 |
+| MinIO | 127.0.0.1:9000 | 原生 minio 二进制（数据 ~/minio_data，持久化避免 /tmp 重启丢失） | ✅ list_buckets 通过 |
 | ffmpeg | /opt/homebrew/bin/ffmpeg (8.1.2) | — | ✅ ffprobe 可用 |
 
 > 注：本项目已绑定【方案A：原生服务】（见 OPTION_A.md），基础设施以原生服务直接运行，不依赖 Docker 容器。

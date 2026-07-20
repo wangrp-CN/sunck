@@ -10,7 +10,7 @@
 | 关系型数据库 | PostgreSQL（homebrew `postgresql@17`） | SQLAlchemy + psycopg2 | 5432 | 角色 `dev` / `dev123`，库 `rail_monitor` |
 | 缓存 / 消息 broker 后端 | Redis（homebrew `redis`，已设密码） | redis-py | 6379 | 密码 `dev_local_redis` |
 | MQTT 消息 | Mosquitto（homebrew `mosquitto`，匿名） | paho-mqtt | 1883（TCP）/ 9001（WebSocket） | 匿名 |
-| 对象存储 | MinIO（官方二进制） | minio SDK | 9000（API）/ 9002（控制台） | `minioadmin` / `minioadmin`，数据 `/tmp/minio_data` |
+| 对象存储 | MinIO（官方二进制） | minio SDK | 9000（API）/ 9002（控制台） | `minioadmin` / `minioadmin`，数据 `~/minio_data`（二进制 `~/local/bin/minio`，勿放 /tmp 以免重启丢失） |
 
 **明确排除（方案A范围外，禁止用于本项目的开发/部署）：**
 - Docker / Docker Compose（见 `docker-compose.yml`，仅作可选容器化参考，非默认路径，且其内含的 EMQX / RabbitMQ / TimescaleDB 不在本架构内）

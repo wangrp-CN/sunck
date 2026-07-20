@@ -1,7 +1,6 @@
-# 涉铁工程智能监控平台 · 后端骨架
+# 涉铁工程智能监控平台
 
-> 依据 `涉铁工程智能监控平台-开发计划.md` 搭建的**项目框架骨架**。本阶段仅搭建可运行的基础结构，
-> **不含具体业务逻辑实现**（各模块以 `/ping` 占位，按开发计划阶段逐步填充）。
+> 涉铁工程智能监控平台（后端 + 前端，告警可视化方向）：已实现 RBAC / 部门数据隔离 / 实时链路闭环 / 告警报表与趋势 / 跨周期历史快照 / 仪表盘周期联动等能力，详见后续章节。
 
 ## 技术栈
 
@@ -53,7 +52,17 @@ uvicorn app.main:app --reload --port 8000
 ```
 - 健康检查：`GET /health`
 - 接口文档：`GET /docs`
-- 指标：`GET /metrics`
+- 指标：`GET /metrics`（Prometheus 格式，业务指标见下表）
+
+  | 指标名 | 类型 | 维度 | 含义 |
+  |--------|------|------|------|
+  | `http_requests_total` | Counter | method, path, status | HTTP 请求总数 |
+  | `http_request_duration_seconds` | Histogram | method, path | HTTP 请求时延分布（秒） |
+  | `alarms_created_total` | Counter | alarm_type, alarm_level | 实时链路产生的告警总数 |
+  | `mqtt_messages_total` | Counter | device_type | MQTT 设备上行报文总数 |
+  | `ws_connections` | Gauge | — | 当前 WebSocket 在线连接数 |
+
+  > 自监控排除：`/metrics` 与 `/health` 自身请求不计入 `http_requests_total`。
 
 ### 4. PyCharm 直接运行
 项目根已提供 `.run/RailMonitor.run.xml`，在 PyCharm 的 Run/Debug 配置中即可看到
@@ -141,7 +150,7 @@ def list_x(db=Depends(get_db), scope: DataScope = Depends(get_data_scope), ...):
     ...
 ```
 新增业务模型需隔离时，在 `app/core/data_scope.py` 的 `_MODEL_DEPT_LINK` 注册 `DIRECT` 或 `VIA_PROJECT` 即可。
-已应用隔离：`/api/v1/auth/users`、`/api/v1/projects`(list/create/get/update)。
+已应用隔离：`/api/v1/auth/users`、`/api/v1/projects`(list/create/get/update)、`/api/v1/alarms`(list/get/export/report/snapshot **及 `/{id}/handle`、`/{id}/media` 处置/媒体更新**)、`/api/v1/attachments`(upload/list/delete，**按实体所属 project 归口隔离**)、`/api/v1/devices`·`persons`·`machines`·`fences`·`jobs`、`/api/v1/realtime`(locations/trajectory)、`/api/v1/dashboard`(stats/recent-alarms)。
 
 ### 调用示例
 ```bash
@@ -165,7 +174,69 @@ curl http://127.0.0.1:8000/api/v1/auth/me \
 配置文件 `.pre-commit-config.yaml`，本地安装：`pip install pre-commit && pre-commit install`。
 > 注：仓库已 `git init` 并打好基线提交；首次提交会触发钩子自动格式化（属正常行为，按提示重新 `add` 提交即可）。
 
-## 下一步（按开发计划阶段推进）
-- 阶段0：✅ 骨架 / RBAC / 部门数据隔离 / 验证码+密码强度 / 个人中心 / 前端骨架 / pre-commit 门禁 已全部完成
-- 阶段1：实时链路闭环（MQTT 上报→落库→规则判定→WebSocket 推送）
-- 阶段2~5：主数据、作业/告警、大屏、加固上线
+## 告警可视化与历史快照（已实现）
+
+告警模块已形成完整可视化闭环：趋势切换 → 单周期下钻 → 按粒度导出 → 跨周/月历史快照 → 仪表盘按周期联动。
+
+### 关键端点
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET  | `/api/v1/alarms/report` | 报表汇总，`granularity`(day/week/month) 分桶；`summary_only=true` 仅返回分布 |
+| GET  | `/api/v1/alarms/export` | 导出 Excel/PDF。支持 `granularity`+`period`（整周/整月）或 `snapshot=true`（跨周期多表快照） |
+| GET  | `/api/v1/alarms/snapshot/preview` | 快照预览（JSON）：概览 + 各周期分布 + 按项目汇总，与 Excel/PDF 快照**同源**，供前端「预览 → 导出」确认 |
+| GET  | `/api/v1/dashboard/stats` | 大屏聚合，支持 `granularity`+`start`+`end` 周期联动，返回 `alarm_trend_period` / `alarms_window` / `alarms_current_period` |
+
+> 趋势图、报表、导出、仪表盘四者共用同一套 `_period_key` 分桶口径（见 `app/service/alarm_service.py`），切换周期时数据逐桶一致。
+
+### 趋势图周期切换（`web/src/views/AlarmView.vue`）
+天/周/月单选 + 单周期下钻；下钻明细与按粒度导出行数一一对应。
+
+### 跨周/月历史快照（`/export?snapshot=true`）
+按天/周/月将所选范围拆为多个周期，**每个周期单独成表**：Excel 为多 sheet（`概览` + 每周期明细（按项目分组）+ `明细合并` + `项目汇总`），PDF 为概览 + 分布表 + 合并明细 + 按项目分布。覆盖所有周期（含空周期），便于连续脉络对比。
+
+### 快照预览（报表弹窗）
+`AlarmView` 的「告警报表」弹窗内提供「预览快照」按钮：调用 `/snapshot/preview` 渲染**概览指标 + 各周期分布（可展开看按项目拆分）+ 按项目汇总（带合计行）**，数据与导出文件同源，确认无误后再点「导出快照 Excel / PDF」。
+
+### 仪表盘按周期联动（`web/src/views/DashboardView.vue`）
+趋势卡支持天/周/月 + 日期范围；切换时「告警总数 → 区间告警」「今日告警 → 本周期告警」同步刷新，与趋势图、报表/导出三者逐桶一致。
+
+### 四端图表一致性（重点）
+告警趋势图在 **PDF 导出 / Excel 导出 / DashboardView 迷你图 / AlarmView 报表弹窗趋势区** 四端保持同源、同形态、同配色：
+
+| 端 | 实现 | 配色（围栏侵入 / 间距过近 / 设备自报） |
+|----|------|----------------------------------------|
+| PDF 趋势图 | reportlab `VerticalBarChart`（`categoryAxis.style="stacked"`）+ 三层系列 + 顶部 `Legend` | 红 `#C00000` / 橙 `#ED7D31` / 蓝 `#2E75B6` |
+| Excel 概览图 | openpyxl `BarChart`（`grouping="stacked"` + `overlap=100`）+ 三色系列 + 底部图例 | 同上 |
+| DashboardView 迷你图 | `.bar-track.stack` + 3×`.bar-seg` 分色 + `.mini-legend` | 同上 |
+| AlarmView 弹窗趋势区 | 同 DashboardView 结构（复制「按类型分色堆叠」） | 同上 |
+
+- **同源**：四端均来自 `_compute_snapshot` / `build_snapshot_payload` / `SnapshotPreviewResult`，与 `/alarms/report`、`/dashboard/stats` 共用 `_period_key`（day/week/month）分桶口径。
+- **按类型分色堆叠**：同一周期三类告警纵向叠加，红=围栏侵入(fence_intrusion) / 橙=间距过近(distance_too_close) / 蓝=设备自报(device_alarm)，均带图例。
+- 前端最大值取用统一封装 `web/src/utils/snapshot.ts` 的 `snapTrendMaxOf`，避免各端计算口径漂移。
+
+### 前端 · 其它平台模块（作业计划甘特视图）
+`web/src/components/WorkPlanGantt.vue` 按 `plan_start~plan_end` 渲染分色横条（红=监控中 / 橙=执行中 / 绿=已完成 / 灰=草稿），含设备数徽标、时间轴刻度、当前时间竖线；`JobView` 集成甘特卡片，与 rule_engine_v2 计划门控（仅激活计划产生告警）打通。
+
+### 测试覆盖
+| 层 | 范围 | 用例数 | 说明 |
+|----|------|--------|------|
+| 后端 | run_demo.sh [3.6/6] 门禁（7 文件：`test_media`/`test_attachments`/`test_realtime`/`test_dashboard_scope`/`test_job_alarm`/`test_alarm_report`/`test_snapshot_preview`） | **53** | pytest 全绿，含堆叠图/快照预览↔导出一致性/部门隔离 |
+| 前端 | Vitest（8 文件：`DailyTrendChart`/`MapPanel`/`WorkPlanGantt`/`geo`/`period`/`snapshot`/`AlarmView`/`DashboardView`） | **40** | 含分色堆叠迷你图、甘特、快照纯函数、地图模拟、周期分桶 |
+
+> 测试已纳入 `run_demo.sh` 门禁：后端 [3.6/6] 与前端 [3.7/6]（依赖→构建→Vitest）任一失败即终止联调；可用 `SKIP_TESTS=1` / `SKIP_FE=1` / `SKIP_FE_BUILD=1` 局部跳过。
+
+### 一键联调
+```bash
+bash scripts/run_demo.sh                 # 全流程：服务→迁移→播种→测试→前端门禁→后端→模拟器→自动验证
+bash scripts/run_demo.sh --skip-services  # 服务已运行时跳过原生服务启动
+# 跳过门禁：SKIP_TESTS=1（后端 pytest）   SKIP_FE=1（前端门禁）
+```
+脚本在 `[6/6]` 自动实证：实时位置、告警列表、轨迹、报表、周期联动自洽、历史快照多表导出。
+
+## 里程碑与后续
+
+- 阶段0（骨架 / RBAC / 部门隔离 / 验证码 / 前端骨架 / pre-commit 门禁）：✅ 已完成
+- 阶段1（实时链路：MQTT 上报 → 落库 → 规则引擎 v2 判定 → WebSocket 推送）：✅ 已完成
+- 阶段2~5（主数据 / 作业计划 / 告警 / 大屏）：✅ 告警可视化闭环已交付（趋势 / 导出 / 快照 / 仪表盘联动 / 四端图表一致 / 甘特视图）
+- 阶段收尾（2026-07-17）：✅ 四端图表一致性 + 测试护栏（后端 53 / 前端 40） + 前端打包优化（消除 >500KB chunk 警告）
+- 可选后续：~~快照按项目分 sheet~~ ✅ 已完成（2026-07-17，Excel 每项目一张明细 sheet `项目-{name}` + PDF 每项目明细节 + 预览 `projects_detail`，三端同源 `period_rows`/`project_names`，与既有「项目汇总」summary 互补，预览↔导出逐桶一致）；~~仪表盘其余卡片（设备在线率 / 围栏统计）按周期联动~~ ✅ 已完成（2026-07-17，复用 /online-status 心跳口径 + WorkPlan 窗口重叠判定）；~~设备在线看板 / 围栏地图绘制 / 轨迹回放播放器~~ ✅ 已完成。
