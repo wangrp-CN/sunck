@@ -136,13 +136,6 @@ _MODEL_DEPT_LINK: dict[type, str] = {
 }
 
 
-def register_model_link(model: type, link: str) -> None:
-    """允许业务模块注册自定义模型与部门的关联方式（DIRECT / VIA_PROJECT）。"""
-    if link not in (DIRECT, VIA_PROJECT):
-        raise ValueError(f"未知的部门关联方式: {link}")
-    _MODEL_DEPT_LINK[model] = link
-
-
 # ---------------------------------------------------------------------------
 # 应用过滤
 # ---------------------------------------------------------------------------
@@ -184,6 +177,5 @@ __all__ = [
     "VIA_PROJECT",
     "get_department_descendant_ids",
     "resolve_data_scope",
-    "register_model_link",
     "apply_data_scope",
 ]

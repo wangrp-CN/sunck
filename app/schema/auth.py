@@ -84,6 +84,18 @@ class UserProfileUpdate(BaseModel):
     phone: str | None = Field(None, max_length=32, description="手机号")
 
 
+class UserUpdateRequest(BaseModel):
+    """管理员编辑用户（含部门/状态/角色，密码留空则不改）。"""
+
+    nickname: str | None = Field(None, max_length=64, description="昵称")
+    email: str | None = Field(None, max_length=128, description="邮箱")
+    phone: str | None = Field(None, max_length=32, description="手机号")
+    dept_id: int | None = Field(None, description="归属部门ID")
+    status: bool | None = Field(None, description="是否启用")
+    role_codes: list[str] | None = Field(None, description="分配的角色编码列表")
+    password: str | None = Field(None, min_length=6, max_length=128, description="留空则不修改密码")
+
+
 # ---------------------------------------------------------------------------
 # 角色
 # ---------------------------------------------------------------------------

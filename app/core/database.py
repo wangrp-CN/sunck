@@ -28,9 +28,16 @@ SessionLocal = sessionmaker(
 
 
 def get_db() -> Session:
-    """FastAPI 依赖：提供数据库会话并在请求结束后关闭。"""
+    """FastAPI 依赖：提供数据库会话，异常时统一回滚，请求结束后关闭。
+
+    说明：仅捕获 yield 期间的异常做兜底回滚；已在业务层显式 commit 的固化状态
+    不会被回滚，而未提交的挂起改动在异常时回滚，避免半提交脏数据。
+    """
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

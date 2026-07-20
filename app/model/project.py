@@ -5,10 +5,10 @@ from datetime import date
 from sqlalchemy import Date, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.model.base import Base, CreatorMixin, TimestampMixin
+from app.model.base import Base, CreatorMixin, SoftDeleteMixin, TimestampMixin
 
 
-class Project(Base, TimestampMixin, CreatorMixin):
+class Project(Base, TimestampMixin, CreatorMixin, SoftDeleteMixin):
     __tablename__ = "project"
 
     dept_id: Mapped[int | None] = mapped_column(

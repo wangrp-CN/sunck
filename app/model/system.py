@@ -23,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.model.base import Base, TimestampMixin
+from app.model.base import Base, SoftDeleteMixin, TimestampMixin
 
 # ---------------------------------------------------------------------------
 # 关联表（多对多，无额外业务字段，使用核心 Table 便于声明 relationship）
@@ -96,14 +96,6 @@ role_dept = Table(
         comment="部门ID(自定义数据范围)",
     ),
 )
-
-
-class SoftDeleteMixin:
-    """软删除混入：逻辑删除，避免物理删除导致关联数据悬空。"""
-
-    is_deleted: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False, comment="是否软删除"
-    )
 
 
 class Department(Base, TimestampMixin, SoftDeleteMixin):
@@ -250,14 +242,3 @@ class Permission(Base, TimestampMixin, SoftDeleteMixin):
         lazy="selectin",
         viewonly=False,
     )
-
-
-class DictData(Base, TimestampMixin):
-    """数据字典（设备类型/人员类型/围栏类型等），骨架预留。"""
-
-    __tablename__ = "dict_data"
-
-    dict_type: Mapped[str] = mapped_column(String(64), comment="字典类型")
-    dict_label: Mapped[str] = mapped_column(String(64), comment="显示名")
-    dict_value: Mapped[str] = mapped_column(String(64), comment="存储值")
-    sort: Mapped[int] = mapped_column(default=0, comment="排序")

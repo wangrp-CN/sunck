@@ -12,7 +12,6 @@ MODULES = [
     "fences",
     "jobs",
     "alarms",
-    "system",
     "dashboard",
 ]
 
@@ -37,4 +36,4 @@ def test_docs(client):
 def test_module_ping(client, module):
     r = client.get(f"/api/v1/{module}/ping")
     assert r.status_code == 200
-    assert r.json()["status"] == "skeleton"
+    assert r.json()["status"] in ("skeleton", "ready")

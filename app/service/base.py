@@ -1,12 +1,12 @@
-"""通用 CRUD 服务基类（骨架）。
+"""通用 CRUD 服务基类。
 
-约定：业务服务继承此类，注入 Session，提供基础的增删改查能力。
-具体实现在后续阶段补充（含 RBAC 数据隔离、规则引擎等）。
+约定：业务服务继承此类，注入 Session，提供基础的增删改查与分页能力。
+数据隔离过滤等由各域服务在传入 stmt 时自行处理（见 app.core.data_scope）。
 """
 
 from typing import Generic, Sequence, TypeVar
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from app.model.base import Base
@@ -33,8 +33,29 @@ class CRUDService(Generic[ModelType]):
         self.db.refresh(obj)
         return obj
 
+    def update(self, obj_id: int, **fields) -> ModelType | None:
+        """按主键更新指定字段；对象不存在返回 None。"""
+        obj = self.get(obj_id)
+        if obj is None:
+            return None
+        for key, value in fields.items():
+            if hasattr(obj, key):
+                setattr(obj, key, value)
+        self.db.commit()
+        self.db.refresh(obj)
+        return obj
+
     def delete(self, obj: ModelType) -> None:
         self.db.delete(obj)
         self.db.commit()
 
-    # 更新/分页/数据隔离过滤器等在此扩展（TODO）
+    def paginate(
+        self, stmt: Select | None = None, page: int = 1, page_size: int = 20
+    ) -> tuple[Sequence[ModelType], int]:
+        """通用分页：返回 (当前页对象列表, 总记录数)。page 从 1 开始。"""
+        stmt = stmt or select(self.model)
+        count_stmt = select(func.count()).select_from(stmt.order_by(None).subquery())
+        total = self.db.scalar(count_stmt) or 0
+        offset = (max(page, 1) - 1) * page_size
+        rows = self.db.scalars(stmt.offset(offset).limit(page_size)).all()
+        return rows, total

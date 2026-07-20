@@ -44,16 +44,6 @@ class Settings(BaseSettings):
     captcha_enabled: bool = True
     captcha_ttl_seconds: int = 300
     captcha_length: int = 4
-    # 密码强度策略（注册/改密时校验）
-    password_min_length: int = 8
-    password_require_upper: bool = True
-    password_require_lower: bool = True
-    password_require_digit: bool = True
-    password_require_special: bool = False
-    # 登录图形验证码（防爆破；测试环境可置 false 跳过校验）
-    captcha_enabled: bool = True
-    captcha_ttl_seconds: int = 300
-    captcha_length: int = 4
     # 初始超级管理员（首次播种时写入，生产环境请通过环境变量覆盖）
     default_admin_username: str = "admin"
     default_admin_password: str = "Admin@123456"
@@ -78,6 +68,10 @@ class Settings(BaseSettings):
     mqtt_port: int = 1883
     mqtt_username: str = ""
     mqtt_password: str = ""
+
+    # ---------- 实时链路 ----------
+    # 设备「在线」判定阈值（秒）：最近一次上报距当前不超过该值视为在线
+    online_threshold_seconds: int = 300
 
     # ---------- MinIO 对象存储 ----------
     minio_endpoint: str = "127.0.0.1:9000"

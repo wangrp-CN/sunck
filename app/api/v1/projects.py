@@ -38,7 +38,7 @@ def list_projects(
     size: int = 20,
 ) -> ApiResponse:
     """分页查询项目，并施加部门数据隔离（本部门及以下/自定义部门/仅本人）。"""
-    stmt = select(Project)
+    stmt = select(Project).where(Project.is_deleted.is_(False))
     if keyword:
         kw = f"%{keyword}%"
         stmt = stmt.where(Project.name.ilike(kw))
@@ -68,7 +68,7 @@ def get_project(
     scope: DataScope = Depends(get_data_scope),
 ) -> ApiResponse:
     """返回单个项目；不在当前用户数据范围内则返回 404（对外不暴露越权）。"""
-    stmt = select(Project).where(Project.id == project_id)
+    stmt = select(Project).where(Project.id == project_id, Project.is_deleted.is_(False))
     stmt = apply_data_scope(stmt, Project, scope)
     project = db.scalars(stmt).first()
     if project is None:
@@ -130,7 +130,7 @@ def update_project(
     scope: DataScope = Depends(get_data_scope),
 ) -> ApiResponse:
     """更新项目；仅当前数据范围内的项目可更新。"""
-    stmt = select(Project).where(Project.id == project_id)
+    stmt = select(Project).where(Project.id == project_id, Project.is_deleted.is_(False))
     stmt = apply_data_scope(stmt, Project, scope)
     project = db.scalars(stmt).first()
     if project is None:
@@ -140,3 +140,25 @@ def update_project(
     db.commit()
     db.refresh(project)
     return ApiResponse.success(_project_out(project), message="项目更新成功")
+
+
+@router.delete(
+    "/{project_id}",
+    response_model=ApiResponse,
+    summary="删除项目",
+    dependencies=[Depends(require_permissions("project:delete"))],
+)
+def delete_project(
+    project_id: int,
+    db: Session = Depends(get_db),
+    scope: DataScope = Depends(get_data_scope),
+) -> ApiResponse:
+    """软删项目（is_deleted=True）；仅当前数据范围内的项目可删。"""
+    stmt = select(Project).where(Project.id == project_id, Project.is_deleted.is_(False))
+    stmt = apply_data_scope(stmt, Project, scope)
+    project = db.scalars(stmt).first()
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在或无权访问")
+    project.is_deleted = True
+    db.commit()
+    return ApiResponse.success(message="项目已删除")

@@ -8,6 +8,8 @@ from collections import defaultdict
 
 from fastapi import WebSocket
 
+from app.core.metrics import WS_CONNECTIONS
+
 logger = logging.getLogger("rail_monitor.ws")
 
 
@@ -16,13 +18,20 @@ class ConnectionManager:
         # channel -> set of websockets
         self._channels: dict[str, set[WebSocket]] = defaultdict(set)
 
+    def _sync_gauge(self) -> None:
+        """将当前真实连接总数同步到 Prometheus Gauge（set 幂等，避免重复 disconnect 双计）。"""
+        total = sum(len(s) for s in self._channels.values())
+        WS_CONNECTIONS.set(total)
+
     async def connect(self, ws: WebSocket, channel: str = "global") -> None:
         await ws.accept()
         self._channels[channel].add(ws)
+        self._sync_gauge()
         logger.info("WS 已连接 channel=%s total=%d", channel, len(self._channels[channel]))
 
     def disconnect(self, ws: WebSocket, channel: str = "global") -> None:
         self._channels[channel].discard(ws)
+        self._sync_gauge()
 
     async def send_personal(self, ws: WebSocket, message: str) -> None:
         await ws.send_text(message)

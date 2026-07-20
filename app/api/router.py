@@ -7,6 +7,7 @@ from fastapi import APIRouter
 
 from app.api.v1 import (
     alarms,
+    attachments,
     auth,
     dashboard,
     departments,
@@ -14,9 +15,10 @@ from app.api.v1 import (
     fences,
     jobs,
     machines,
+    media,
     persons,
     projects,
-    system,
+    realtime,
 )
 
 api_router = APIRouter(prefix="/api")
@@ -29,5 +31,7 @@ api_router.include_router(machines.router, prefix="/v1/machines", tags=["大型�
 api_router.include_router(fences.router, prefix="/v1/fences", tags=["电子围栏"])
 api_router.include_router(jobs.router, prefix="/v1/jobs", tags=["作业计划"])
 api_router.include_router(alarms.router, prefix="/v1/alarms", tags=["告警管理"])
-api_router.include_router(system.router, prefix="/v1/system", tags=["系统管理"])
+api_router.include_router(realtime.router, prefix="/v1/realtime", tags=["实时链路"])
 api_router.include_router(dashboard.router, prefix="/v1/dashboard", tags=["大屏"])
+api_router.include_router(media.router, prefix="/v1/media", tags=["媒体管理"])
+api_router.include_router(attachments.router, prefix="/v1/attachments", tags=["附件"])

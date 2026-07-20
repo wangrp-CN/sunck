@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, MetaData, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, MetaData, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # 统一命名约定，保证迁移文件名稳定
@@ -38,4 +38,15 @@ class CreatorMixin:
         nullable=True,
         index=True,
         comment="创建人ID(数据范围-仅本人)",
+    )
+
+
+class SoftDeleteMixin:
+    """软删除混入：逻辑删除，避免物理删除导致关联数据悬空。
+
+    业务表统一携带 is_deleted，读取时需显式追加 .where(Model.is_deleted.is_(False))。
+    """
+
+    is_deleted: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, comment="是否软删除"
     )

@@ -3,11 +3,11 @@
 from sqlalchemy import ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.model.base import Base, CreatorMixin, TimestampMixin
+from app.model.base import Base, CreatorMixin, SoftDeleteMixin, TimestampMixin
 from app.model.project import Project
 
 
-class Person(Base, TimestampMixin, CreatorMixin):
+class Person(Base, TimestampMixin, CreatorMixin, SoftDeleteMixin):
     __tablename__ = "person"
 
     project_id: Mapped[int | None] = mapped_column(
@@ -25,7 +25,7 @@ class Person(Base, TimestampMixin, CreatorMixin):
     device_no: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="绑定设备编号")
 
 
-class Machine(Base, TimestampMixin, CreatorMixin):
+class Machine(Base, TimestampMixin, CreatorMixin, SoftDeleteMixin):
     __tablename__ = "machine"
 
     project_id: Mapped[int | None] = mapped_column(

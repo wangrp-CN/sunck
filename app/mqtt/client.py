@@ -26,6 +26,8 @@ def get_client() -> Client:
         _client.on_connect = handlers.on_connect
         _client.on_message = handlers.on_message
         _client.on_disconnect = handlers.on_disconnect
+        # 断线重连策略：指数退避，1~30s
+        _client.reconnect_delay_set(min_delay=1, max_delay=30)
         if settings.mqtt_username:
             _client.username_pw_set(settings.mqtt_username, settings.mqtt_password)
     return _client

@@ -20,11 +20,15 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardi
 if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
+import asyncio
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
 
 # 确保 ORM 元数据注册（供 Alembic 与运行时使用）
 import app.model  # noqa: E402,F401
@@ -32,7 +36,9 @@ from app.api import api_router
 from app.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging
+from app.core.metrics import HTTP_REQUEST_COUNT, HTTP_REQUEST_LATENCY
 from app.mqtt import client as mqtt_client
+from app.ws import bridge
 from app.ws.router import router as ws_router
 
 configure_logging()
@@ -40,6 +46,8 @@ configure_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 启动：绑定事件循环到 WS 桥接（供 MQTT 线程跨线程推送）
+    bridge.set_event_loop(asyncio.get_running_loop())
     # 启动：尝试连接 MQTT（失败仅告警，不阻断应用）
     try:
         mqtt_client.connect()
@@ -73,6 +81,30 @@ app.add_middleware(
 register_exception_handlers(app)
 app.include_router(api_router)
 app.include_router(ws_router)
+
+
+class MetricsMiddleware(BaseHTTPMiddleware):
+    """统计 HTTP 请求数与时延，排除自监控端点避免污染指标。"""
+
+    async def dispatch(self, request: Request, call_next):
+        path = request.url.path
+        # 跳过 /metrics、/health 自身的抓取，避免自监控污染
+        if path in ("/metrics", "/health"):
+            return await call_next(request)
+        method = request.method
+        start = time.perf_counter()
+        status = 500
+        try:
+            response = await call_next(request)
+            status = response.status_code
+            return response
+        finally:
+            elapsed = time.perf_counter() - start
+            HTTP_REQUEST_COUNT.labels(method=method, path=path, status=status).inc()
+            HTTP_REQUEST_LATENCY.labels(method=method, path=path).observe(elapsed)
+
+
+app.add_middleware(MetricsMiddleware)
 
 
 @app.get("/health", tags=["系统"])

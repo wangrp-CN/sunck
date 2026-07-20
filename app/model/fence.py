@@ -3,11 +3,11 @@
 from sqlalchemy import Boolean, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.model.base import Base, CreatorMixin, TimestampMixin
+from app.model.base import Base, CreatorMixin, SoftDeleteMixin, TimestampMixin
 from app.model.project import Project
 
 
-class ElectronicFence(Base, TimestampMixin, CreatorMixin):
+class ElectronicFence(Base, TimestampMixin, CreatorMixin, SoftDeleteMixin):
     __tablename__ = "electronic_fence"
 
     project_id: Mapped[int | None] = mapped_column(

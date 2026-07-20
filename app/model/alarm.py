@@ -1,12 +1,21 @@
-"""告警管理域模型：对应需求 §2.9（设备告警/前端设备告警/告警配置）。"""
+"""告警管理域模型：对应需求 §2.9（设备告警/前端设备告警/告警配置）。
+
+v2 增强：告警归属到触发它的作业计划（work_plan_id），实现告警→业务溯源。
+"""
+
+from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.model.base import Base, CreatorMixin, TimestampMixin
 from app.model.project import Project
+
+if TYPE_CHECKING:
+    from app.model.job import WorkPlan
 
 
 class Alarm(Base, TimestampMixin, CreatorMixin):
@@ -16,6 +25,11 @@ class Alarm(Base, TimestampMixin, CreatorMixin):
         ForeignKey("project.id", ondelete="SET NULL"), nullable=True, index=True
     )
     project: Mapped["Project"] = relationship("Project", lazy="selectin")
+    # 归属作业计划：v2 起由计划感知的规则引擎写入，用于告警→业务溯源
+    work_plan_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("work_plan.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    work_plan: Mapped["WorkPlan"] = relationship("WorkPlan", lazy="selectin")
     alarm_type: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="告警类型")
     device_type: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="设备类型")
     device_name: Mapped[str | None] = mapped_column(String(128), nullable=True, comment="设备名称")
@@ -23,6 +37,10 @@ class Alarm(Base, TimestampMixin, CreatorMixin):
     alarm_info: Mapped[str | None] = mapped_column(String(512), nullable=True, comment="告警信息")
     # 告警状态：告警开始/告警结束/已消警
     alarm_status: Mapped[str] = mapped_column(String(16), default="告警开始", comment="告警状态")
+    # 告警级别：严重/警告/提示（影响前端弹窗配色）
+    alarm_level: Mapped[str] = mapped_column(
+        String(16), default="警告", comment="告警级别(严重/警告/提示)"
+    )
     # 处理状态：待处理/已处理/已忽略/已确认
     handle_status: Mapped[str] = mapped_column(String(16), default="待处理", comment="处理状态")
     handle_content: Mapped[str | None] = mapped_column(

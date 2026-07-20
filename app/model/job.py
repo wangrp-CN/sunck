@@ -1,17 +1,20 @@
 """作业计划管理域模型：对应需求 §2.6（三步式：基本信息→绑资源→绑围栏+规则）。
 
-骨架阶段：规则以 JSON 文本存储（监控目标/触发条件/时间范围/停留时间），
-后续在业务层解析为规则引擎输入；人员/设备/机械/围栏绑定通过关联表维护。
+v2 增强：新增 plan_start/plan_end 结构化时间窗（用于规则引擎时间范围门控），
+规则以 JSON 文本存储（监控目标/触发条件/时间范围/停留时间），在规则引擎 v2
+中解析为判定输入；人员/设备/机械/围栏绑定通过关联表维护。
 """
 
-from sqlalchemy import Boolean, ForeignKey, String, Text
+from datetime import datetime
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.model.base import Base, CreatorMixin, TimestampMixin
+from app.model.base import Base, CreatorMixin, SoftDeleteMixin, TimestampMixin
 from app.model.project import Project
 
 
-class WorkPlan(Base, TimestampMixin, CreatorMixin):
+class WorkPlan(Base, TimestampMixin, CreatorMixin, SoftDeleteMixin):
     __tablename__ = "work_plan"
 
     project_id: Mapped[int | None] = mapped_column(
@@ -19,12 +22,23 @@ class WorkPlan(Base, TimestampMixin, CreatorMixin):
     )
     project: Mapped["Project"] = relationship("Project", lazy="selectin")
     name: Mapped[str] = mapped_column(String(128), comment="计划名称")
-    is_start: Mapped[bool] = mapped_column(Boolean, default=False, comment="计划启动")
+    is_start: Mapped[bool] = mapped_column(
+        Boolean, default=False, comment="计划是否激活(规则引擎据此判定)"
+    )
     description: Mapped[str | None] = mapped_column(String(1024), nullable=True, comment="计划说明")
-    plan_time: Mapped[str | None] = mapped_column(String(255), nullable=True, comment="计划时间")
+    plan_time: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, comment="计划时间(展示用文本)"
+    )
+    # 结构化时间窗（规则引擎时间范围门控）：空表示不限制
+    plan_start: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="计划生效开始(空=不限制)"
+    )
+    plan_end: Mapped[datetime | None] = mapped_column(
+        DateTime, nullable=True, comment="计划生效结束(空=不限制)"
+    )
     # 状态：草稿/执行中/已完成
     status: Mapped[str] = mapped_column(String(16), default="草稿", comment="计划状态")
-    # 规则 JSON：{monitor_target, trigger_condition, time_range, dwell_time}
+    # 规则 JSON：{monitor_target, trigger_conditions, time_range, dwell_time}
     rule_json: Mapped[str | None] = mapped_column(Text, nullable=True, comment="规则配置(JSON)")
 
 

@@ -12,7 +12,11 @@ psycopg2-binary>=2.9.9    # PostgreSQL 驱动
 redis>=5.0.0              # Redis 客户端（缓存/消息代理）
 paho-mqtt>=2.1.0          # MQTT 客户端（设备实时上行/下发）
 minio>=7.2.7              # 对象存储客户端（图片/视频）
+python-multipart>=0.0.9   # 文件上传解析（FastAPI UploadFile 必需）
+openpyxl>=3.1.5           # 告警报表 Excel 导出
+reportlab>=4.0.0          # 告警报表 PDF 导出（内置 CJK 字体 STSong-Light）
 python-dotenv>=1.0.1      # 环境变量管理
+tzdata>=2024.1           # IANA 时区库（zoneinfo Asia/Shanghai 依赖；Linux slim/无系统 tz 环境必需）
 
 # ===================== P1 强烈建议 =====================
 pydantic>=2.7.0           # 数据校验/序列化（FastAPI 内置，可单独升级）

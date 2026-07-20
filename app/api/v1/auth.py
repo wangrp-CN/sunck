@@ -54,6 +54,7 @@ from app.schema.auth import (
     UserOut,
     UserPage,
     UserProfileUpdate,
+    UserUpdateRequest,
 )
 
 router = APIRouter(tags=["认证"])
@@ -531,3 +532,60 @@ def assign_role_departments(
 def system_health() -> ApiResponse:
     """仅超级管理员可访问，用于验证角色级访问控制。"""
     return ApiResponse.success({"status": "ok"}, message="超级管理员校验通过")
+
+
+@router.put(
+    "/users/{user_id}",
+    response_model=ApiResponse[UserOut],
+    summary="更新用户",
+    dependencies=[Depends(require_permissions("user:edit"))],
+)
+def update_user(user_id: int, req: UserUpdateRequest, db: Session = Depends(get_db)) -> ApiResponse:
+    """编辑用户资料、部门、状态与角色（密码留空则不改）。"""
+    user = db.get(User, user_id)
+    if user is None or user.is_deleted:
+        raise BusinessError("用户不存在", code=404)
+    if req.nickname is not None:
+        user.nickname = req.nickname
+    if req.email is not None:
+        user.email = req.email
+    if req.phone is not None:
+        user.phone = req.phone
+    if req.dept_id is not None:
+        user.dept_id = req.dept_id
+    if req.status is not None:
+        user.status = req.status
+    if req.password:
+        try:
+            validate_password_strength(req.password)
+        except ValueError as e:
+            raise BusinessError(str(e), code=400)
+        user.password_hash = hash_password(req.password)
+    if req.role_codes is not None:
+        roles = db.scalars(
+            select(Role).where(Role.code.in_(req.role_codes), Role.is_deleted.is_(False))
+        ).all()
+        if len(roles) != len(set(req.role_codes)):
+            raise BusinessError("存在无效的角色编码", code=400)
+        user.roles = roles
+    db.commit()
+    db.refresh(user)
+    return ApiResponse.success(_user_out(user), message="用户更新成功")
+
+
+@router.delete(
+    "/users/{user_id}",
+    response_model=ApiResponse[None],
+    summary="删除用户",
+    dependencies=[Depends(require_permissions("user:delete"))],
+)
+def delete_user(user_id: int, db: Session = Depends(get_db)) -> ApiResponse:
+    """软删除用户（超级管理员账号不可删）。"""
+    user = db.get(User, user_id)
+    if user is None or user.is_deleted:
+        raise BusinessError("用户不存在", code=404)
+    if user.is_superuser:
+        raise BusinessError("超级管理员账号不可删除", code=403)
+    user.is_deleted = True
+    db.commit()
+    return ApiResponse.success(message="用户已删除")
