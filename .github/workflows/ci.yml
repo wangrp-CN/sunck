@@ -92,10 +92,10 @@ jobs:
       - name: Start Mosquitto (MQTT, anonymous)
         run: |
           sudo apt-get update
-          echo "allow_anonymous true" | sudo tee /etc/mosquitto/conf.d/ci.conf
           sudo apt-get install -y mosquitto mosquitto-clients
-          sudo systemctl enable --now mosquitto
-          sleep 3
+          sudo bash -c 'printf "listener 1883\nallow_anonymous true\n" > /etc/mosquitto/ci.conf'
+          sudo mosquitto -d -c /etc/mosquitto/ci.conf
+          sleep 5
           mosquitto_pub -h localhost -p 1883 -t ci/test -m hello || true
 
       - name: Start MinIO
@@ -103,12 +103,13 @@ jobs:
           wget -q https://dl.min.io/server/minio/release/linux-amd64/minio
           chmod +x minio
           mkdir -p /tmp/minio-data
-          ./minio server /tmp/minio-data --address :9000 --console-address :9002 &
-          sleep 5
+          nohup ./minio server /tmp/minio-data --address :9000 --console-address :9002 > /tmp/minio.log 2>&1 &
+          sleep 8
           wget -q https://dl.min.io/client/mc/release/linux-amd64/mc
           chmod +x mc
           ./mc alias set local http://localhost:9000 minioadmin minioadmin
           ./mc mb --ignore-existing local/rail-monitor
+          ./mc admin info local || true
 
       - name: Generate .env for CI (from .env.example, no real secrets)
         run: |
