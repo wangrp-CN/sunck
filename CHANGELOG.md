@@ -4,6 +4,30 @@
 
 ---
 
+## [2026-07-21] 安全增强 + 时区治理 + 测试护栏 + 收尾闭环
+
+### 媒体 presigned 化（#10 关闭匿名公开缺口）
+- 新增 `GET /api/v1/media/access`：认证 + 部门隔离 → 返回预签名直连 URL；前端 `<img>/<video>` 直连，无需 Authorization 头。
+- `/presigned` 与代理预览 `/{key:path}` 均加认证与 `_media_visible` 校验（越权/不存在一律 404，不泄露存在性）。
+- 前端 `AttachmentManager` / `MediaUpload` / `AlarmView` 改走 presigned 批量解析 + 判空兜底。
+
+### WorkPlan 时区列迁移（#11 深化）
+- `work_plan.plan_start/plan_end` 由 naive `DateTime` 转 `timestamptz`（Alembic 迁移，naive 值视作北京解释，避免 UTC 漂移 8h）。
+- engine 固定会话时区 `Asia/Shanghai`；`WorkPlanOut` 输出北京墙钟字符串；`ensure_aware_local` 兼容 None。
+
+### 轻量收尾
+- W293 docstring 尾随空白：经 `ruff --select W291,W293` 复核仓库已零残留（ruff-format pre-commit 已 strip），无需改动。
+- #152 端口冲突验收：`run_demo.sh` 端口占用检测改用 venv python `socket.connect_ex` 可移植探测（不依赖 lsof），冲突即友好退出、绝不自动 kill 外部进程。
+
+### 测试护栏
+- 前端 Vitest 补全 3 个 spec（`utils/media` / `AttachmentManager` / `MediaUpload`），守护 #10 媒体 presigned 链路。
+- **后端 pytest 116 用例 + 前端 Vitest 55 用例（11 文件）全绿**；`npm run type-check`（vue-tsc）无错。
+
+### 交付与 CI
+- 提交：`0f94371`(安全+时区) / `9888a7e`(#152) / `a1eecc4`(前端测试)。
+- CI 运行 `29807600876`（head=a1eecc4c）**completed success**，全量门禁（migrate/seed/pytest/build/vitest/live）通过。
+- GitHub 默认分支由 `master` 切到 `main`（`main` 为项目主线，`master` 保留为无关历史，未删）。
+
 ## [2026-07-17] 告警可视化闭环收尾：四端图表一致 + 测试护栏 + 打包优化
 
 ### 告警可视化 · 四端图表一致性

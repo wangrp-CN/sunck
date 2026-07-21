@@ -37,3 +37,4 @@ pytest>=8.2.0             # 单元测试
 pytest-asyncio>=0.23.0    # 异步测试
 locust>=2.24.0            # 压测（模拟设备并发上报）
 prometheus-client>=0.20.0 # 指标暴露（配合 Prometheus）
+black>=26.3.1             # 代码格式化（dev；≥26.3.1 修复 PYSEC-2026-2120/2121 中危）

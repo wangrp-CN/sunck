@@ -93,3 +93,9 @@ Werkzeug==3.1.8
 wsproto==1.3.2
 zope.event==6.2
 zope.interface==8.5
+
+# --- dev: black（2026-07-21 增补，修复 PYSEC-2026-2120/2121 中危，fix≥26.3.1）---
+black==26.5.1
+pathspec==1.1.1
+platformdirs==4.10.0
+tomli==2.4.1
