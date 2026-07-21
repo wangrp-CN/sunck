@@ -39,6 +39,21 @@ log()  { echo -e "${c_blue}>>>${c_reset} $*"; }
 ok()   { echo -e "${c_green}✓${c_reset} $*"; }
 err()  { echo -e "${c_red}✗ $*${c_reset}"; }
 
+# 端口是否被占用（可移植：用 venv python 的 socket.connect 探测，不依赖 lsof）
+# 返回 0=被占用(有进程监听) / 1=空闲。避免某些环境(如缺少 lsof 的 CI runner)误判。
+port_in_use() {
+  "$VENV/python" - "$PORT" <<'PY' >/dev/null 2>&1
+import socket, sys
+port = int(sys.argv[1])
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(0.5)
+try:
+    sys.exit(0 if s.connect_ex(("127.0.0.1", port)) == 0 else 1)
+finally:
+    s.close()
+PY
+}
+
 [ -x "$VENV/python" ] || { err "未找到 .venv，请先创建虚拟环境并安装依赖"; exit 1; }
 command -v brew >/dev/null 2>&1 || log "警告：未检测到 brew，native-services.sh 可能无法启动原生服务"
 
@@ -157,7 +172,7 @@ fi
 # ---- [4/6] 后端 ----
 # 端口冲突检测：绝不自动终止占用端口的外部进程（如 PyCharm 后端），
 # 冲突时友好报错退出，提示用户释放或改用 --port。
-if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN -t >/dev/null 2>&1; then
+if port_in_use; then
   err "端口 $PORT 已被其他进程占用（如 PyCharm 后端）。门禁不自动终止外部进程。"
   err "请先释放该端口，或改用其他端口： bash $0 --skip-services --port 8011"
   exit 1
