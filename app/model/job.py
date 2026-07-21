@@ -30,11 +30,13 @@ class WorkPlan(Base, TimestampMixin, CreatorMixin, SoftDeleteMixin):
         String(255), nullable=True, comment="计划时间(展示用文本)"
     )
     # 结构化时间窗（规则引擎时间范围门控）：空表示不限制
+    # #11 深化：改为带时区 timestamptz，配合 engine session timezone=Asia/Shanghai，
+    # 使 naive 写入按北京解释、读取为 aware 北京，消除 locale 漂移。
     plan_start: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True, comment="计划生效开始(空=不限制)"
+        DateTime(timezone=True), nullable=True, comment="计划生效开始(空=不限制, 带时区)"
     )
     plan_end: Mapped[datetime | None] = mapped_column(
-        DateTime, nullable=True, comment="计划生效结束(空=不限制)"
+        DateTime(timezone=True), nullable=True, comment="计划生效结束(空=不限制, 带时区)"
     )
     # 状态：草稿/执行中/已完成
     status: Mapped[str] = mapped_column(String(16), default="草稿", comment="计划状态")

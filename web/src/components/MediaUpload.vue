@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref, computed } from "vue";
+import { ref, computed, watch } from "vue";
 import { uploadMedia } from "@/api/media";
+import { mediaKeyFromUrl, resolvePresigned } from "@/utils/media";
 
 const props = withDefaults(
   defineProps<{
@@ -27,6 +28,22 @@ const fileInput = ref<HTMLInputElement | null>(null);
 const uploading = ref(false);
 
 const items = computed(() => props.modelValue ?? []);
+
+// 每个媒体 URL（代理 URL）→ 部门隔离的预签名直连 URL（取代匿名代理，关闭 #10）
+const resolved = ref<Record<string, string>>({});
+watch(
+  items,
+  async () => {
+    const keys = items.value.map((u) => mediaKeyFromUrl(u));
+    const map = await resolvePresigned(keys);
+    const m: Record<string, string> = {};
+    items.value.forEach((u, i) => {
+      m[u] = map[keys[i]] || "";
+    });
+    resolved.value = m;
+  },
+  { immediate: true },
+);
 
 function mediaType(url: string): "image" | "video" | "file" {
   const ext = (url.split("?")[0].split("#")[0].split(".").pop() || "").toLowerCase();
@@ -99,8 +116,8 @@ function removeAt(idx: number) {
 
     <div v-if="items.length" class="grid">
       <div v-for="(url, idx) in items" :key="url + idx" class="cell">
-        <img v-if="mediaType(url) === 'image'" :src="url" class="thumb" alt="媒体" />
-        <video v-else-if="mediaType(url) === 'video'" :src="url" class="thumb" controls preload="metadata" />
+        <img v-if="mediaType(url) === 'image' && resolved[url]" :src="resolved[url]" class="thumb" alt="媒体" />
+        <video v-else-if="mediaType(url) === 'video' && resolved[url]" :src="resolved[url]" class="thumb" controls preload="metadata" />
         <div v-else class="file-box">文件</div>
         <el-button
           v-if="!disabled"

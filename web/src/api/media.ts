@@ -29,6 +29,17 @@ export function presignedMedia(
   });
 }
 
+// 获取部门隔离的预签名媒体 URL（前端 <img>/<video> 展示用，取代匿名代理 URL）
+export function fetchMediaAccess(
+  key: string,
+): Promise<{ key: string; presigned_url: string }> {
+  return http({
+    url: "/v1/media/access",
+    method: "GET",
+    params: { key },
+  });
+}
+
 // 整体替换某告警的媒体 URL 列表，返回更新后的列表
 export function putAlarmMedia(
   alarmId: number,

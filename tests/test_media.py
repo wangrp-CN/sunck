@@ -72,15 +72,18 @@ def test_media_upload_preview_range_delete(client, admin_token):
     assert metas[0]["size"] == len(payload)
 
     try:
-        # 完整预览 200
-        r = client.get(f"/api/v1/media/{key}")
+        # 完整预览 200（代理预览需认证）
+        r = client.get(f"/api/v1/media/{key}", headers=_headers(admin_token))
         assert r.status_code == 200, r.text
         assert r.headers.get("accept-ranges") == "bytes"
         assert int(r.headers["content-length"]) == len(payload)
         assert r.content == payload
 
         # Range 预览 206
-        r = client.get(f"/api/v1/media/{key}", headers={"Range": "bytes=0-99"})
+        r = client.get(
+            f"/api/v1/media/{key}",
+            headers={"Range": "bytes=0-99", **_headers(admin_token)},
+        )
         assert r.status_code == 206, r.text
         assert r.headers["content-range"] == f"bytes 0-99/{len(payload)}"
         assert int(r.headers["content-length"]) == 100
@@ -90,8 +93,8 @@ def test_media_upload_preview_range_delete(client, admin_token):
         r = client.delete(f"/api/v1/media/{key}", headers=_headers(admin_token))
         assert r.status_code == 200, r.text
 
-    # 删除后预览 404
-    r = client.get(f"/api/v1/media/{key}")
+    # 删除后预览 404（需认证）
+    r = client.get(f"/api/v1/media/{key}", headers=_headers(admin_token))
     assert r.status_code == 404
 
 
@@ -123,9 +126,43 @@ def test_media_presigned(client, admin_token):
 
 
 def test_media_safe_key_rejected(client):
-    """非法 key（路径穿越）被 400 拒绝。"""
+    """非法 key（路径穿越）被拒绝（未认证 401 或安全拦截 400/404）。"""
     r = client.get("/api/v1/media/../etc/passwd")
-    assert r.status_code in (400, 404), r.text
+    assert r.status_code in (400, 401, 403, 404), r.text
+
+
+def test_media_access_scoped(client, admin_token):
+    """/v1/media/access：部门隔离的预签名直连 URL；越权/不存在返回 404。"""
+    files = [("files", ("acc.bin", b"access-control-0123456789", "image/png"))]
+    r = client.post(
+        "/api/v1/media/upload",
+        headers=_headers(admin_token),
+        data={"prefix": "tests"},
+        files=files,
+    )
+    assert r.status_code == 200, r.text
+    key = r.json()["data"][0]["key"]
+    try:
+        # 鉴权用户可获取预签名直连 URL
+        r = client.get(
+            "/api/v1/media/access",
+            headers=_headers(admin_token),
+            params={"key": key},
+        )
+        assert r.status_code == 200, r.text
+        d = r.json()["data"]
+        assert d["key"] == key
+        assert d["presigned_url"].startswith("http")
+    finally:
+        client.delete(f"/api/v1/media/{key}", headers=_headers(admin_token))
+
+    # 不存在的 key → 404（不泄露存在性）
+    r = client.get(
+        "/api/v1/media/access",
+        headers=_headers(admin_token),
+        params={"key": "tests/nope/not-exist"},
+    )
+    assert r.status_code == 404, r.text
 
 
 def test_alarm_media_mount_and_readback(client, admin_token):

@@ -137,6 +137,39 @@ _MODEL_DEPT_LINK: dict[type, str] = {
 
 
 # ---------------------------------------------------------------------------
+# 实体 → 归属项目 解析（供媒体等按 key 归口的端点复用）
+# ---------------------------------------------------------------------------
+
+#: 实体类型 → ORM 模型（用于解析其归属项目 ID）。
+_ENTITY_PROJECT_MODEL: dict[str, type] = {
+    "project": Project,
+    "work_plan": WorkPlan,
+    "alarm": Alarm,
+    "device": LocateDevice,
+    "person": Person,
+    "machine": Machine,
+}
+
+
+def resolve_entity_project_id(db: Session, entity_type: str, entity_id: int) -> Optional[int]:
+    """根据关联实体类型与 ID 解析其归属项目 ID；无法解析返回 None。
+
+    - ``project`` 自身即项目，直接返回 entity_id。
+    - 其余类型（work_plan/alarm/device/person/machine）取其 project_id。
+    - 模型未注册或记录不存在返回 None。
+    """
+    if entity_type == "project":
+        return entity_id
+    model = _ENTITY_PROJECT_MODEL.get(entity_type)
+    if model is None:
+        return None
+    obj = db.get(model, entity_id)
+    if obj is None:
+        return None
+    return getattr(obj, "project_id", None)
+
+
+# ---------------------------------------------------------------------------
 # 应用过滤
 # ---------------------------------------------------------------------------
 
@@ -177,5 +210,6 @@ __all__ = [
     "VIA_PROJECT",
     "get_department_descendant_ids",
     "resolve_data_scope",
+    "resolve_entity_project_id",
     "apply_data_scope",
 ]

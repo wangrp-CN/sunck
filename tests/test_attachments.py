@@ -115,9 +115,9 @@ def test_attachment_upload_list_delete(client, admin_token):
         assert r.status_code == 200, r.text
         assert len(r.json()["data"]) == 1
 
-        # 被删对象预览 404（软删同时删了 MinIO 对象）
+        # 被删对象预览 404（软删同时删了 MinIO 对象；代理预览需认证）
         del_key = [c["media_key"] for c in created if c["id"] == del_id][0]
-        r = client.get(f"/api/v1/media/{del_key}")
+        r = client.get(f"/api/v1/media/{del_key}", headers=_headers(admin_token))
         assert r.status_code == 404
 
         # 重复删除 → 404

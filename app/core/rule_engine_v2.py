@@ -25,7 +25,7 @@ from typing import Any
 from shapely import Point, wkt
 from sqlalchemy import select
 
-from app.core.clock import now_naive_local
+from app.core.clock import ensure_aware_local, now_local
 from app.core.constants import (
     ALARM_TYPE_DEVICE,
     ALARM_TYPE_DISTANCE,
@@ -109,16 +109,18 @@ def is_plan_active_now(plan: Any, now: datetime | None = None) -> bool:
     - status 必须为「执行中」
     - 若设置 plan_start/plan_end，now 须落在其闭区间内
 
-    now 缺省取「北京时间的 naive」（``now_naive_local``）：``plan_start/plan_end`` 仍为
-    naive 列，两侧同为 naive 北京时间可正确比较，且不再依赖服务器 locale 时区。
+    #11 深化后 ``plan_start/plan_end`` 为 timestamptz（aware）。统一用 aware 比较：
+    now 缺省取 ``now_local()``（aware 北京）；plan 的起止时间经 ``ensure_aware_local``
+    补全为 aware（兼容仍为 naive 的测试/Pydantic 对象）。两侧同为 aware 北京，
+    与引擎 session timezone=Asia/Shanghai 一致，消除对服务器 locale 的依赖。
     """
-    now = now or now_naive_local()
+    now = ensure_aware_local(now or now_local())
     if not getattr(plan, "is_start", False):
         return False
     if getattr(plan, "status", None) != "执行中":
         return False
-    ps = getattr(plan, "plan_start", None)
-    pe = getattr(plan, "plan_end", None)
+    ps = ensure_aware_local(getattr(plan, "plan_start", None))
+    pe = ensure_aware_local(getattr(plan, "plan_end", None))
     if ps is not None and now < ps:
         return False
     if pe is not None and now > pe:
@@ -198,7 +200,7 @@ def load_active_plans(db, project_id: int | None, device_no: str | None = None) 
     - 处于 plan_start/plan_end 时间窗内
     - device_no 给定时，计划须覆盖该设备
     """
-    now = now_naive_local()
+    now = now_local()
     stmt = (
         select(WorkPlan)
         .where(WorkPlan.is_deleted.is_(False))

@@ -58,11 +58,14 @@ def day_end_local(d: date | None = None) -> datetime:
     return datetime.combine(d, time.max, tzinfo=LOCAL_TZ)
 
 
-def ensure_aware_local(dt: datetime) -> datetime:
+def ensure_aware_local(dt: datetime | None) -> datetime | None:
     """把可能为 naive 的 datetime 视作业务时区补全为 aware；已 aware 原样返回。
 
-    用于稳健处理外部传入（如用户 ISO 字符串）可能缺时区的时间边界。
+    用于稳健处理外部传入（如用户 ISO 字符串）可能缺时区的时间边界；
+    传入 ``None``（表示「无时间窗」）时原样返回 ``None``。
     """
+    if dt is None:
+        return None
     if dt.tzinfo is None:
         return dt.replace(tzinfo=LOCAL_TZ)
     return dt

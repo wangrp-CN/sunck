@@ -18,10 +18,10 @@
 
     <div v-if="items.length" class="att-grid">
       <div v-for="it in items" :key="it.id" class="att-card">
-        <img v-if="isImage(it)" :src="it.url" class="att-thumb" alt="附件" />
+        <img v-if="isImage(it) && resolved[it.id]" :src="resolved[it.id]" class="att-thumb" alt="附件" />
         <video
-          v-else-if="isVideo(it)"
-          :src="it.url"
+          v-else-if="isVideo(it) && resolved[it.id]"
+          :src="resolved[it.id]"
           class="att-thumb"
           controls
           preload="metadata"
@@ -54,6 +54,7 @@ import {
   uploadAttachments,
   deleteAttachment,
 } from "@/api/attachment";
+import { resolvePresigned } from "@/utils/media";
 import type { Attachment } from "@/types";
 
 const props = defineProps<{
@@ -63,16 +64,27 @@ const props = defineProps<{
 
 const items = ref<Attachment[]>([]);
 const uploading = ref(false);
+// 附件 id → 部门隔离的预签名直连 URL（取代匿名代理 URL，关闭 #10 公开缺口）
+const resolved = ref<Record<number, string>>({});
 
 async function load() {
   if (!props.entityId) {
     items.value = [];
+    resolved.value = {};
     return;
   }
   try {
     items.value = await fetchAttachments(props.entityType, props.entityId);
+    const keys = items.value.map((i) => i.media_key);
+    const map = await resolvePresigned(keys);
+    const m: Record<number, string> = {};
+    items.value.forEach((it) => {
+      m[it.id] = map[it.media_key] || "";
+    });
+    resolved.value = m;
   } catch {
     items.value = [];
+    resolved.value = {};
   }
 }
 

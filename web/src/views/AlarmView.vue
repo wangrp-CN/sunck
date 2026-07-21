@@ -26,6 +26,7 @@ import { formatPeriodLabel, granularityLabel } from "@/utils/period";
 import { fetchProjects } from "@/api/project";
 import { fetchFences } from "@/api/fence";
 import { putAlarmMedia } from "@/api/media";
+import { mediaKeyFromUrl, resolvePresigned } from "@/utils/media";
 import { wgs84ToGcj02 } from "@/utils/geo";
 import { tc, snapTrendMaxOf } from "@/utils/snapshot";
 import MapPanel from "@/components/MapPanel.vue";
@@ -72,6 +73,8 @@ const total = ref(0);
 const page = ref(1);
 const size = ref(20);
 const loading = ref(false);
+// 告警媒体 URL（代理 URL）→ 部门隔离的预签名直连 URL 映射（关闭 #10 公开缺口）
+const mediaSrc = ref<Record<string, string>>({});
 const filters = reactive({
   project_id: null as number | null,
   alarm_type: "" as string,
@@ -114,6 +117,7 @@ async function loadAlarms() {
     });
     list.value = res.items;
     total.value = res.total;
+    void resolveAllMedia();
   } catch (e: any) {
     ElMessage.error(e?.message || "加载告警失败");
   } finally {
@@ -126,6 +130,25 @@ async function loadAlarms() {
 function onPageChange(p: number) {
   page.value = p;
   loadAlarms();
+}
+
+// 把当前列表里所有告警媒体的代理 URL 解析为部门隔离的预签名直连 URL
+async function resolveAllMedia() {
+  const urls: string[] = [];
+  for (const a of list.value) {
+    if (a.media_urls) urls.push(...a.media_urls);
+  }
+  if (!urls.length) {
+    mediaSrc.value = {};
+    return;
+  }
+  const keys = urls.map((u) => mediaKeyFromUrl(u));
+  const map = await resolvePresigned(keys);
+  const m: Record<string, string> = {};
+  urls.forEach((u, i) => {
+    m[u] = map[keys[i]] || "";
+  });
+  mediaSrc.value = m;
 }
 
 function onSizeChange(s: number) {
@@ -687,16 +710,16 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
             </template>
             <div class="media-gallery">
               <img
-                v-for="u in row.media_urls.filter((x: string) => mediaType(x) === 'image')"
+                v-for="u in (row.media_urls || []).filter((x: string) => mediaType(x) === 'image' && mediaSrc[x])"
                 :key="'i' + u"
-                :src="u"
+                :src="mediaSrc[u]"
                 class="g-thumb"
                 alt="媒体"
               />
               <video
-                v-for="u in row.media_urls.filter((x: string) => mediaType(x) === 'video')"
+                v-for="u in (row.media_urls || []).filter((x: string) => mediaType(x) === 'video' && mediaSrc[x])"
                 :key="'v' + u"
-                :src="u"
+                :src="mediaSrc[u]"
                 class="g-thumb"
                 controls
                 preload="metadata"

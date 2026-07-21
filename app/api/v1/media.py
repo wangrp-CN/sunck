@@ -1,14 +1,14 @@
 """媒体管理路由：上传 / 预览 / 删除 / 预签名。
 
-- POST /upload          认证后多文件上传到 MinIO 媒体桶，返回可预览的 url
-- GET  /{key:path}     公共预览（供 <img>/<video> 直接使用），支持 Range 视频拖动
+- POST /upload          认证后多文件上传到 MinIO 媒体桶，返回 key / 预览 url / 元信息
+- GET  /access          认证 + 部门隔离，返回对象预签名直连 URL（前端 <img>/<video> 用）
+- GET  /presigned       认证 + 部门隔离，返回预签名 URL（便于直连 MinIO）
+- GET  /{key:path}     需认证预览（支持 Range 视频拖动），供特殊场景兜底
 - DELETE /{key:path}   认证后删除对象
-- GET  /presigned      认证后获取对象预签名 URL（可选，便于直连 MinIO）
 
-预览接口不做鉴权，以便浏览器 <img>/<video> 直接引用（对象存储本身按 key 隔离，
-且 key 为 UUID，无法被猜测）。这是**有意的设计权衡**（可用性优先，详见 OPTIMIZATION_REPORT #10）：
-真正的部门级隔离需前端改走预签名 URL（`minio_client.presigned_get_url`）并摒弃裸 <img> 引用，
-列入后续单独立项；本轮保持现状，以避免破坏前端媒体展示链路。
+部门级隔离（OPTIMIZATION_REPORT #10 已闭环）：媒体不再匿名公开。前端展示统一改走
+``/access`` 返回的 presigned_url（签名直连 MinIO，无需 Authorization 头）；``/access``
+会按媒体归属项目执行数据范围校验，越权返回 404。原匿名代理预览接口已改为需认证。
 统一返回 ApiResponse；data 字段承载实际负载（前端 http<T> 自动解包）。
 """
 
@@ -17,16 +17,23 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-from typing import Annotated
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.core import minio_client as mcio
-from app.core.deps import get_current_user
+from app.core.data_scope import DataScope, apply_data_scope, resolve_entity_project_id
+from app.core.database import get_db
+from app.core.deps import get_current_user, get_data_scope
 from app.core.minio_client import UPLOAD_EXECUTOR, upload_object
 from app.core.responses import ApiResponse
+from app.model.alarm import Alarm
+from app.model.attachment import Attachment
+from app.model.project import Project
 from app.model.system import User
 
 router = APIRouter(tags=["媒体管理"])
@@ -50,6 +57,49 @@ def _safe_key(key: str) -> str:
     if not key or key.startswith("/") or ".." in key.split("/"):
         raise HTTPException(status_code=400, detail="非法的对象 key")
     return key
+
+
+def _resolve_media_project(db: Session, key: str) -> Optional[int]:
+    """解析媒体 key 归属的项目 ID（用于部门数据隔离）；无法归属返回 None。
+
+    - 通用附件：按 Attachment.media_key 命中 → 解析实体 → 归属项目。
+    - 告警媒体：Alarm.media_urls 存为 JSON 字符串（含代理 URL），按 key 子串
+      定位归属告警 → 取其 project_id。
+    """
+    att = db.scalar(
+        select(Attachment).where(Attachment.media_key == key, Attachment.is_deleted.is_(False))
+    )
+    if att is not None:
+        pid = resolve_entity_project_id(db, att.entity_type, att.entity_id)
+        if pid is not None:
+            return pid
+    alarm = db.scalar(
+        select(Alarm).where(Alarm.media_urls.isnot(None), Alarm.media_urls.like(f"%{key}%"))
+    )
+    if alarm is not None:
+        return alarm.project_id
+    return None
+
+
+def _media_visible(db: Session, key: str, scope: DataScope) -> bool:
+    """当前用户数据范围是否可见该媒体（按归属项目判定）。
+
+    - 先确认对象在 MinIO 中真实存在：不存在一律 404（不泄露对象是否「存在/归属」）。
+    - 全部数据范围（超管）直接可见任何存在的对象。
+    - 其余用户：媒体须能解析到其归属项目，且该项目落在当前用户数据范围内。
+    """
+    try:
+        mcio.stat_object(key)
+    except Exception:  # noqa: BLE001
+        return False
+    if scope.is_all:
+        return True
+    pid = _resolve_media_project(db, key)
+    if pid is None:
+        return False
+    stmt = select(Project).where(Project.id == pid)
+    stmt = apply_data_scope(stmt, Project, scope)
+    return db.scalar(stmt) is not None
 
 
 def _iter_stream(resp, chunk: int = _CHUNK):
@@ -116,23 +166,54 @@ async def upload_media(
     return ApiResponse.success(data=results)
 
 
-@router.get("/presigned", summary="获取预签名 URL", response_model=ApiResponse)
+@router.get("/access", summary="获取部门隔离的预签名媒体 URL", response_model=ApiResponse)
+def media_access(
+    key: Annotated[str, Query(description="对象 key")],
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    scope: DataScope = Depends(get_data_scope),
+) -> ApiResponse:
+    """获取预签名直连 URL（前端 <img>/<video> 直接使用，无需携带 Authorization）。
+
+    部门数据隔离：仅当前用户数据范围内可见项目下的媒体可获取；越权或不存在
+    一律返回 404（不泄露对象是否存在）。前端应以此返回的 presigned_url 作为
+    <img>/<video> 的 src，取代原先匿名可访问的代理 URL（关闭 #10 公开缺口）。
+    """
+    _safe_key(key)
+    if not _media_visible(db, key, scope):
+        raise HTTPException(status_code=404, detail="媒体对象不存在或无权访问")
+    url = mcio.presigned_get_url(key)
+    return ApiResponse.success(data={"key": key, "presigned_url": url})
+
+
+@router.get("/presigned", summary="获取预签名 URL（部门隔离）", response_model=ApiResponse)
 def presigned_media(
     key: Annotated[str, Query(description="对象 key")],
     expiry: Annotated[int, Query(description="有效期秒")] = 3600,
+    db: Session = Depends(get_db),
     _: User = Depends(get_current_user),
+    scope: DataScope = Depends(get_data_scope),
 ) -> ApiResponse:
     """认证后生成预签名 GET URL（便于前端直连 MinIO，绕过代理）。
+
+    与 /access 同样执行部门数据隔离校验。
 
     NOTE: 必须定义在 `/{key:path}` 之前，否则会被通配路由吞掉（key='presigned'）。
     """
     _safe_key(key)
+    if not _media_visible(db, key, scope):
+        raise HTTPException(status_code=404, detail="媒体对象不存在或无权访问")
     url = mcio.presigned_get_url(key, expires=expiry)
     return ApiResponse.success(data={"key": key, "url": mcio.public_url(key), "presigned_url": url})
 
 
-@router.get("/{key:path}", summary="预览媒体对象（公共）")
-def preview_media(key: str, request: Request) -> StreamingResponse:
+@router.get("/{key:path}", summary="预览媒体对象（需认证）")
+def preview_media(
+    key: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> StreamingResponse:
     """公共预览：图片/视频直接用；支持 HTTP Range 以实现视频拖动。"""
     _safe_key(key)
     try:
