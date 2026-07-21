@@ -20,6 +20,13 @@ export default defineConfig({
         target: "http://127.0.0.1:8000",
         changeOrigin: true,
       },
+      // 实时 WebSocket：开发期与 /api 同样转发到后端 8000，
+      // 配合前端 ws.ts 用 window.location 同源连接，生产期由 nginx /ws 反代。
+      "/ws": {
+        target: "http://127.0.0.1:8000",
+        changeOrigin: true,
+        ws: true,
+      },
     },
   },
   build: {

@@ -10,9 +10,11 @@ export interface RealtimeHandlers {
 }
 
 function wsBase(): string {
-  // 开发期后端在 8000；生产可经同域名反代。用 location.hostname 自适应。
-  const host = window.location.hostname;
-  return `ws://${host}:8000/ws/alarm`;
+  // 同源反代：直接复用页面协议(ws/wss)与 host（含端口），
+  // 开发期经 vite /ws 代理、生产期经 nginx /ws 代理，均无需硬编码端口。
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  const host = window.location.host; // 含非标准端口（如开发期 :5173）
+  return `${proto}//${host}/ws/alarm`;
 }
 
 export function createRealtimeSocket(

@@ -83,9 +83,10 @@ class Settings(BaseSettings):
     # ---------- 高德地图 Web 服务 ----------
     amap_web_key: str = ""
 
-    # ---------- Celery（以原生 Redis 作为 broker/backend） ----------
-    celery_broker_url: Optional[str] = None
-    celery_result_backend: Optional[str] = None
+    # ---------- MinIO 公网基址（部署相关） ----------
+    # 留空则使用内部端点（开发机直连）；生产经 nginx /files/ 同源代理时
+    # 设为 https://<域名>/files，presigned URL 会替换为主机部分以便浏览器直连。
+    minio_public_url: str = ""
 
     @model_validator(mode="after")
     def assemble_urls(self) -> "Settings":
@@ -97,13 +98,10 @@ class Settings(BaseSettings):
         if not self.redis_url:
             auth = f":{self.redis_password}@" if self.redis_password else ""
             self.redis_url = f"redis://{auth}{self.redis_host}:{self.redis_port}/{self.redis_db}"
-        redis_auth = f":{self.redis_password}@" if self.redis_password else ""
-        if not self.celery_broker_url:
-            self.celery_broker_url = f"redis://{redis_auth}{self.redis_host}:{self.redis_port}/1"
-        if not self.celery_result_backend:
-            self.celery_result_backend = (
-                f"redis://{redis_auth}{self.redis_host}:{self.redis_port}/2"
-            )
+        # MinIO 公网基址缺省回退到内部端点（开发机直连）
+        if not self.minio_public_url:
+            scheme = "https" if self.minio_secure else "http"
+            self.minio_public_url = f"{scheme}://{self.minio_endpoint}"
         return self
 
     @property

@@ -28,6 +28,7 @@ cp .env.example .env
 #   POSTGRES_PASSWORD / REDIS_PASSWORD / MINIO_*/ MQTT_* → 强密码
 #   CORS_ORIGINS      → 改为前端正式域名，禁止 *
 #   AMAP_WEB_KEY      → 填真实高德 Key（否则地图降级散点）
+#   MINIO_PUBLIC_URL  → 生产经 nginx /files/ 时设为 https://<域名>/files（媒体可公网直连）
 chmod 600 .env
 ```
 
@@ -103,9 +104,12 @@ sudo cp nginx.conf /etc/nginx/conf.d/rail_monitor.conf   # Linux
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
-> `nginx.conf` 中前端 `root` 路径为示例（`/Users/wangpeng/.../web/dist`），生产请改为实际 `web/dist` 绝对路径（如 `/var/www/rail_monitor/web/dist`）。
-
-证书续期：`sudo certbot renew`（建议配 cron/systemd timer）。
+> **关键约定（务必核对）**：
+> - 前端 `root` 已设为 `/opt/rail_monitor/web/dist`（与 systemd 单元部署目录一致）。
+> - `location /api/` 与 `location /ws/` 的 `proxy_pass` **不带尾斜杠**，以保留原始 `/api`、`/ws` 前缀转发给后端（后端 `api_router` 挂载于 `/api`、`/ws/alarm` 为 WebSocket 路由；若误加尾斜杠会剥离前缀导致 404）。
+> - WebSocket 前端经**同源**连接（`ws.ts` 用 `window.location` 推导 `ws/wss` 与 host），生产由 nginx `/ws/` 反代到后端 8000，无需对外暴露 8000 端口。
+> - 媒体经 nginx `/files/` 同源代理暴露（配合 `.env` 的 `MINIO_PUBLIC_URL=https://<域名>/files`），外部浏览器可直连加载，MinIO 端口不对外。
+> - 证书续期：`sudo certbot renew`（建议配 cron/systemd timer）。
 
 ---
 
@@ -134,6 +138,7 @@ git push -u origin main
 | 重新迁移 | `.venv/bin/alembic upgrade head` |
 | 跑端到端门禁 | `bash scripts/run_demo.sh --skip-services --port 8011` |
 | 健康检查 | `curl -fsS http://127.0.0.1:8000/health` |
+| 指标抓取 | 后端 `/metrics`（Prometheus 客户端）；抓取配置见 `deploy/prometheus.yml`（目标 `127.0.0.1:8000`，原生部署非 Docker） |
 
 ---
 

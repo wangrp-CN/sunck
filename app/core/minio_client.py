@@ -113,11 +113,20 @@ def remove_object(object_name: str) -> None:
 
 
 def presigned_get_url(object_name: str, expires: int = 3600) -> str:
-    """生成预签名 GET URL（默认 1 小时有效）。"""
+    """生成预签名 GET URL（默认 1 小时有效）。
+
+    若配置了 minio_public_url（生产经 nginx /files/ 同源代理），将签名 URL 中的
+    内部端点替换为公网基址，使外部浏览器可直连加载媒体；缺省使用内部端点（开发机直连）。
+    """
     ensure_bucket()
-    return get_client().presigned_get_object(
-        BUCKET, object_name, expires=timedelta(seconds=expires)
-    )
+    url = get_client().presigned_get_object(BUCKET, object_name, expires=timedelta(seconds=expires))
+    public = settings.minio_public_url
+    if public and settings.minio_endpoint:
+        scheme = "https" if settings.minio_secure else "http"
+        internal = f"{scheme}://{settings.minio_endpoint}"
+        if url.startswith(internal):
+            url = public + url[len(internal) :]
+    return url
 
 
 def public_url(object_name: str) -> str:
