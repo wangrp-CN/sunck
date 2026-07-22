@@ -4,6 +4,20 @@
 
 ---
 
+## [2026-07-22] 可观测性面板 + 部署文档增强（B 轨道收尾）
+
+> 在 `/metrics` 已就绪的基础上，补齐可直接导入的 Grafana 面板与本地演练文档，令生产化验证（B 轨道）闭环。
+
+### 1) Grafana 监控面板（`deploy/grafana-dashboard.json`）
+- 基于后端真实业务指标定制 11 个面板 / 18 条 PromQL，参数化 `${datasource}`，Grafana 一键 Import。
+- 四组：**服务概览**（WS 连接 / QPS / 5xx 错误率 / 队列积压）、**HTTP 流量与时延**（速率按状态码 + P50/P95/P99）、**业务指标**（`alarms_created_total` 按类型 / `mqtt_messages_total` 按设备类型）、**异步 Ingestion 管线**（`ingest_*` 吞吐/背压/处理时延/`ingest_queue_size` 积压）。
+
+### 2) 部署文档（`README.deploy.md`）
+- 新增「7. 可观测性（Prometheus + Grafana）」：完整指标清单表 + Prometheus 抓取 + Grafana 导入步骤。
+- 新增「9. 本地验证记录（macOS 无 systemd）」：固化 nginx 等效真起演练命令（高端口 + 临时 prefix，反代/WS 升级/MinIO 同源代理/安全头探针全绿）。
+
+---
+
 ## [2026-07-22] 功能模块优化（告警批量处置 / 列车接近专项 / 作业计划校验联动）
 
 > 按用户「下一步开始功能模块优化」推进，覆盖四项：告警批量处置、告警自动结束防堆积、列车接近专项告警、作业计划校验/联动深化。

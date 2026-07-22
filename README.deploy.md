@@ -128,7 +128,38 @@ git push -u origin main
 
 ---
 
-## 7. 运维速查
+## 7. 可观测性（Prometheus + Grafana）
+
+后端内置 `prometheus_client`，`/metrics` 暴露业务级指标（非仅进程指标）：
+
+| 指标 | 类型 | 含义 |
+|------|------|------|
+| `http_requests_total` | Counter | HTTP 请求数（labels: method/path/status） |
+| `http_request_duration_seconds` | Histogram | HTTP 时延分布（可算 P50/P95/P99） |
+| `alarms_created_total` | Counter | 告警产出数（labels: alarm_type/level） |
+| `mqtt_messages_total` | Counter | MQTT 设备上行报文数（label: device_type） |
+| `ws_connections` | Gauge | 当前 WebSocket 在线连接数 |
+| `ingest_enqueued_total` / `ingest_processed_total` | Counter | 异步 ingestion 入队/处理完成数 |
+| `ingest_inline_total` / `ingest_errors_total` | Counter | 背压回退（队列满转同步）/ 处理异常数 |
+| `ingest_queue_size` | Gauge | 当前异步队列积压长度 |
+| `ingest_process_duration_seconds` | Histogram | 单条上行处理时延（落库/规则/告警/推送） |
+
+**Prometheus 抓取**（`deploy/prometheus.yml`，目标 `127.0.0.1:8000`，原生部署非 Docker）：
+```bash
+prometheus --config.file=deploy/prometheus.yml
+# 验证目标 UP：浏览器打开 http://127.0.0.1:9090/targets
+```
+
+**Grafana 面板**（`deploy/grafana-dashboard.json`，含 11 个面板 / 18 条 PromQL）：
+1. Grafana 添加 Prometheus 数据源（URL 指向上面的 Prometheus，如 `http://127.0.0.1:9090`）。
+2. Dashboards → New → **Import** → Upload JSON file → 选 `deploy/grafana-dashboard.json`。
+3. 导入时选择刚建的 Prometheus 数据源（面板已参数化 `${datasource}`，无需改 PromQL）。
+
+面板分四组：**服务概览**（WS 连接 / QPS / 5xx 错误率 / 队列积压）、**HTTP 流量与时延**（速率按状态码 + P50/P95/P99）、**业务指标**（告警按类型 / MQTT 按设备类型）、**异步 Ingestion 管线**（吞吐/背压/处理时延/积压）。
+
+---
+
+## 8. 运维速查
 
 | 操作 | 命令 |
 |------|------|
@@ -138,12 +169,30 @@ git push -u origin main
 | 重新迁移 | `.venv/bin/alembic upgrade head` |
 | 跑端到端门禁 | `bash scripts/run_demo.sh --skip-services --port 8011` |
 | 健康检查 | `curl -fsS http://127.0.0.1:8000/health` |
-| 指标抓取 | 后端 `/metrics`（Prometheus 客户端）；抓取配置见 `deploy/prometheus.yml`（目标 `127.0.0.1:8000`，原生部署非 Docker） |
+| 指标抓取 | 后端 `/metrics`（Prometheus 客户端）；抓取配置见 `deploy/prometheus.yml` |
+| 导入监控面板 | Grafana Import `deploy/grafana-dashboard.json` |
 
 ---
 
-## 8. 本地验证记录（开发机）
+## 9. 本地验证记录（开发机 · macOS 无 systemd）
 
-- nginx 语法：`nginx -t`（配置见 `nginx.conf`，含 SSL/重定向/WebSocket/安全头）✅
+macOS 开发机不带 systemd，故生产形态以「等效验证」方式核验，确保配置在 Linux 真机 `systemctl enable --now` 前已无语法/链路问题：
+
+- **systemd 单元**：`deploy/*.service` 为标准写法，需在 Linux 真机 `systemctl` 落地（macOS 仅核对路径/用户/环境变量正确）。
+- **nginx 反代（等效真起演练）**：用高端口 + 临时 prefix 本机真实启动 nginx，镜像 `nginx.conf` 的反代逻辑（免 SSL，不碰 80/443），演完 `nginx -s stop`：
+  ```bash
+  # 1) 确保后端(:8000)与前端 dist、原生中间件在线
+  nginx -t -c /tmp/rail_drill/nginx_drill.conf -p /tmp/rail_drill   # 语法校验
+  nginx    -c /tmp/rail_drill/nginx_drill.conf -p /tmp/rail_drill   # 8080 启动
+  curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/                 # 静态首页 → 200
+  curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/api/v1/alarms/ping  # REST 反代 → 200
+  curl -s -i -N -H "Connection: Upgrade" -H "Upgrade: websocket" \
+       -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" -H "Sec-WebSocket-Version: 13" \
+       http://127.0.0.1:8080/ws/alarm | head   # 升级头透传+后端鉴权 403（安全头已注入）
+  curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8080/files/            # MinIO 同源代理 → 403(链路通,非 502)
+  nginx -s stop -c /tmp/rail_drill/nginx_drill.conf -p /tmp/rail_drill              # 收尾
+  ```
+  演练结论：静态首页 / `/api/` 反代 / `/ws/` WebSocket 升级 / `/files/` MinIO 同源代理 / 安全头注入链路全部验证通过。
+- **可观测性**：`/metrics` 返回 200（含 `http_requests_total` / `alarms_created_total` / `ingest_*` 等），Grafana 面板 JSON 已就绪。
 - `.gitignore` 已忽略 `.env`/`dist`/`__pycache__` ✅
 - 端到端门禁：`run_demo.sh --skip-services --port 8011` 全绿（实时/告警/轨迹/报表/导出/仪表盘/快照一致）✅
