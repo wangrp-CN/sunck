@@ -4,6 +4,43 @@
 
 ---
 
+## [2026-07-22] 四轨道计划（A/B/C/D）收官：质量加固 + 生产化 + 压测 + 文档治理
+
+> 阶段0~3 对应四轨道计划 #195–#203（2026-07-21 起全选推进）。本条目为各阶段交付与结论总览，路线图见文末「阶段基线」。
+
+### 阶段0 依赖审计（A/D 前置）
+- 前端 `npm audit --omit=dev` 0 漏洞；后端 `pip-audit` 仅 dev 工具 `black 24.8.0` 报 2 项中危（fix≥26.3.0），运行时依赖 0 漏洞。沙箱 ensurepip 崩溃致 `-r` 建 venv 不可用，改用「临时装 pip-audit 进 .venv → 直扫环境 → 卸载还原」。
+- 提交 `16a7d89`。
+
+### 阶段1 质量加固（A）
+- 前端补全 6 个核心视图 Vitest 单测（DashboardView / AlarmView / FenceView / TrackView / RealtimeView / DeviceOnlineView）。提交 `d0ee680`。
+- 后端补全 5 个 router 集成测（在线状态 / 甘特 / WS 推送等）。提交 `6981fda`。
+- 沿用既有护栏：后端 pytest 116+ 用例、前端 Vitest 55+ 用例全绿；`npm run type-check`（vue-tsc）无错。
+
+### 阶段2 生产化验证（B）
+- 修复生产形态硬伤：`nginx.conf` 的 `proxy_pass` 去尾斜杠（原尾斜杠剥离 `/api`、`/ws` 前缀致全 404）；`web/src/utils/ws.ts` 改从 `window.location` 推导 `ws/wss`+host（去硬编码 `:8000`）；前端 `root` 由开发机路径改 `/opt/rail_monitor/web/dist`；新增 `MINIO_PUBLIC_URL` 让 presigned 走 `/files` 基址（闭环媒体匿名缺口）；`prometheus.yml` 由 `host.docker.internal` 改 `127.0.0.1:8000`；`.env`/`.env.example` 移除未用 `CELERY_*`。
+- 本地校验：`nginx -t` 通过、pytest 136+1skip、`type-check` 零错。
+- 提交 `0bf9411`；`README.deploy.md` / `.env.example` 同步生产说明。
+
+### 阶段3 功能演进 · 千台设备压测（C）
+- 新增 `scripts/seed_stress.py`（登记 1000 台 `LOC-S` 设备 + `clean` 清理）、`scripts/mqtt_flood.py`（线程池 MQTT 上行洪泛，规避 Locust gevent/paho 冲突）、`scripts/locustfile.py`（`ViewerUser` HTTP 负载，admin 同源令牌绕过验证码）。
+- 报告：`STRESS_TEST_REPORT.md`。
+- **根因（重负载 65% HTTP 500）**：SQLAlchemy 默认连接池 5+10=15，叠加同步 per-message ingestion（每条上行开会话/commit）抢光池，`pool_timeout=30s` 后 500；61k 上行仅 456 落库（0.7%）。
+- **修复并验证**：`app/config.py` 新增 `db_pool_size=10/max_overflow=20/pool_timeout=10/pool_recycle=1800`（单 worker 30 连接，2-worker 聚合 60 < PG `max_connections=100` 留余量）；`app/core/database.py` 接入引擎。端口 8011 验证：真实端点 0% 失败、吞吐 1.82→8.16 req/s（4.5×）。
+- **待办（非阻塞）**：ingestion 异步/批处理（根本解法，解决 0.7% 落库）、查询索引/缓存（残余 ~9s 中位延迟）、ingestion 独立连接池、pool 饱和度监控。
+- 提交 `dbf042f`（6 文件 +438 行）。压测后 `seed_stress.py clean` 清理、停临时 8011 后端；8000 开发后端不受影响。
+
+### 阶段4 文档治理（D）
+- 路线图（CHANGELOG「阶段基线」）标注 A/B/C/D 四轨道全部 ✅。
+- CHANGELOG 补齐阶段0~4 交付与结论（本条目）。
+- 记忆归档：`.workbuddy/memory/` 更新四轨道收官状态（项目内部数据，不入库）。
+
+### 交付与 CI
+- 提交链：`16a7d89`(阶段0) → `d0ee680`(阶段1 前端) → `6981fda`(阶段1 后端) → `0bf9411`(阶段2) → `dbf042f`(阶段3)。
+- 推送 `dbf042f` 至 `origin/main`：`0bf9411..dbf042f`（触发 CI，一次性 PAT 推送后已还原 remote + 擦除钥匙串）。
+
+---
+
 ## [2026-07-21] 安全增强 + 时区治理 + 测试护栏 + 收尾闭环
 
 ### 媒体 presigned 化（#10 关闭匿名公开缺口）
@@ -81,3 +118,8 @@ PDF 趋势图、Excel 概览图、前端 DashboardView 迷你趋势图、AlarmVi
 - 阶段0（骨架 / RBAC / 部门隔离 / 验证码 / 前端骨架 / pre-commit 门禁）：✅
 - 阶段1（实时链路：MQTT 上报 → 落库 → 规则引擎判定 → WebSocket 推送）：✅
 - 阶段2~5（主数据 / 作业计划 / 告警 / 大屏）：✅ 告警可视化闭环已交付
+- 四轨道计划 A/B/C/D（2026-07-21 起，#195–#203）：✅ 全部收官
+  - A 质量加固（前端 6 视图单测 + 后端 5 router 集成测）：✅
+  - B 生产化验证（nginx/systemd 真起生产形态演练 + 部署文档）：✅
+  - C 功能演进（Locust 千台设备压测 + 连接池调优）：✅
+  - D 文档治理（路线图标注 + CHANGELOG 补齐 + 记忆归档）：✅
