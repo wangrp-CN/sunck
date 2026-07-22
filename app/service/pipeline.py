@@ -53,11 +53,20 @@ def _location_to_ws(loc: DeviceLocation) -> dict[str, Any]:
     }
 
 
-def handle_upstream(device_type: str, parsed: dict[str, Any], db: Session | None = None) -> dict:
-    """处理一条已解析的上行报文，返回处理摘要。"""
+def handle_upstream(
+    device_type: str,
+    parsed: dict[str, Any],
+    db: Session | None = None,
+    sessionmaker_factory: type[Session] = SessionLocal,
+) -> dict:
+    """处理一条已解析的上行报文，返回处理摘要。
+
+    sessionmaker_factory：落库所用的会话工厂。默认 SessionLocal（API 共享池）；
+    由 ingestion 异步调度层调用时传入 IngestSessionLocal（独立连接池，与 API 流量隔离）。
+    """
     own = db is None
     if own:
-        db = SessionLocal()
+        db = sessionmaker_factory()
     loc: DeviceLocation | None = None
     created_alarms: list = []
     try:

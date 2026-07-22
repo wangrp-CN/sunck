@@ -11,12 +11,13 @@ import json
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.cache import get_cached_json, set_cached_json
 from app.core.constants import down_topic
 from app.core.data_scope import DataScope
 from app.core.database import get_db
@@ -68,12 +69,18 @@ def _to_gcj(lng: float | None, lat: float | None) -> dict | None:
     dependencies=[Depends(require_permissions("device:list"))],
 )
 def get_locations(
+    request: Request,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     scope: DataScope = Depends(get_data_scope),
     project_id: int | None = None,
     device_type: str | None = None,
 ) -> ApiResponse:
     """返回每个设备最新一条位置（地图实时打点）。"""
+    _cached = get_cached_json(current_user.id, request.url.path, request.url.query)
+    if _cached is not None:
+        return ApiResponse(**_cached)
+
     rows = latest_locations(db, project_id=project_id, device_type=device_type)
     allowed = _scope_project_ids(db, scope)
     data = []
@@ -95,7 +102,9 @@ def get_locations(
                 "report_time": r.report_time.isoformat() if r.report_time else None,
             }
         )
-    return ApiResponse.success(data={"total": len(data), "items": data})
+    resp = ApiResponse.success(data={"total": len(data), "items": data})
+    set_cached_json(current_user.id, request.url.path, request.url.query, resp.model_dump())
+    return resp
 
 
 @router.get(
@@ -105,6 +114,8 @@ def get_locations(
     dependencies=[Depends(require_permissions("device:list"))],
 )
 def online_status(
+    request: Request,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     scope: DataScope = Depends(get_data_scope),
     project_id: int | None = None,
@@ -115,6 +126,10 @@ def online_status(
     在线定义：最近一次上报距当前不超过 `settings.online_threshold_seconds`（默认 300s）。
     坐标统一对外转换：WGS-84 → GCJ-02。施加部门数据隔离。
     """
+    _cached = get_cached_json(current_user.id, request.url.path, request.url.query)
+    if _cached is not None:
+        return ApiResponse(**_cached)
+
     rows = latest_locations(db, project_id=project_id, device_type=device_type)
     allowed = _scope_project_ids(db, scope)
     threshold = settings.online_threshold_seconds
@@ -151,7 +166,7 @@ def online_status(
             bt["offline"] += 1
     total = len(items)
     online_n = sum(1 for i in items if i["online"])
-    return ApiResponse.success(
+    resp = ApiResponse.success(
         data={
             "threshold_seconds": threshold,
             "total": total,
@@ -161,6 +176,8 @@ def online_status(
             "items": items,
         }
     )
+    set_cached_json(current_user.id, request.url.path, request.url.query, resp.model_dump())
+    return resp
 
 
 @router.get(

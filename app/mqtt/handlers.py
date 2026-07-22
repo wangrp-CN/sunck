@@ -14,9 +14,9 @@ import logging
 from paho.mqtt.client import Client, MQTTMessage
 
 from app.core.constants import parse_up_topic
+from app.core.ingest import enqueue as ingest_enqueue
 from app.core.metrics import MQTT_MESSAGES_TOTAL
 from app.mqtt import protocol
-from app.service import pipeline
 
 logger = logging.getLogger("rail_monitor.mqtt")
 
@@ -45,9 +45,8 @@ def on_message(client: Client, userdata, msg: MQTTMessage) -> None:
         logger.warning("报文解析失败 topic=%s: %s", topic, exc)
         return
     try:
-        result = pipeline.handle_upstream(dtype, parsed)
-        logger.info(
-            "上行已处理 %s/%s 告警=%d", dtype, parsed.get("device_no"), result["alarms_created"]
-        )
+        # 入队由工作线程池异步处理（解耦接收与落库，提升洪泛吞吐、避免池争用）。
+        # 未启用/队列满时 enqueue 内部自动回退同步处理，不丢报文。
+        ingest_enqueue(dtype, parsed)
     except Exception:  # noqa: BLE001
-        logger.exception("上行处理异常 device=%s/%s", dtype, parsed.get("device_no"))
+        logger.exception("上行入队异常 device=%s/%s", dtype, parsed.get("device_no"))

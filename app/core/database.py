@@ -37,6 +37,33 @@ SessionLocal = sessionmaker(
     class_=Session,
 )
 
+# ---------------------------------------------------------------------------
+# ingestion 专用连接池（阶段3 待办收敛：维度⑥）
+# MQTT 上行落库走独立池，与 HTTP API 流量隔离，避免千台设备洪泛时
+# ingestion 抢占 API 连接（配合 app.core.ingest 异步调度层）。
+# 总连接估算：N 个 API worker × (db_pool_size+溢出) + 1 个 ingest 池，
+# 取较小值并预留 PG max_connections=100 余量。
+# ---------------------------------------------------------------------------
+ingest_engine = create_engine(
+    settings.database_url,
+    pool_size=settings.ingest_db_pool_size,
+    max_overflow=settings.ingest_db_max_overflow,
+    pool_timeout=settings.db_pool_timeout,
+    pool_recycle=settings.db_pool_recycle,
+    pool_pre_ping=True,
+    future=True,
+    echo=settings.debug,
+    connect_args={"options": f"-c timezone={_SESSION_TZ}"},
+)
+
+IngestSessionLocal = sessionmaker(
+    bind=ingest_engine,
+    autoflush=False,
+    autocommit=False,
+    expire_on_commit=False,
+    class_=Session,
+)
+
 
 def get_db() -> Session:
     """FastAPI 依赖：提供数据库会话，异常时统一回滚，请求结束后关闭。

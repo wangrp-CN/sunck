@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.model.realtime import DeviceLocation
 
@@ -53,17 +53,23 @@ def latest_locations(
 ) -> list[DeviceLocation]:
     """返回每个设备的最新一条位置（按 device_no 分组取最大 id）。
 
-    实现采用 ``DISTINCT ON (device_no) ORDER BY device_no, id DESC``，
-    配合 ``ix_device_location_device_id (device_no, id)`` 索引做索引扫描，
+    实现：先经 ``GROUP BY device_no`` 取各设备 ``max(id)``（利用
+    ``ix_device_location_device_id (device_no, id)`` 索引做窄索引聚合，
+    仅读索引、不触达宽行、不产生全表/全排序），再按主键回表取完整行。
     复杂度与设备数成正比（而非与 device_location 时序表总行数成正比），
-    根治既往 ``func.max(id) GROUP BY device_no`` 全表扫描的性能炸弹。
+    根治既往 ``DISTINCT ON`` 在高频大表上「扫数万行 + 排序溢写磁盘」的瓶颈。
     """
-    stmt = select(DeviceLocation).distinct(DeviceLocation.device_no)
+    subq = select(func.max(DeviceLocation.id).label("max_id"))
     if project_id is not None:
-        stmt = stmt.where(DeviceLocation.project_id == project_id)
+        subq = subq.where(DeviceLocation.project_id == project_id)
     if device_type is not None:
-        stmt = stmt.where(DeviceLocation.device_type == device_type)
-    stmt = stmt.order_by(DeviceLocation.device_no, DeviceLocation.id.desc())
+        subq = subq.where(DeviceLocation.device_type == device_type)
+    subq = subq.group_by(DeviceLocation.device_no).subquery()
+    stmt = (
+        select(DeviceLocation)
+        .join(subq, DeviceLocation.id == subq.c.max_id)
+        .order_by(DeviceLocation.device_no)
+    )
     return db.scalars(stmt.limit(limit)).all()
 
 

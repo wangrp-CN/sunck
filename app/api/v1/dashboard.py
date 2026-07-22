@@ -9,15 +9,16 @@
 import calendar
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.cache import get_cached_json, set_cached_json
 from app.core.clock import LOCAL_TZ, day_end_local, day_start_local, ensure_aware_local, today_local
 from app.core.data_scope import DataScope, apply_data_scope
 from app.core.database import get_db
-from app.core.deps import get_data_scope, require_permissions
+from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.exceptions import BusinessError
 from app.core.responses import ApiResponse
 from app.model.alarm import Alarm
@@ -31,6 +32,7 @@ from app.model.job import WorkPlan, WorkPlanFence
 from app.model.person import Machine, Person
 from app.model.project import Project
 from app.model.realtime import DeviceLocation
+from app.model.system import User
 from app.service.alarm_service import (
     _period_key,
     aggregate_alarms_sql,
@@ -186,6 +188,8 @@ def _compute_fence_stats(db: Session, scope: DataScope, s: datetime, e: datetime
     dependencies=[Depends(require_permissions("dashboard:view"))],
 )
 def stats(
+    request: Request,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     scope: DataScope = Depends(get_data_scope),
     granularity: str | None = Query(
@@ -201,7 +205,15 @@ def stats(
     alarm_trend_period 为对应窗口内按周期聚合的分布（与 /alarms/report 的 by_period
     完全一致），供前端「趋势图按周期切换 + 仪表盘一键导出历史快照」联动使用。
     未传参数时回退到原「近 7 天日趋势」(alarm_trend_7d) 以保证向后兼容。
+
+    短 TTL 响应缓存：监控大屏为高频只读聚合，100+ 并发查看者下重复计算是并发时延
+    主因；以 user_id+路径+查询串为键缓存 3s（部门隔离由 user_id 天然保证），
+    将并发请求折叠为每窗口 1 次真实计算。
     """
+    _cached = get_cached_json(current_user.id, request.url.path, request.url.query)
+    if _cached is not None:
+        return ApiResponse(**_cached)
+
     projects = _count_active(db, Project, scope)
     persons = _count_active(db, Person, scope)
     machines = _count_active(db, Machine, scope)
@@ -287,7 +299,7 @@ def stats(
         trend.append({"date": d.strftime("%m-%d"), "count": c})
 
     # 趋势图周期联动聚合已前移至计数卡/分布卡之前（见上文 agg），此处直接组装返回。
-    return ApiResponse.success(
+    resp = ApiResponse.success(
         data={
             "counts": {
                 "projects": projects,
@@ -317,6 +329,8 @@ def stats(
         },
         message="查询成功",
     )
+    set_cached_json(current_user.id, request.url.path, request.url.query, resp.model_dump())
+    return resp
 
 
 def _resolve_trend_window(

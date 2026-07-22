@@ -53,3 +53,37 @@ WS_CONNECTIONS = Gauge(
     "ws_connections",
     "当前 WebSocket 在线连接数",
 )
+
+# ---------------------------------------------------------------------------
+# 上行 ingestion 异步调度（阶段3 待办收敛）
+# ---------------------------------------------------------------------------
+INGEST_ENQUEUED_TOTAL = Counter(
+    "ingest_enqueued_total",
+    "上行报文进入异步队列的总数",
+)
+
+INGEST_PROCESSED_TOTAL = Counter(
+    "ingest_processed_total",
+    "上行报文经工作线程处理完成的总数（含同步回退）",
+)
+
+INGEST_ERRORS_TOTAL = Counter(
+    "ingest_errors_total",
+    "上行报文处理异常总数（落库/规则/告警失败，已记日志）",
+)
+
+INGEST_INLINE_TOTAL = Counter(
+    "ingest_inline_total",
+    "队列满时回退同步处理的总数（背压触发）",
+)
+
+INGEST_QUEUE_SIZE = Gauge(
+    "ingest_queue_size",
+    "当前异步 ingestion 队列积压长度",
+)
+
+INGEST_PROCESS_LATENCY = Histogram(
+    "ingest_process_duration_seconds",
+    "单条上行报文处理时延（秒，含落库/规则/告警/推送）",
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
+)

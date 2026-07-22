@@ -10,6 +10,10 @@ from app.main import app
 # 验证码专项测试（test_captcha.py）会临时开启并自行恢复。
 settings.captcha_enabled = False
 
+# 关闭响应级短 TTL 缓存：避免跨用例缓存命中破坏测试隔离
+# （同一键在用例间复用会返回陈旧响应，导致断言随机失败）。
+settings.resp_cache_enabled = False
+
 
 @pytest.fixture
 def client():

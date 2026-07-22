@@ -35,6 +35,8 @@ import app.model  # noqa: E402,F401
 from app.api import api_router
 from app.config import settings
 from app.core.exceptions import register_exception_handlers
+from app.core.ingest import start as ingest_start
+from app.core.ingest import stop as ingest_stop
 from app.core.logging import configure_logging
 from app.core.metrics import HTTP_REQUEST_COUNT, HTTP_REQUEST_LATENCY
 from app.mqtt import client as mqtt_client
@@ -55,8 +57,17 @@ async def lifespan(app: FastAPI):
         import logging
 
         logging.getLogger("rail_monitor").warning("MQTT 连接失败，实时链路暂不可用: %s", exc)
+    # 启动：上行 ingestion 异步工作池（解耦接收与落库）
+    try:
+        ingest_start()
+    except Exception as exc:  # noqa: BLE001
+        logging.getLogger("rail_monitor").warning("ingest 工作池启动失败: %s", exc)
     yield
     # 关闭
+    try:
+        ingest_stop()
+    except Exception:  # noqa: BLE001
+        pass
     try:
         mqtt_client.get_client().loop_stop()
     except Exception:

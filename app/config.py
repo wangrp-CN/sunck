@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     captcha_enabled: bool = True
     captcha_ttl_seconds: int = 300
     captcha_length: int = 4
+    # 响应级短 TTL 缓存（阶段3 收尾·查询优化）：监控大屏 / 实时看板高频只读端点，
+    # 以「user_id + 路径 + 查询串」为键缓存 3s，把并发重复聚合折叠为每窗口 1 次计算。
+    # 测试环境默认关闭，避免跨用例缓存命中破坏隔离。
+    resp_cache_enabled: bool = True
     # 初始超级管理员（首次播种时写入，生产环境请通过环境变量覆盖）
     default_admin_username: str = "admin"
     default_admin_password: str = "Admin@123456"
@@ -64,6 +68,10 @@ class Settings(BaseSettings):
     db_max_overflow: int = 20
     db_pool_timeout: int = 10
     db_pool_recycle: int = 1800
+    # ingestion 独立连接池（阶段3 待办收敛）：上行落库走独立池，与 HTTP API 流量隔离，
+    # 避免千台设备洪泛时 ingestion 抢占 API 连接（维度⑥）。
+    ingest_db_pool_size: int = 8
+    ingest_db_max_overflow: int = 8
 
     # ---------- Redis ----------
     redis_host: str = "127.0.0.1"
@@ -81,6 +89,14 @@ class Settings(BaseSettings):
     # ---------- 实时链路 ----------
     # 设备「在线」判定阈值（秒）：最近一次上报距当前不超过该值视为在线
     online_threshold_seconds: int = 300
+
+    # ---------- 上行 ingestion 异步调度（阶段3 待办收敛：解耦接收与落库） ----------
+    # 关闭则 on_message 直接同步处理（与历史行为一致）；开启后入队由工作线程池并行落库，
+    # 队列满自动回退同步处理（不丢数据，仅退化吞吐）。
+    ingest_enabled: bool = True
+    ingest_workers: int = 4
+    # 有界队列上限；超过即回退同步处理（背压），避免内存无限增长
+    ingest_queue_max: int = 20000
 
     # ---------- MinIO 对象存储 ----------
     minio_endpoint: str = "127.0.0.1:9000"

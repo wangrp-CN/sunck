@@ -4,6 +4,61 @@
 
 ---
 
+## [2026-07-22] 查询性能优化（消残余 ~9s 中位时延）：latest_locations 重写 + 重端点 3s TTL 响应缓存
+
+> 阶段3 压测报告（场景 D·池调优后）仍测得 dashboard/stats、realtime/* 等高频只读端点 **~9.1s 中位延迟**。本条目消除该残余时延。
+
+- **诊断（实证推翻「缺索引」假设）**：50 万行下四个主查询（dashboard stats / online-status / latest_locations / 窗口活跃设备）均已走索引（单条 87–570ms），尝试补的 `(report_time, device_no)` 是冗余索引（admin 路径已被现有 `(device_no,report_time)` 的 Index Only Scan 覆盖）。
+  - 决定性并发实测（50 万行、单 worker 30 连接池）：单请求 `/stats` 1374ms、50 并发中位 **12602ms** / P95 14969ms / 吞吐 **3.3 req/s** —— 与压测报告 ~9s 吻合；主因是并发下大量重复聚合计算 + 连接池争用，非索引缺失。
+- **优化①：`app/service/location_service.py` 的 `latest_locations` 重写**。
+  - 原 `DISTINCT ON (device_no) ORDER BY device_no, id DESC` 在 9.9 万行上触发全表 Seq Scan + 排序溢写 36MB 磁盘。
+  - 改为 `GROUP BY device_no` 取 `max(id)` 子查询 + 主键回表（`SELECT ... JOIN subq ON id = max_id`），避免排序，走现有 `(device_no,id)` 索引；保留 `project_id` / `device_type` 过滤。
+- **优化②：新增 `app/core/cache.py` 轻量 HTTP 响应缓存（Redis 支撑）**。
+  - 监控大屏 / 实时看板类高频只读端点，以「`user_id` + 路径 + 查询串」为键做 **3s TTL** 缓存，把 N 个并发请求折叠为每窗口 1 次真实计算。
+  - 键含 `user_id` → 部门数据隔离天然生效；TTL 短 → 监控数据允许秒级陈旧；任何异常（Redis 不可用）静默降级为「不缓存、直接放行」。
+  - 接入端点：`/api/v1/dashboard/stats`、`/api/v1/realtime/locations`、`/api/v1/realtime/online-status`（均加 `Request` / `current_user` 依赖 + 缓存读写）。
+  - 开关 `RESP_CACHE_ENABLED`（默认 true，`.env.example` 同步），`tests/conftest.py` 关闭以避免跨用例缓存命中破坏隔离。
+- **回归修复（关键）**：`Request` 须以 `request: Request` 平铺声明，**不可**写成 `request: Request = Depends()`（后者被 FastAPI 误判为 body 模型，导致 `GET` 端点 422「body required」）；且非默认参数须排在带默认参数之前。
+- **实证复测（同口径 50 万行）**：单请求 `/stats` **10.9ms**、50 并发中位 **117ms** / P95 **156ms** / 吞吐 **285.8 req/s** —— 时延降 **~108×**、吞吐升 **~86×**，残余 ~9s 已实证消除。
+- **验证**：全量后端 gate 复跑通过（修复缓存隔离 + Request 声明后无回归）；`ruff` 通过。
+- 备注：压测遗留 50 万行（project_id=99001）将于本轮收尾清理。
+
+## [2026-07-22] 千台压测落库率实证（维度⑥ 收口：0.7% → 100%）
+
+> 重启加载新代码的后端，跑 `scripts/mqtt_flood.py` 实证阶段3 暴露的「千台设备 0.7% 落库率」瓶颈是否已收敛。
+
+- 环境：PG / Redis / MQTT 原生服务 running；后端 `uvicorn app.main:app --port 8000`（`CAPTCHA_ENABLED=false`），新代码 ingestion 工作池 `workers=4 queue_max=20000` 已激活，MQTT 已订阅 `device/+/up`。
+- 负载：`scripts/seed_stress.py` 登记 1000 台 `LOC-S#####` 设备（无激活计划，仅落库 `DeviceLocation`，隔离 ingestion 压力）；`mqtt_flood --devices 1000 --interval 2 --duration 90` 发布 **45,750** 条（0 发布错误，~491 msg/s）。
+- 结果（队列完全排空后）：`ingest_enqueued=45750` / `ingest_processed=45750`（=100%）/ `ingest_errors=0` / `ingest_inline_total=0`（队列从未溢出回退）/ `ingest_queue_size=0`；`DeviceLocation` 实际行数 **45,750**（与发布量精确相等），**1000/1000 设备全部落库**。
+- 结论：相对阶段3 基线 **0.7% 落库率 → 100%**，维度⑥ 性能稳定根因项已实证收敛。瓶颈（paho 单线程串行 + 连接池争用）由异步调度层 + 独立落库池消除。
+- 验证后已 `scripts/seed_stress.py clean` 清理压测数据；新代码后端保留运行（PID 78152）。
+
+## [2026-07-22] 上行 ingestion 异步调度层（维度⑥ 收尾：收敛阶段3 待办）
+
+> 四轨道 A/B/C/D 已于本日早些时候收官（见下条）。本条目为路线图维度⑥性能稳定的进一步加固：把「接收」与「落库」解耦，从根本上消除千台设备洪泛时的单线程串行 + 连接池争用瓶颈（阶段3 压测根因侧修复，非仅池扩容）。
+
+- 新增 `app/core/ingest.py`：有界队列 + 工作线程池。`on_message` 仅做解析 + 入队（极快、立即 ack），由 N 个工作线程并行调用既有 `pipeline.handle_upstream`；落库 / 规则引擎 / 告警去重 / 跨线程 WS 推送逻辑**零改动**。
+- 安全保障（不丢数据）：队列满自动回退同步处理（背压，仅退化吞吐）；未启用（`INGEST_ENABLED=false`）或未 start 时 `enqueue` 直接同步（等价于历史行为）；关闭时先排空在途报文再停线程池。
+- `app/main.py` lifespan 接入 `ingest_start()/ingest_stop()`（均 try/except 不阻断启动/关闭）；`app/mqtt/handlers.py` 由直接 `handle_upstream` 改调 `ingest.enqueue`。
+- 配置项：`INGEST_ENABLED`(默认 true) / `INGEST_WORKERS`(默认 4) / `INGEST_QUEUE_MAX`(默认 20000)，已写入 `.env.example`。
+- 指标：新增 `ingest_enqueued_total` / `ingest_processed_total` / `ingest_errors_total` / `ingest_inline_total`(背压回退) / `ingest_queue_size`(Gauge) / `ingest_process_duration_seconds`，由 `deploy/prometheus.yml` 已配置的 `/metrics` 抓取。
+- 测试：`tests/test_ingest.py`（3 用例，mock 处理器，无需 PG/Redis）：验证异步工作线程路径、队列满回退同步、stop 排空在途、未启用同步回退；`ruff` 通过。
+- 待办（非阻塞，可后续增强）：ingestion 独立连接池以隔离 API 流量、查询索引/缓存消残余 ~9s 中位时延。
+
+## [2026-07-22] ingestion 独立连接池（维度⑥ 收尾：收敛阶段3 待办②）
+
+> 接续上条异步调度层，进一步把上行落库与 HTTP API 流量在连接层隔离，避免千台设备洪泛时互相争用 PG 连接。
+
+- `app/core/database.py` 新增独立引擎 `ingest_engine` + `IngestSessionLocal`（池 `INGEST_DB_POOL_SIZE=8` / `INGEST_DB_MAX_OVERFLOW=8`，复用 `db_pool_timeout/recycle`）。
+- `app/service/pipeline.py` 的 `handle_upstream` 新增可选 `sessionmaker_factory` 形参（默认 `SessionLocal`，向后兼容）；由 ingestion 工作线程调用时传入 `IngestSessionLocal`。
+- `app/core/ingest.py` 默认处理器经包装把上行交给 `handle_upstream(..., sessionmaker_factory=IngestSessionLocal)`，落库走独立池。
+- 连接估算：N 个 API worker ×(10+20) + 1 个 ingest 池(8+8) ≤ PG `max_connections=100` 留余量。
+- 测试：`tests/test_ingest.py` 增至 4 用例（新增 `test_default_processor_uses_ingest_pool`，monkeypatch 真实处理器验证传入 `IngestSessionLocal`，免 PG）；`ruff` 通过。
+- 验证：全量后端 gate 复跑 `135 passed / 1 skipped`（无回归）。
+- 剩余待办（非阻塞）：查询索引/缓存消残余 ~9s 中位时延；建议以 `RUN_E2E=1` + `scripts/mqtt_flood.py` 复测千台落库率做实证收口。
+
+
+
 ## [2026-07-22] 四轨道计划（A/B/C/D）收官：质量加固 + 生产化 + 压测 + 文档治理
 
 > 阶段0~3 对应四轨道计划 #195–#203（2026-07-21 起全选推进）。本条目为各阶段交付与结论总览，路线图见文末「阶段基线」。
