@@ -55,6 +55,15 @@ class Settings(BaseSettings):
     postgres_user: str = "dev"
     postgres_password: str = "dev123"
     database_url: Optional[str] = None
+    # 连接池调优（阶段3 压测发现：默认 5+溢出10=15 连接在高并发 API +
+    # 同步 per-message ingestion 下被耗尽，导致 30s pool_timeout 后 500）。
+    # 调大池并缩短超时，使并发更稳、失败更快（fail-fast 而非挂起）。
+    # 注意：PG 默认 max_connections=100；本服务多为多 worker 部署，
+    # 取值按「单 worker 30 连接」设定（如 2 worker 共 60，留足余量）。
+    db_pool_size: int = 10
+    db_max_overflow: int = 20
+    db_pool_timeout: int = 10
+    db_pool_recycle: int = 1800
 
     # ---------- Redis ----------
     redis_host: str = "127.0.0.1"
