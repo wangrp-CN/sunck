@@ -38,6 +38,13 @@ class WorkPlan(Base, TimestampMixin, CreatorMixin, SoftDeleteMixin):
     plan_end: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="计划生效结束(空=不限制, 带时区)"
     )
+    # 实际执行时间窗（甘特进度联动用）：启动/完成时回填，由 jobs 路由写入
+    actual_start: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="实际开始(空=未启动, 带时区)"
+    )
+    actual_end: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="实际结束(空=未完成, 带时区)"
+    )
     # 状态：草稿/执行中/已完成
     status: Mapped[str] = mapped_column(String(16), default="草稿", comment="计划状态")
     # 规则 JSON：{monitor_target, trigger_conditions, time_range, dwell_time}

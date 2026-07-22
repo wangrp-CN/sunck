@@ -9,6 +9,7 @@ import {
   type LocationItem,
 } from "@/api/realtime";
 import {
+  batchHandleAlarms,
   exportAlarmReport,
   fetchAlarmPeriod,
   fetchAlarmReport,
@@ -278,6 +279,46 @@ async function submitHandle() {
     ElMessage.error(e?.message || "处置失败");
   } finally {
     handling.value = false;
+  }
+}
+
+// ----- 批量处置 -----
+const tableRef = ref<any>(null);
+const selectedRows = ref<Alarm[]>([]);
+const batchHandleStatus = ref<string>("已处理");
+const batchHandling = ref(false);
+function onSelectionChange(rows: Alarm[]) {
+  selectedRows.value = rows;
+}
+function clearSelection() {
+  tableRef.value?.clearSelection();
+  selectedRows.value = [];
+}
+async function submitBatchHandle() {
+  if (!selectedRows.value.length) {
+    ElMessage.warning("请先勾选要处置的告警");
+    return;
+  }
+  // 跨页保留选择（reserve-selection + row-key），统一以 id 列表提交
+  const ids = Array.from(new Set(selectedRows.value.map((r) => r.id)));
+  batchHandling.value = true;
+  try {
+    const res = await batchHandleAlarms({
+      ids,
+      handle_status: batchHandleStatus.value,
+      content: null,
+    });
+    if (res.skipped > 0) {
+      ElMessage.warning(`成功处置 ${res.handled} 条，跳过 ${res.skipped} 条（不在您的数据范围内）`);
+    } else {
+      ElMessage.success(`已批量处置 ${res.handled} 条告警`);
+    }
+    clearSelection();
+    loadAlarms();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "批量处置失败");
+  } finally {
+    batchHandling.value = false;
   }
 }
 
@@ -662,8 +703,37 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
 
     <div class="layout">
       <div class="main">
-        <el-table :data="list" v-loading="loading" border stripe style="width: 100%"
-          @row-click="onRowClick" :row-class-name="rowClassName">
+        <!-- 批量处置工具条：仅处置权限可见，跨页保留勾选（reserve-selection） -->
+        <div v-if="canHandle" class="batch-bar">
+          <span class="batch-count">已选 <b>{{ selectedRows.length }}</b> 条</span>
+          <el-select v-model="batchHandleStatus" style="width: 120px">
+            <el-option v-for="s in HANDLE_OPTIONS" :key="s" :label="s" :value="s" />
+          </el-select>
+          <el-button
+            type="primary"
+            :disabled="!selectedRows.length"
+            :loading="batchHandling"
+            @click="submitBatchHandle"
+          >
+            批量处置
+          </el-button>
+          <el-button :disabled="!selectedRows.length" @click="clearSelection">
+            清空选择
+          </el-button>
+        </div>
+        <el-table
+          ref="tableRef"
+          :data="list"
+          v-loading="loading"
+          border
+          stripe
+          style="width: 100%"
+          row-key="id"
+          @row-click="onRowClick"
+          @selection-change="onSelectionChange"
+          :row-class-name="rowClassName"
+        >
+          <el-table-column v-if="canHandle" type="selection" width="48" :reserve-selection="true" />
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column label="时间" width="170">
         <template #default="{ row }">{{ row.alarm_time || "-" }}</template>
@@ -1332,6 +1402,18 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
   background: #e3efff !important;
 }
 .bar-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  background: #f5f7fa;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+}
+.batch-count { font-size: 13px; color: #606266; }
+.batch-count b { color: #303133; font-size: 15px; }
 .report-body { min-height: 120px; }
 .report-filters {
   font-size: 12px;

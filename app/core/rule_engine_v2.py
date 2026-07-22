@@ -30,9 +30,11 @@ from app.core.constants import (
     ALARM_TYPE_DEVICE,
     ALARM_TYPE_DISTANCE,
     ALARM_TYPE_FENCE,
+    ALARM_TYPE_TRAIN,
     DEVICE_STATUS_OFFLINE,
     DEVICE_TYPE_ANTI_INTRUSION,
     DEVICE_TYPE_LOCATE,
+    DEVICE_TYPE_TRAIN_APPROACH,
 )
 from app.core.geo import haversine_meters
 from app.core.redis import get_redis_client
@@ -44,7 +46,12 @@ from app.service.location_service import latest_locations
 logger = logging.getLogger("rail_monitor.rule_engine_v2")
 
 #: 默认（未配置 trigger_conditions 时）开启的全部告警类型。
-_DEFAULT_TRIGGERS = [ALARM_TYPE_FENCE, ALARM_TYPE_DISTANCE, ALARM_TYPE_DEVICE]
+_DEFAULT_TRIGGERS = [
+    ALARM_TYPE_FENCE,
+    ALARM_TYPE_DISTANCE,
+    ALARM_TYPE_DEVICE,
+    ALARM_TYPE_TRAIN,
+]
 
 #: 默认间距阈值（米），当 alarm_config 缺失时使用
 DEFAULT_DISTANCE_MACHINE = 50
@@ -149,6 +156,52 @@ def fence_geometry_contains(fence: Any, lng: float | None, lat: float | None) ->
     except Exception as exc:  # noqa: BLE001
         logger.warning("围栏 %s 几何判定异常: %s", getattr(fence, "name", "?"), exc)
         return False
+
+
+#: 监控目标(monitor_target) → 设备类别映射。
+#: 用于把「计划监控对象」约束到对应设备类别，避免围栏/间距触发被无关类别设备误触发
+#: （如监控「大机」时，定位人员设备的围栏告警被抑制）。取值：person/machine/train。
+#: 注意：该字段在系统中为「自由文本展示字段」（前端 el-input，历史含「人员/设备」
+#: 「人员」「大机」等中文/组合标签），故门控仅对受支持的结构化单一取值生效，
+#: 其余值一律回落「不受限」，保持历史行为一致、不误伤既有数据。
+_MONITOR_TARGET_CATEGORY = {
+    "person": DEVICE_TYPE_LOCATE,
+    "machine": DEVICE_TYPE_ANTI_INTRUSION,
+    "train": DEVICE_TYPE_TRAIN_APPROACH,
+}
+#: 受支持的结构化单一监控类别取值集合（仅命中这些时才做设备类别门控）。
+_MONITOR_SINGLE_CATEGORIES = set(_MONITOR_TARGET_CATEGORY.keys())
+
+
+def _device_category(device_type: str) -> str | None:
+    """设备类型 → 监控目标类别（person/machine/train）。"""
+    if device_type == DEVICE_TYPE_LOCATE:
+        return "person"
+    if device_type == DEVICE_TYPE_ANTI_INTRUSION:
+        return "machine"
+    if device_type == DEVICE_TYPE_TRAIN_APPROACH:
+        return "train"
+    return None
+
+
+def _location_triggers_enabled(device_type: str, monitor_target: str | None) -> bool:
+    """基于位置的围栏/间距触发是否启用：受 monitor_target 约束。
+
+    - monitor_target 为空或 'all' → 不受限（位置触发照常）。
+    - 结构化单一取值(person/machine/train) → 仅当设备类别与监控目标一致时启用，
+      否则该设备不应产生围栏/间距告警（如监控「大机」时，定位人员设备的围栏告警被抑制）。
+    - 自由文本（如「人员/设备」「人员」「大机」等历史/展示值）→ 无法精确归类，
+      回落「不受限」，保持与历史行为一致，避免误伤既有数据。
+    设备自报类告警(device_alarm / train_approach)走独立分支，不受此约束。
+    """
+    if not monitor_target or monitor_target == "all":
+        return True
+    if monitor_target not in _MONITOR_SINGLE_CATEGORIES:
+        return True
+    cat = _device_category(device_type)
+    if cat is None:
+        return True
+    return cat == monitor_target
 
 
 # ---------------------------------------------------------------------------
@@ -274,9 +327,12 @@ def build_alarm_candidates_v2(
         if not triggers:
             triggers = list(_DEFAULT_TRIGGERS)
         dwell = rule["dwell_time"]
+        # monitor_target 约束：仅当设备类别与监控目标一致时，才启用基于位置的
+        # 围栏/间距触发（设备自报类告警不受此约束，见下属分支）。
+        location_enabled = _location_triggers_enabled(device_type, rule["monitor_target"])
 
         if device_type == DEVICE_TYPE_LOCATE:
-            if ALARM_TYPE_FENCE in triggers:
+            if location_enabled and ALARM_TYPE_FENCE in triggers:
                 for fence in _plan_fences(db, plan):
                     if fence_geometry_contains(fence, lng, lat) and _dwell_ok(
                         db, device_no, plan.id, f"fence:{fence.id}", dwell
@@ -290,7 +346,7 @@ def build_alarm_candidates_v2(
                                 "work_plan_id": plan.id,
                             }
                         )
-            if ALARM_TYPE_DISTANCE in triggers:
+            if location_enabled and ALARM_TYPE_DISTANCE in triggers:
                 if ref_machines is None:
                     ref_machines = latest_locations(
                         db, project_id=project_id, device_type=DEVICE_TYPE_ANTI_INTRUSION
@@ -319,6 +375,22 @@ def build_alarm_candidates_v2(
                                 "work_plan_id": plan.id,
                             }
                         )
+        elif device_type == DEVICE_TYPE_TRAIN_APPROACH:
+            # 列车接近设备：产出专项「列车接近预警」告警（区别于通用设备自报），
+            # 级别=严重，提升铁路场景下接近风险的可辨识度。
+            if ALARM_TYPE_TRAIN in triggers:
+                status = parsed.get("alarm_status")
+                if status and status not in ("正常",):
+                    candidates.append(
+                        {
+                            "alarm_type": ALARM_TYPE_TRAIN,
+                            "alarm_info": parsed.get("alarm_info") or f"列车接近报警：{status}",
+                            "fence_name": None,
+                            "alarm_status": status,
+                            "media_urls": _join_media(parsed),
+                            "work_plan_id": plan.id,
+                        }
+                    )
         else:
             if ALARM_TYPE_DEVICE in triggers:
                 status = parsed.get("alarm_status")

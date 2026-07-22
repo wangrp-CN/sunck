@@ -220,6 +220,12 @@ class AlarmHandleRequest(BaseModel):
     content: str | None = Field(None, description="处置内容")
 
 
+class AlarmBatchHandleRequest(BaseModel):
+    ids: list[int] = Field(..., description="待处置告警 id 列表（超出当前用户数据范围者自动跳过）")
+    handle_status: str = Field(..., description="处理状态(待处理/已处理/已忽略/已确认/已消警)")
+    content: str | None = Field(None, description="处置内容")
+
+
 @router.get(
     "",
     summary="告警列表",
@@ -306,6 +312,69 @@ def handle_alarm_endpoint(
                 data=result, message="处置已保存，但消警指令下发失败，请检查设备连接"
             )
     return ApiResponse.success(data=result, message="处置已保存")
+
+
+@router.post(
+    "/batch-handle",
+    summary="批量处置告警",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("alarm:handle"))],
+)
+def batch_handle_alarms(
+    req: AlarmBatchHandleRequest,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+    scope: DataScope = Depends(get_data_scope),
+) -> ApiResponse:
+    """批量处置告警。
+
+    - 仅处置当前用户数据范围内可见的告警；范围外的 id 自动跳过（不报错，保证批量操作安全）。
+    - 置「已消警」时，对范围内且含设备信息的告警统一下发消警指令。
+    - 单次提交：所有条目处置完成后统一 commit，避免逐条提交的性能与半提交风险。
+    """
+    if not req.ids:
+        return ApiResponse.success(data={"handled": 0, "skipped": 0, "results": []})
+    stmt = select(Alarm).where(Alarm.id.in_(req.ids))
+    stmt = apply_data_scope(stmt, Alarm, scope)
+    owned = {a.id: a for a in db.scalars(stmt).all()}
+
+    handled: list[dict] = []
+    skipped = 0
+    downlink_failures = 0
+    for aid in req.ids:
+        alarm = owned.get(aid)
+        if alarm is None:
+            skipped += 1
+            continue
+        result = handle_alarm(db, aid, req.handle_status, req.content)
+        if result is None:
+            skipped += 1
+            continue
+        handled.append(result)
+        # 已消警 → 下发消警指令（处置状态已落库，下发失败仅提示）
+        if (
+            req.handle_status == ALARM_STATUS_CLEARED
+            and result.get("device_type")
+            and result.get("device_no")
+        ):
+            try:
+                payload = protocol.build_command(result["device_type"], "alarm", {"on": False})
+                mqtt_client.publish(
+                    _down_topic(result["device_type"], result["device_no"]),
+                    json.dumps(payload, ensure_ascii=False),
+                    qos=1,
+                )
+            except Exception as exc:  # noqa: BLE001
+                downlink_failures += 1
+                logger.warning("批量消警指令下发失败（处置状态已保存）：%s", exc)
+    db.commit()
+    msg = "批量处置已保存"
+    if downlink_failures:
+        msg += f"，{downlink_failures} 条消警指令下发失败，请检查设备连接"
+    return ApiResponse.success(
+        data={"handled": len(handled), "skipped": skipped, "results": handled},
+        message=msg,
+    )
 
 
 class AlarmMediaUpdate(BaseModel):

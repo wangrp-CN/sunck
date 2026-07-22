@@ -97,6 +97,8 @@ class WorkPlanOut(BaseModel):
     plan_time: str | None = None
     plan_start: datetime | None = None
     plan_end: datetime | None = None
+    actual_start: datetime | None = None
+    actual_end: datetime | None = None
     status: str = "草稿"
     active: bool = False
     rule: WorkPlanRule | None = None
@@ -107,7 +109,7 @@ class WorkPlanOut(BaseModel):
     devices: list[BoundDevice] = Field(default_factory=list)
     fences: list[BoundFence] = Field(default_factory=list)
 
-    @field_serializer("plan_start", "plan_end")
+    @field_serializer("plan_start", "plan_end", "actual_start", "actual_end")
     def _serialize_plan_dt(self, v: datetime | None) -> str | None:
         """带时区时间序列化为「北京时间墙钟」字符串（YYYY-MM-DDTHH:mm:ss），
         与前端 el-date-picker 的 value-format 对齐；读取为 aware 后按北京截去时区。

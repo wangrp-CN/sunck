@@ -14,6 +14,27 @@ export function handleAlarm(
   });
 }
 
+// 批量处置告警：超出当前用户数据范围者自动跳过，返回 handled/skipped/results
+export interface AlarmBatchHandleRequest {
+  ids: number[];
+  handle_status: string;
+  content?: string | null;
+}
+export interface AlarmBatchHandleResult {
+  handled: number;
+  skipped: number;
+  results: { id: number; success: boolean; message?: string }[];
+}
+export function batchHandleAlarms(
+  req: AlarmBatchHandleRequest,
+): Promise<AlarmBatchHandleResult> {
+  return http<AlarmBatchHandleResult>({
+    url: `/v1/alarms/batch-handle`,
+    method: "POST",
+    data: req,
+  });
+}
+
 // 获取告警配置
 export function getAlarmConfig(): Promise<AlarmConfig> {
   return http<AlarmConfig>({

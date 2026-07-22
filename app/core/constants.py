@@ -32,7 +32,8 @@ DEVICE_TYPE_LABELS: dict[str, str] = {
 # 告警类型
 ALARM_TYPE_FENCE = "fence_intrusion"  # 围栏侵入
 ALARM_TYPE_DISTANCE = "distance_too_close"  # 间距过近
-ALARM_TYPE_DEVICE = "device_alarm"  # 设备自上报告警（大机/列车）
+ALARM_TYPE_DEVICE = "device_alarm"  # 设备自上报告警（大机/列车等通用自报）
+ALARM_TYPE_TRAIN = "train_approach"  # 列车接近预警（train_approach 设备专项）
 
 # 设备状态
 DEVICE_STATUS_ONLINE = "在线"

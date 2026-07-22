@@ -13,9 +13,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.core.clock import now_local
 from app.core.data_scope import DataScope, apply_data_scope
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
+from app.core.exceptions import BusinessError
 from app.core.responses import ApiResponse
 from app.core.rule_engine_v2 import is_plan_active_now
 from app.model.fence import ElectronicFence
@@ -63,6 +65,37 @@ def _parse_rule(raw) -> WorkPlanRule | None:
         return WorkPlanRule(**raw)
     except Exception:  # noqa: BLE001
         return None
+
+
+def _validate_bindings_project(
+    db: Session,
+    project_id: int | None,
+    person_ids: list[int],
+    machine_ids: list[int],
+    fence_ids: list[int],
+) -> None:
+    """校验绑定的人员/机械/围栏归属目标项目（跨项目绑定会被规则引擎误判为越权）。
+
+    仅当 project_id 给定时校验；空列表跳过。违反则抛业务错误（含具体越界 id 列表）。
+    """
+    if project_id is None:
+        return
+
+    def _check(model, ids: list[int], label: str) -> None:
+        if not ids:
+            return
+        rows = db.execute(
+            select(model.id, model.project_id).where(model.id.in_(ids), model.is_deleted.is_(False))
+        ).all()
+        bad = [rid for rid, pid in rows if pid != project_id]
+        if bad:
+            raise BusinessError(
+                f"以下{label}不属于本项目(project_id={project_id})：{bad}", code=400
+            )
+
+    _check(Person, person_ids, "人员")
+    _check(Machine, machine_ids, "机械")
+    _check(ElectronicFence, fence_ids, "围栏")
 
 
 def _sync_bindings(
@@ -151,6 +184,8 @@ def _to_out(db: Session, plan: WorkPlan) -> WorkPlanOut:
         plan_time=plan.plan_time,
         plan_start=plan.plan_start,
         plan_end=plan.plan_end,
+        actual_start=plan.actual_start,
+        actual_end=plan.actual_end,
         status=plan.status,
         active=is_plan_active_now(plan),
         rule=_parse_rule(plan.rule_json),
@@ -189,6 +224,8 @@ def create_job(
     )
     db.add(plan)
     db.flush()
+    # 跨项目绑定校验：绑定的人员/机械/围栏必须归属本计划的项目
+    _validate_bindings_project(db, req.project_id, req.person_ids, req.machine_ids, req.fence_ids)
     _sync_bindings(db, plan.id, req.person_ids, req.machine_ids, req.device_bindings, req.fence_ids)
     db.commit()
     db.refresh(plan)
@@ -340,6 +377,11 @@ def update_job(
     if "rule" in data:
         plan.rule_json = json.dumps(req.rule.model_dump(), ensure_ascii=False) if req.rule else None
     if "person_ids" in data:
+        # 跨项目绑定校验：以请求指定 project_id 为准，未指定则用计划原 project_id
+        target_project = req.project_id if req.project_id is not None else plan.project_id
+        _validate_bindings_project(
+            db, target_project, req.person_ids or [], req.machine_ids or [], req.fence_ids or []
+        )
         _sync_bindings(
             db,
             plan.id,
@@ -364,10 +406,12 @@ def start_job(
     db: Session = Depends(get_db),
     scope: DataScope = Depends(get_data_scope),
 ) -> ApiResponse:
-    """将计划置为激活：is_start=True，status=执行中。"""
+    """将计划置为激活：is_start=True，status=执行中，并回填实际开始时间。"""
     plan = _get_owned_plan(db, job_id, scope)
     plan.is_start = True
     plan.status = "执行中"
+    if plan.actual_start is None:
+        plan.actual_start = now_local()
     db.commit()
     db.refresh(plan)
     return ApiResponse.success(data=_to_out(db, plan), message="作业计划已启动")
@@ -384,10 +428,11 @@ def complete_job(
     db: Session = Depends(get_db),
     scope: DataScope = Depends(get_data_scope),
 ) -> ApiResponse:
-    """将计划置为已完成：status=已完成，is_start=False。"""
+    """将计划置为已完成：status=已完成，is_start=False，并回填实际结束时间。"""
     plan = _get_owned_plan(db, job_id, scope)
     plan.status = "已完成"
     plan.is_start = False
+    plan.actual_end = now_local()
     db.commit()
     db.refresh(plan)
     return ApiResponse.success(data=_to_out(db, plan), message="作业计划已完成")

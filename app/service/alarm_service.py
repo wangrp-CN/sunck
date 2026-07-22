@@ -19,6 +19,7 @@ from app.core.constants import (
     ALARM_TYPE_DEVICE,
     ALARM_TYPE_DISTANCE,
     ALARM_TYPE_FENCE,
+    ALARM_TYPE_TRAIN,
 )
 from app.core.data_scope import DataScope, apply_data_scope
 from app.core.metrics import ALARM_CREATED_TOTAL
@@ -27,10 +28,11 @@ from app.model.alarm import Alarm
 
 logger = logging.getLogger("rail_monitor.alarm")
 
-# 告警级别映射：围栏侵入最严重，间距过近次之，设备自报告警提示级
+# 告警级别映射：围栏侵入最严重，间距过近次之，列车接近严重，设备自报告警提示级
 _LEVEL_BY_TYPE: dict[str, str] = {
     ALARM_TYPE_FENCE: "严重",
     ALARM_TYPE_DISTANCE: "警告",
+    ALARM_TYPE_TRAIN: "严重",
     ALARM_TYPE_DEVICE: "提示",
 }
 
@@ -335,6 +337,7 @@ ALARM_TYPE_LABELS: dict[str, str] = {
     "fence_intrusion": "围栏侵入",
     "distance_too_close": "间距过近",
     "device_alarm": "设备自报",
+    "train_approach": "列车接近预警",
 }
 
 

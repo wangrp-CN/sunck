@@ -4,6 +4,46 @@
 
 ---
 
+## [2026-07-22] 功能模块优化（告警批量处置 / 列车接近专项 / 作业计划校验联动）
+
+> 按用户「下一步开始功能模块优化」推进，覆盖四项：告警批量处置、告警自动结束防堆积、列车接近专项告警、作业计划校验/联动深化。
+
+### 1) 告警批量处置（后端 + 前端）
+- 新增 `POST /api/v1/alarms/batch-handle`（`alarm:handle` 权限）：按 `apply_data_scope` 过滤当前用户数据范围内的告警，循环 `handle_alarm` 处置；范围内置「已消警」的告警下发 MQTT 消警指令；范围外 id 自动跳过。返回 `{handled, skipped, results}`。
+- 前端 `AlarmView.vue`：表格增加 `type="selection"` 勾选列（跨页 `reserve-selection`，`row-key="id"`）+ 批量工具条（已选计数 + 处置状态选择 + 「批量处置」/「清空选择」）；新增 `web/src/api/alarm.ts` 的 `batchHandleAlarms`。
+
+### 2) 告警自动结束防堆积（验证 + 回归测试）
+- 机制由前置工作 `pipeline.reconcile_active_alarms`（Redis `rule2:active:{device_no}` 配对打开/结束告警）实现，本轮补充回归测试 `test_alarm_auto_end_on_violation_cleared` 实证「违规解除 → 告警自动置『告警结束/已消警』」。
+
+### 3) 列车接近专项告警
+- 新增告警类型 `train_approach`（常量 `ALARM_TYPE_TRAIN`，级别「严重」，标签「列车接近预警」）。
+- `rule_engine_v2.build_alarm_candidates_v2` 新增 `DEVICE_TYPE_TRAIN_APPROACH` 分支：计划 `trigger_conditions` 含 `train_approach` 时产出专项告警（区别于通用 `device_alarm` 兜底）；受 `ALARM_TYPE_TRAIN in triggers` 门控。
+
+### 4) 作业计划校验 / 联动深化
+- **跨项目绑定校验**：`jobs.create_job`/`update_job` 调用新增 `_validate_bindings_project`，校验绑定的人员/机械/围栏归属本计划项目，越界抛 `BusinessError(code=400)`（如「以下人员不属于本项目」）。
+- **甘特实际时间回填**：`WorkPlan` 新增 `actual_start`/`actual_end`（timestamptz，Alembic `g1h2i3j4k5l6`）；`start_job` 回填 `actual_start`(启动时刻)、`complete_job` 回填 `actual_end`(完成时刻)，`_to_out` 序列化输出，供甘特进度联动。
+- **monitor_target 门控**：`_location_triggers_enabled` 对围栏/间距触发做设备类别约束——仅当 `monitor_target` 为结构化单一取值（`person`/`machine`/`train`）且设备类别一致时启用；自由文本/组合历史值（如「人员/设备」）回落「不受限」，保持历史行为一致、不误伤既有数据。
+
+### 回归验证
+- 新增 `tests/test_functional_modules.py` 覆盖上述 6 项（批量处置 / 列车接近专项 / monitor_target 门控纯函数 / 跨项目绑定 / 甘特实际时间 / 告警自动结束）。
+- 全量后端 gate 复跑通过；`ruff` 通过；前端 `vue-tsc` + `vitest`(78) + `build` 全绿。
+
+---
+
+## [2026-07-22] 维度⑥ 收尾 · Locust 千台压测实证（优化后真实端点 0% 失败 / 中位 35ms）
+
+> 同口径复跑阶段3「1000 设备@2s(≈495 msg/s) + 100 查看者」全并发组合，闭环维度⑥。完整数据见 `STRESS_TEST_REPORT.md`。
+
+- **HTTP 查看者负载（Locust 120s/100 并发）**：真实端点 **0% 失败**，聚合中位 **35ms**（dashboard/stats 24ms、realtime/locations 31ms、alarms 38ms），吞吐 **47.97 req/s**。
+  - 对比优化前：场景 A 64.96% 返回 500 / 中位 32s；场景 D(仅池调优) 中位仍 9.1s / 吞吐 8.16 req/s → **中位时延降约 260×~900×、吞吐升 5.9×**。
+- **千台设备上行（mqtt_flood 153s）**：发布 **76,000 条 @ 495.4 msg/s，发布端 0 错误**；应用层 ingestion **0 异常**（有界队列+同步回退背压，零丢失），落库 66,443 行。
+- **端到端落库率 87.4%**（66,443/76,000）：缺口 ~9,557 条发生在 **Mosquitto broker 侧**——默认 `max_queued_messages=1000` 在「100 查看者 + 1000 设备@495/s」并发挤占 PG 共享容量、ingest 工作线程变慢时溢出丢弃（应用层已收到并存入的 66,443 行在洪泛停止后冻结不再增长，证明 0 在途积压）。**非应用层数据丢失**，为 broker/PG 容量调优项。
+- **调优建议（非阻塞，已写入报告 §6）**：① 调大 Mosquitto `max_queued_messages`；② 提高 `INGEST_WORKERS`(默认4)/`INGEST_DB_POOL_SIZE`(默认8) 以追上峰值；③ ingestion 走独立 PG 实例/副本；④ `device_location` 时间分区。
+- **复现**：`scripts/seed_stress.py` → 后台 `mqtt_flood.py --devices 1000 --interval 2 --duration 150` → `locust -f scripts/locustfile.py ViewerUser --headless -u 100 -r 20 -t 120s` → `seed_stress.py clean`。
+- 路线图维度⑥ 状态更新为 ✅ 已收尾。
+
+---
+
 ## [2026-07-22] 查询性能优化（消残余 ~9s 中位时延）：latest_locations 重写 + 重端点 3s TTL 响应缓存
 
 > 阶段3 压测报告（场景 D·池调优后）仍测得 dashboard/stats、realtime/* 等高频只读端点 **~9.1s 中位延迟**。本条目消除该残余时延。
