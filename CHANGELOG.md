@@ -4,6 +4,35 @@
 
 ---
 
+## [2026-07-22] 隐患治理闭环（新业务模块 · C 轨道「按需新业务模块」）
+
+> 端到端落地「隐患治理闭环」模块，与既有「告警（系统自动触发）」互补：隐患由人工/巡检发现，走「待整改→整改中→待复核→已销号」状态机，含驳回/重开分支，并支持超期预警与多维统计。
+
+### 1) 数据模型与迁移
+- 新增 `app/model/hazard.py`：`Hazard` ORM（混用 `TimestampMixin`/`CreatorMixin`/`SoftDeleteMixin`），含 `project_id`(FK→project, VIA_PROJECT)、`level`/`category`/`source`/`status`、`lng`/`lat`(WGS-84)、`discovered_by_name`/`discovered_at`、`assignee_id`(FK→person)、`due_at`、`rectify_*`/`verify_*`/`closed_at` 留痕字段。
+- 手写 Alembic 迁移 `alembic/versions/h2i3j4k5l6_add_hazard_table.py`（`down_revision=g1h2i3j4k5l6`），仅含 hazard 表（25 列 + 6 索引），已 `alembic upgrade head` 应用。
+
+### 2) 枚举 / 状态机
+- `app/core/constants.py`：新增 `HAZARD_LEVELS`(重大/较大/一般/低)、`HAZARD_CATEGORIES`、`HAZARD_SOURCES`(人工/巡检/系统)、`HAZARD_STATUSES` 及 `HAZARD_TRANSITIONS`（`start_rectify`/`submit_rectify`/`verify_pass`/`verify_reject`/`reject`/`reopen`）、`HAZARD_TERMINAL_STATUSES={已销号}`。
+- `app/service/hazard_service.py`：`transition_hazard` 按状态机校验合法性，按动作写入 rectify/verify/closed 留痕；`_is_overdue`=非终态且 `due_at` 早于当前 UTC。
+
+### 3) 接口与权限（部门数据隔离沿用四级 DataScope / VIA_PROJECT）
+- `app/api/v1/hazards.py`：`GET /ping`、`GET /options`(枚举)、`GET /stats`、`GET /`(筛选+分页)、`POST /`(创建)、`GET /{id}`、`PUT /{id}`、`DELETE /{id}`(软删)、`POST /{id}/transition`；权限 `hazard:list/create/update/delete/handle`（超管自动通过）。
+- `app/api/router.py`：挂载 `prefix="/v1/hazards"`，插在 alarms 路由后。
+- 时间字段对外统一「北京时间墙钟」ISO 序列化（复用 job 写法）。
+
+### 4) 前端（Vue3 + ElementPlus + MapPanel）
+- `web/src/api/hazard.ts`：`fetchHazards/createHazard/updateHazard/deleteHazard/transitionHazard/fetchHazardStats/fetchHazardOptions` 及类型。
+- `web/src/views/HazardView.vue`：列表 + 筛选(项目/等级/状态/关键词/仅看超期) + 统计卡片 + 权限门控按钮 + 创建/编辑对话框(MapPanel 打点 + 双日期选择) + 状态流转对话框(按当前状态给可选动作) + 等级/状态标签；列表默认按 id 倒序（最新在前）。
+- `web/src/router/index.ts` + `web/src/layouts/DefaultLayout.vue`：新增「隐患治理」路由与菜单项（Bell 图标）。
+
+### 5) 测试护栏（全绿）
+- `tests/test_hazard.py`(5 用例)：CRUD + 状态机闭环(含非法流转业务码 400) + 驳回/重开 + 超期/统计 + 软删隔离 + 等级筛选；autouse fixture 硬删测试数据，避免污染 dev DB。
+- `web/src/views/HazardView.spec.ts`(6 用例)：挂载加载、筛选回第 1 页、新增/流转/删除调用、权限门控。
+- 门禁：后端 `pytest -q` 全绿（含 1 skip），前端 `vitest run` 84 用例全绿，`npm run build` + `vue-tsc` 类型检查通过。
+
+---
+
 ## [2026-07-22] 可观测性面板 + 部署文档增强（B 轨道收尾）
 
 > 在 `/metrics` 已就绪的基础上，补齐可直接导入的 Grafana 面板与本地演练文档，令生产化验证（B 轨道）闭环。

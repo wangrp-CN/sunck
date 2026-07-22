@@ -47,6 +47,46 @@ ALARM_STATUS_CLEARED = "已消警"
 
 NORMAL_STATUSES = {DEVICE_STATUS_ONLINE, DEVICE_STATUS_OFFLINE, DEVICE_STATUS_LOW_BATTERY}
 
+# ---------------------------------------------------------------------------
+# 隐患治理闭环（Hazard）
+# ---------------------------------------------------------------------------
+# 隐患等级（按严重程度降序）
+HAZARD_LEVELS: tuple[str, ...] = ("重大", "较大", "一般", "低")
+# 隐患类别
+HAZARD_CATEGORIES: tuple[str, ...] = (
+    "施工安全",
+    "设备设施",
+    "环境",
+    "管理",
+    "其他",
+)
+# 隐患来源
+HAZARD_SOURCES: tuple[str, ...] = ("人工", "巡检", "系统")
+# 隐患状态机
+HAZARD_STATUS_PENDING = "待整改"
+HAZARD_STATUS_RECTIFYING = "整改中"
+HAZARD_STATUS_VERIFYING = "待复核"
+HAZARD_STATUS_CLOSED = "已销号"
+HAZARD_STATUS_REJECTED = "已驳回"
+HAZARD_STATUSES: tuple[str, ...] = (
+    HAZARD_STATUS_PENDING,
+    HAZARD_STATUS_RECTIFYING,
+    HAZARD_STATUS_VERIFYING,
+    HAZARD_STATUS_CLOSED,
+    HAZARD_STATUS_REJECTED,
+)
+# 状态机合法流转：动作 -> (当前允许状态, 目标状态)
+HAZARD_TRANSITIONS: dict[str, tuple[str, str]] = {
+    "start_rectify": (HAZARD_STATUS_PENDING, HAZARD_STATUS_RECTIFYING),
+    "submit_rectify": (HAZARD_STATUS_RECTIFYING, HAZARD_STATUS_VERIFYING),
+    "verify_pass": (HAZARD_STATUS_VERIFYING, HAZARD_STATUS_CLOSED),
+    "verify_reject": (HAZARD_STATUS_VERIFYING, HAZARD_STATUS_RECTIFYING),
+    "reject": (HAZARD_STATUS_PENDING, HAZARD_STATUS_REJECTED),
+    "reopen": (HAZARD_STATUS_REJECTED, HAZARD_STATUS_PENDING),
+}
+# 终态（不可再流转）
+HAZARD_TERMINAL_STATUSES = {HAZARD_STATUS_CLOSED}
+
 
 def up_topic(device_type: str) -> str:
     """设备上行主题。"""

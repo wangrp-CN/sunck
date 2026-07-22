@@ -85,6 +85,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "告警管理" },
       },
       {
+        path: "hazards",
+        name: "hazards",
+        component: () => import("@/views/HazardView.vue"),
+        meta: { title: "隐患治理" },
+      },
+      {
         path: "system/users",
         name: "system-users",
         component: () => import("@/views/SystemUserView.vue"),

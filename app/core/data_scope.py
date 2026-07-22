@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.model.alarm import Alarm
 from app.model.device import AntiIntrusionDevice, LocateDevice, TrainApproachDevice
 from app.model.fence import ElectronicFence
+from app.model.hazard import Hazard
 from app.model.job import WorkPlan
 from app.model.person import Machine, Person
 from app.model.project import Project
@@ -133,6 +134,7 @@ _MODEL_DEPT_LINK: dict[type, str] = {
     ElectronicFence: VIA_PROJECT,
     WorkPlan: VIA_PROJECT,
     Alarm: VIA_PROJECT,
+    Hazard: VIA_PROJECT,
 }
 
 

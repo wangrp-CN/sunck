@@ -10,6 +10,7 @@ import {
   Location,
   Notebook,
   Warning,
+  Bell,
 } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
@@ -73,6 +74,10 @@ async function handleLogout() {
         <el-menu-item index="/alarms">
           <el-icon><Warning /></el-icon>
           <span>告警管理</span>
+        </el-menu-item>
+        <el-menu-item index="/hazards">
+          <el-icon><Bell /></el-icon>
+          <span>隐患治理</span>
         </el-menu-item>
         <el-sub-menu index="/system">
           <template #title>

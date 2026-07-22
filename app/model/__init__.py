@@ -12,6 +12,7 @@ from app.model import (  # noqa: F401
     attachment,
     device,
     fence,
+    hazard,
     job,
     person,
     project,
