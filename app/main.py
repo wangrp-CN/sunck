@@ -26,6 +26,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
@@ -39,6 +40,7 @@ from app.core.ingest import start as ingest_start
 from app.core.ingest import stop as ingest_stop
 from app.core.logging import configure_logging
 from app.core.metrics import HTTP_REQUEST_COUNT, HTTP_REQUEST_LATENCY
+from app.core.responses import ApiResponse
 from app.mqtt import client as mqtt_client
 from app.ws import bridge
 from app.ws.router import router as ws_router
@@ -92,6 +94,24 @@ app.add_middleware(
 register_exception_handlers(app)
 app.include_router(api_router)
 app.include_router(ws_router)
+
+
+@app.get("/ws/{path:path}", include_in_schema=False, tags=["WebSocket"])
+def ws_http_guard(path: str) -> JSONResponse:
+    """WebSocket 实时通道的 HTTP 兜底。
+
+    `/ws/alarm` 等仅注册为 WebSocket 路由；当收到**未带 Upgrade 的裸 HTTP 请求**
+    （如监控探针、反向代理未透传 Upgrade、手动 curl）时，Starlette 会回默认
+    404 `detail="Not Found"`，前端/控制台据此报「message: Not Found」令人困惑。
+    此处显式返回 426 Upgrade Required 与明确指引，消除歧义；真正的 WebSocket
+    握手（Upgrade 请求）仍由 ws_router 的 `@router.websocket` 处理，互不干扰。
+    """
+    body = ApiResponse.fail(
+        "该端点为 WebSocket 实时通道，请使用 WebSocket 协议连接"
+        "（例如 ws://<host>/ws/alarm?token=<JWT>）",
+        code=426,
+    )
+    return JSONResponse(status_code=426, content=body.model_dump())
 
 
 class MetricsMiddleware(BaseHTTPMiddleware):
