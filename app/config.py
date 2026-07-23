@@ -70,7 +70,9 @@ class Settings(BaseSettings):
     db_pool_recycle: int = 1800
     # ingestion 独立连接池（阶段3 待办收敛）：上行落库走独立池，与 HTTP API 流量隔离，
     # 避免千台设备洪泛时 ingestion 抢占 API 连接（维度⑥）。
-    ingest_db_pool_size: int = 8
+    # 默认 12（阶段④压测甜点：千台@2s≈497msg/s 下，配合 Mosquitto max_queued_messages=100000，
+    # 端到端落库率 ≈100% 且读延迟显著低于 workers=16 配置；详见 STRESS_TEST_REPORT.md §7.5/§7.6）。
+    ingest_db_pool_size: int = 12
     ingest_db_max_overflow: int = 8
     # 读/看板独立连接池（基础设施审计·③）：dashboard 大屏聚合 + realtime 实时只读端点
     # 走独立池，与 API 写事务池（engine）隔离，避免重查询在高并发下挤占写连接。
@@ -101,7 +103,9 @@ class Settings(BaseSettings):
     # 关闭则 on_message 直接同步处理（与历史行为一致）；开启后入队由工作线程池并行落库，
     # 队列满自动回退同步处理（不丢数据，仅退化吞吐）。
     ingest_enabled: bool = True
-    ingest_workers: int = 4
+    # 默认 8：千台@2s 洪泛下 ≈62 msg/s/worker 远超峰值需求，落库率≈100% 且读延迟(中位70ms)
+    # 优于 16 worker(110ms)；仅在上行翻倍(数千设备/更短间隔)追不上时才需上调（§7.5/§7.6）。
+    ingest_workers: int = 8
     # 有界队列上限；超过即回退同步处理（背压），避免内存无限增长
     ingest_queue_max: int = 20000
     # 落库批处理（基础设施审计 · ④）：工作线程攒批，单会话一次性 commit，
