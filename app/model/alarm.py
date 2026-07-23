@@ -54,6 +54,13 @@ class Alarm(Base, TimestampMixin, CreatorMixin):
     media_urls: Mapped[str | None] = mapped_column(
         String(1024), nullable=True, comment="图片/视频URL"
     )
+    # 关联隐患（告警一键转隐患时回填，形成监测→治理闭环）
+    hazard_id: Mapped[int | None] = mapped_column(
+        ForeignKey("hazard.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="关联隐患ID(告警转隐患)",
+    )
 
 
 class AlarmConfig(Base, TimestampMixin):

@@ -73,6 +73,7 @@ class HazardOut(BaseModel):
     discovered_by_name: str | None = None
     discovered_at: datetime | None = None
     source: str = "人工"
+    source_alarm_id: int | None = None
     status: str = "待整改"
     assignee_id: int | None = None
     assignee_name: str | None = None

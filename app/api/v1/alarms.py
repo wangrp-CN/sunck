@@ -28,6 +28,7 @@ from app.model.project import Project
 from app.model.system import User
 from app.mqtt import client as mqtt_client
 from app.mqtt import protocol
+from app.service import hazard_service as hz_svc
 from app.service.alarm_report import (
     build_excel,
     build_excel_snapshot,
@@ -226,6 +227,19 @@ class AlarmBatchHandleRequest(BaseModel):
     content: str | None = Field(None, description="处置内容")
 
 
+class AlarmToHazardRequest(BaseModel):
+    """告警转隐患的可选覆盖项；缺省由告警信息自动推导。"""
+
+    title: str | None = Field(None, description="隐患标题(缺省自动生成)")
+    level: str | None = Field(None, description="隐患等级(缺省按告警级别映射)")
+    category: str | None = Field(None, description="隐患类别(缺省施工安全)")
+    description: str | None = Field(None, description="隐患描述(缺省用告警信息)")
+    location_desc: str | None = Field(None, description="位置描述(缺省用围栏名称)")
+    project_id: int | None = Field(None, description="所属项目(缺省用告警项目)")
+    assignee_id: int | None = Field(None, description="整改责任人(人员ID)")
+    due_at: str | None = Field(None, description="整改期限(ISO 8601，缺省生成后 7 天)")
+
+
 @router.get(
     "",
     summary="告警列表",
@@ -312,6 +326,35 @@ def handle_alarm_endpoint(
                 data=result, message="处置已保存，但消警指令下发失败，请检查设备连接"
             )
     return ApiResponse.success(data=result, message="处置已保存")
+
+
+@router.post(
+    "/{alarm_id}/convert-to-hazard",
+    summary="告警一键转隐患（监测→治理闭环）",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("alarm:handle"))],
+)
+def convert_to_hazard(
+    alarm_id: int,
+    req: AlarmToHazardRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+    scope: DataScope = Depends(get_data_scope),
+) -> ApiResponse:
+    """把一条告警转换为隐患治理工单，并回填双向关联。
+
+    部门数据隔离：仅当前用户数据范围内可见的告警可转。同一告警不可重复转。
+    """
+    stmt = select(Alarm).where(Alarm.id == alarm_id)
+    stmt = apply_data_scope(stmt, Alarm, scope)
+    if db.scalar(stmt) is None:
+        raise HTTPException(status_code=404, detail="告警不存在或无权限访问")
+    overrides = req.model_dump(exclude_none=True)
+    out = hz_svc.convert_alarm_to_hazard(db, alarm_id, user.id, overrides)
+    if out is None:
+        raise HTTPException(status_code=404, detail="告警不存在")
+    db.commit()
+    return ApiResponse.success(data=out, message="已转为隐患工单")
 
 
 @router.post(

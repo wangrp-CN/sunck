@@ -44,6 +44,13 @@ class Hazard(Base, TimestampMixin, CreatorMixin, SoftDeleteMixin):
     )
     # 来源：人工/巡检/系统
     source: Mapped[str] = mapped_column(String(32), default="人工", comment="来源")
+    # 来源告警（告警一键转隐患时回填，形成监测→治理闭环溯源）
+    source_alarm_id: Mapped[int | None] = mapped_column(
+        ForeignKey("alarm.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="来源告警ID(告警转隐患溯源)",
+    )
 
     # 状态机：待整改/整改中/待复核/已销号/已驳回
     status: Mapped[str] = mapped_column(

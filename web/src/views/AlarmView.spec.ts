@@ -21,6 +21,12 @@ vi.mock("@/stores/auth", () => ({
   })),
 }));
 
+// AlarmView 现使用 useRouter（转隐患成功跳转），测试无 router 插件，桩掉避免告警
+vi.mock("vue-router", () => ({
+  useRouter: () => ({ push: vi.fn() }),
+  useRoute: () => ({ path: "/", meta: {} }),
+}));
+
 const alarms = {
   items: [
     {
@@ -69,8 +75,10 @@ vi.mock("@/api/realtime", () => ({
 }));
 vi.mock("@/api/fence", () => ({ fetchFences: vi.fn() }));
 vi.mock("@/api/project", () => ({ fetchProjects: vi.fn() }));
+vi.mock("@/api/person", () => ({ fetchPersons: vi.fn() }));
 vi.mock("@/api/media", () => ({ putAlarmMedia: vi.fn() }));
 vi.mock("@/api/alarm", () => ({
+  convertAlarmToHazard: vi.fn(),
   exportAlarmReport: vi.fn(),
   fetchAlarmPeriod: vi.fn(),
   fetchAlarmReport: vi.fn(),

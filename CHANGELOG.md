@@ -4,6 +4,43 @@
 
 ---
 
+## [2026-07-22] 业务闭环收口（告警→隐患一键转工单 + 站内信通知中心）
+
+> 在「隐患治理闭环」模块基础上，打通**监测→治理**全链路：告警一键转为隐患工单（双向溯源），新告警触发站内信通知，前端「告警管理」内嵌转隐患弹窗、全局铃铛抽屉实时查看与已读。SMS / 语音通道预留适配器，待第三方凭据就绪即可启用。
+
+### 1) 告警→隐患一键转工单（双向溯源）
+- `app/model/hazard.py`：新增 `source_alarm_id`(FK→alarm, SET NULL, 索引)，记录隐患来源告警。
+- `app/model/alarm.py`：新增 `hazard_id`(FK→hazard, 索引)，标记该告警已转出的隐患工单。
+- 手写迁移 `alembic/versions/i3j4k5l6m7n8_add_alarm_hazard_link.py`（`down_revision=h2i3j4k5l6`）：双向 FK + 索引。
+- `app/core/constants.py`：新增 `ALARM_LEVEL_TO_HAZARD_LEVEL`(严重→重大/警告→较大/提示→一般)。
+- `app/schema/hazard.py`：`HazardOut` 暴露 `source_alarm_id`。
+- `app/service/hazard_service.py`：`convert_alarm_to_hazard()`（重复转换报业务码 400）、`to_hazard_out` 回填来源。
+- `app/service/alarm_service.py`：`to_alarm_out` 暴露 `hazard_id`；`create_alarm` 落库后触发通知。
+- `app/api/v1/alarms.py`：新增 `POST /{alarm_id}/convert-to-hazard`（`alarm:handle` + 数据范围校验）。
+- `tests/test_alarm_to_hazard.py`(2 用例)：默认转换 + 覆盖字段；已转不可重复（硬删 fixture）。
+
+### 2) 站内信通知中心（自解释，无部门隔离）
+- `app/model/notification.py`（新）：`Notification`(user_id CASCADE、channel in_app/sms/voice、category、title/content/link/is_read)。
+- 迁移 `alembic/versions/j4k5l6m7n8o9_add_notification.py`（`down_revision=i3j4k5l6m7n8`）：user_id/channel/category/is_read 索引。
+- `app/core/notify.py`（新）：`InAppNotifier`（写库）、`SmsNotifier`/`VoiceNotifier`（预留桩：记日志+写库，待第三方凭据）；`notify_alarm_raised()` 向全部在职用户广播「新告警」站内信（MVP 广播，后续按项目/角色收窄）。
+- `app/schema/notification.py`（新）：`NotificationOut`(北京墙钟序列化) + `NotificationPage`(total/unread/items)。
+- `app/api/v1/notifications.py`（新）：`GET /`(列表+未读数)、`GET /unread-count`、`POST /{id}/read`、`POST /read-all`，均按当前用户自过滤、仅需登录。
+- `app/api/router.py`：挂载 `prefix="/v1/notifications"`（插在 hazards 后）。
+- `tests/test_notification.py`(2 用例)：列表/已读、告警创建触发通知；autouse 清空 fixture。
+
+### 3) 前端（Vue3 + ElementPlus）
+- `web/src/api/notification.ts`（新）：通知中心 API 封装 + 类型。
+- `web/src/api/alarm.ts`：新增 `convertAlarmToHazard` + `AlarmToHazardRequest`。
+- `web/src/types/index.ts` & `web/src/api/realtime.ts`：`Alarm`/`AlarmItem` 补 `hazard_id`（来源溯源/「已转隐患」标签）。
+- `web/src/views/AlarmView.vue`：操作列加「转隐患」按钮 + 「已转隐患」标签；转隐患弹窗（标题/等级/类别/项目/责任人/期限/位置/描述，预填告警派生值，提交后跳转隐患治理页）。
+- `web/src/layouts/DefaultLayout.vue`：顶栏铃铛 + 未读角标 + 通知抽屉（全部/未读切换、单条/全部已读、点击有 link 则跳转），挂载后每 30s 轮询未读数。
+
+### 4) 测试护栏（全绿）
+- 后端：`test_alarm_to_hazard.py` + `test_notification.py` 共 4 用例全绿（分批运行 pytest 全绿，1 skip）。
+- 前端：`AlarmView.spec.ts` 补 `@/api/person`、`convertAlarmToHazard` mock 与 `vue-router` 桩；`vitest run` 84 用例全绿，`vue-tsc` 类型检查无错，`npm run build` 通过。
+
+---
+
 ## [2026-07-22] 隐患治理闭环（新业务模块 · C 轨道「按需新业务模块」）
 
 > 端到端落地「隐患治理闭环」模块，与既有「告警（系统自动触发）」互补：隐患由人工/巡检发现，走「待整改→整改中→待复核→已销号」状态机，含驳回/重开分支，并支持超期预警与多维统计。

@@ -45,6 +45,13 @@ ALARM_STATUS_START = "告警开始"
 ALARM_STATUS_END = "告警结束"
 ALARM_STATUS_CLEARED = "已消警"
 
+# 告警级别 → 隐患级别（告警一键转隐患时映射；缺省落到「一般」）
+ALARM_LEVEL_TO_HAZARD_LEVEL: dict[str, str] = {
+    "严重": "重大",
+    "警告": "较大",
+    "提示": "一般",
+}
+
 NORMAL_STATUSES = {DEVICE_STATUS_ONLINE, DEVICE_STATUS_OFFLINE, DEVICE_STATUS_LOW_BATTERY}
 
 # ---------------------------------------------------------------------------

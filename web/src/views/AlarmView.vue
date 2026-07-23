@@ -10,6 +10,7 @@ import {
 } from "@/api/realtime";
 import {
   batchHandleAlarms,
+  convertAlarmToHazard,
   exportAlarmReport,
   fetchAlarmPeriod,
   fetchAlarmReport,
@@ -20,12 +21,17 @@ import {
   updateAlarmConfig,
   type AlarmReportParams,
   type AlarmReportResult,
+  type AlarmToHazardRequest,
   type Granularity,
   type SnapshotPreviewResult,
 } from "@/api/alarm";
+import { type HazardLevel } from "@/api/hazard";
 import { formatPeriodLabel, granularityLabel } from "@/utils/period";
 import { fetchProjects } from "@/api/project";
 import { fetchFences } from "@/api/fence";
+import { fetchPersons } from "@/api/person";
+import type { Person } from "@/types";
+import { useRouter } from "vue-router";
 import { putAlarmMedia } from "@/api/media";
 import { mediaKeyFromUrl, resolvePresigned } from "@/utils/media";
 import { wgs84ToGcj02 } from "@/utils/geo";
@@ -38,6 +44,7 @@ import type { Alarm, AlarmConfig, MapDevice, MapFence, Project } from "@/types";
 import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
+const router = useRouter();
 const canHandle = computed(() => auth.user?.permission_codes.includes("alarm:handle") ?? false);
 const canConfig = computed(() => auth.user?.permission_codes.includes("alarm:config") ?? false);
 const canReport = computed(() => auth.user?.permission_codes.includes("alarm:list") ?? false);
@@ -104,6 +111,36 @@ async function loadProjects() {
     /* 忽略 */
   }
 }
+
+// 责任人下拉（转隐患时指定整改人）
+const persons = ref<Person[]>([]);
+async function loadPersons() {
+  try {
+    const res = await fetchPersons({ page: 1, size: 200 });
+    persons.value = res.items;
+  } catch {
+    /* 忽略 */
+  }
+}
+
+// 告警级别 → 隐患级别（前端预填，与后端 ALARM_LEVEL_TO_HAZARD_LEVEL 对齐）
+const ALARM_LEVEL_TO_HAZARD: Record<string, HazardLevel> = {
+  严重: "重大",
+  警告: "较大",
+  提示: "一般",
+};
+function alarmLevelToHazard(level: string | null | undefined): HazardLevel {
+  if (level && ALARM_LEVEL_TO_HAZARD[level]) return ALARM_LEVEL_TO_HAZARD[level];
+  return "一般";
+}
+// 续期 7 天的本地 ISO 默认值（与后端 convert 默认 due_at 对齐）
+function defaultDueAt(): string {
+  const d = new Date(Date.now() + 7 * 24 * 3600 * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+const HAZARD_LEVEL_OPTIONS: HazardLevel[] = ["重大", "较大", "一般", "低"];
+const HAZARD_CATEGORY_OPTIONS = ["施工安全", "设备设施", "环境", "管理", "其他"];
 
 async function loadAlarms() {
   loading.value = true;
@@ -279,6 +316,72 @@ async function submitHandle() {
     ElMessage.error(e?.message || "处置失败");
   } finally {
     handling.value = false;
+  }
+}
+
+// ----- 告警转隐患 -----
+const convertVisible = ref(false);
+const converting = ref(false);
+const convertForm = reactive<{
+  id: number;
+  title: string;
+  level: HazardLevel;
+  category: string;
+  description: string;
+  location_desc: string;
+  project_id: number | null;
+  assignee_id: number | null;
+  due_at: string;
+}>({
+  id: 0,
+  title: "",
+  level: "一般",
+  category: "施工安全",
+  description: "",
+  location_desc: "",
+  project_id: null,
+  assignee_id: null,
+  due_at: "",
+});
+function openConvert(row: any) {
+  convertForm.id = row.id;
+  convertForm.title = `告警转隐患：${ALARM_TYPE_LABELS[row.alarm_type as keyof typeof ALARM_TYPE_LABELS] || row.alarm_type || "告警"} / ${row.device_name || row.device_no || "未知设备"}`;
+  convertForm.level = alarmLevelToHazard(row.alarm_level);
+  convertForm.category = "施工安全";
+  convertForm.description = row.alarm_info || "";
+  convertForm.location_desc = row.fence_name || row.device_name || "";
+  convertForm.project_id = row.project_id ?? filters.project_id ?? null;
+  convertForm.assignee_id = null;
+  convertForm.due_at = defaultDueAt();
+  convertVisible.value = true;
+}
+async function submitConvert() {
+  if (!convertForm.title.trim()) {
+    ElMessage.warning("请填写隐患标题");
+    return;
+  }
+  converting.value = true;
+  const payload: AlarmToHazardRequest = {
+    title: convertForm.title.trim(),
+    level: convertForm.level,
+    category: convertForm.category || null,
+    description: convertForm.description || null,
+    location_desc: convertForm.location_desc || null,
+    project_id: convertForm.project_id,
+    assignee_id: convertForm.assignee_id,
+    due_at: convertForm.due_at || null,
+  };
+  try {
+    await convertAlarmToHazard(convertForm.id, payload);
+    ElMessage.success("已转为隐患工单，可在「隐患治理」中跟踪整改");
+    convertVisible.value = false;
+    loadAlarms();
+    // 跳转隐患治理页，进入闭环整改流程
+    router.push("/hazards");
+  } catch (e: any) {
+    ElMessage.error(e?.message || "转隐患失败");
+  } finally {
+    converting.value = false;
   }
 }
 
@@ -600,6 +703,7 @@ onMounted(async () => {
     }
   }
   await loadProjects();
+  await loadPersons();
   await loadAlarms();
   await loadMapData();
   await loadTrend();
@@ -799,7 +903,7 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
           <span v-else class="sub">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="130" fixed="right">
+      <el-table-column label="操作" width="180" fixed="right">
         <template #default="{ row }">
           <el-button
             v-if="canHandle"
@@ -809,6 +913,15 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
           >
             处置
           </el-button>
+          <el-button
+            v-if="canHandle && !row.hazard_id"
+            type="warning"
+            link
+            @click="openConvert(row)"
+          >
+            转隐患
+          </el-button>
+          <el-tag v-if="row.hazard_id" type="success" size="small">已转隐患</el-tag>
           <el-button
             type="info"
             link
@@ -876,6 +989,71 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
         <el-button @click="handleVisible = false">取消</el-button>
         <el-button type="primary" :loading="handling" @click="submitHandle">
           保存
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 告警转隐患弹窗 -->
+    <el-dialog v-model="convertVisible" title="告警转隐患" width="520px">
+      <el-alert
+        type="info"
+        :closable="false"
+        show-icon
+        title="将把该告警生成一条隐患工单，进入「待整改 → 整改中 → 待复核 → 已销号」闭环。"
+        style="margin-bottom: 12px"
+      />
+      <el-form label-width="92px">
+        <el-form-item label="来源告警">
+          <el-tag type="warning" effect="plain">ID {{ convertForm.id }}</el-tag>
+        </el-form-item>
+        <el-form-item label="隐患标题">
+          <el-input v-model="convertForm.title" placeholder="隐患标题" />
+        </el-form-item>
+        <el-form-item label="隐患等级">
+          <el-select v-model="convertForm.level" style="width: 100%">
+            <el-option v-for="lv in HAZARD_LEVEL_OPTIONS" :key="lv" :label="lv" :value="lv" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="隐患类别">
+          <el-select v-model="convertForm.category" style="width: 100%">
+            <el-option v-for="c in HAZARD_CATEGORY_OPTIONS" :key="c" :label="c" :value="c" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="关联项目">
+          <el-select v-model="convertForm.project_id" placeholder="无（不选）" clearable style="width: 100%">
+            <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="整改责任人">
+          <el-select v-model="convertForm.assignee_id" placeholder="未指定" clearable style="width: 100%">
+            <el-option v-for="p in persons" :key="p.id" :label="p.name" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="整改期限">
+          <el-date-picker
+            v-model="convertForm.due_at"
+            type="datetime"
+            value-format="YYYY-MM-DDTHH:mm:ss"
+            placeholder="选择期限"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="位置描述">
+          <el-input v-model="convertForm.location_desc" placeholder="如：某里程/某工点" />
+        </el-form-item>
+        <el-form-item label="隐患描述">
+          <el-input
+            v-model="convertForm.description"
+            type="textarea"
+            :rows="3"
+            placeholder="隐患详情描述"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="convertVisible = false">取消</el-button>
+        <el-button type="warning" :loading="converting" @click="submitConvert">
+          生成隐患工单
         </el-button>
       </template>
     </el-dialog>

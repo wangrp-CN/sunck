@@ -308,6 +308,7 @@ export interface Alarm {
   work_plan_id: number | null;
   media_urls: string[] | null;
   alarm_time: string | null;
+  hazard_id: number | null;
 }
 
 export interface AlarmPage {

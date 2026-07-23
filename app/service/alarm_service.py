@@ -114,6 +114,13 @@ def create_alarm(db: Session, **fields) -> Alarm | None:
         r.set(key, str(alarm.id), xx=True, ex=ALARM_DEDUP_TTL)
     except Exception:  # noqa: BLE001
         logger.warning("告警去重键写入失败（不影响落库）")
+    # 新告警产生 → 推送站内信（去重命中时 create_alarm 已提前返回，不会重复通知）
+    try:
+        from app.core.notify import notify_alarm_raised
+
+        notify_alarm_raised(db, alarm)
+    except Exception:  # noqa: BLE001
+        logger.warning("告警站内信通知失败（不影响告警落库）")
     return alarm
 
 
@@ -207,6 +214,7 @@ def to_alarm_out(alarm: Alarm) -> dict[str, Any]:
         "fence_name": alarm.fence_name,
         "media_urls": _parse_media(alarm.media_urls),
         "work_plan_id": alarm.work_plan_id,
+        "hazard_id": alarm.hazard_id,
         "alarm_time": alarm.alarm_time.isoformat() if alarm.alarm_time else None,
     }
 

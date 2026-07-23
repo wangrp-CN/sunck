@@ -1,5 +1,6 @@
 // 告警管理 API 封装（处置 + 配置 + 报表/导出）；列表复用 @/api/realtime 的 fetchAlarms
 import request, { http } from "@/utils/request";
+import type { Hazard } from "@/api/hazard";
 import type { Alarm, AlarmConfig, AlarmHandleRequest } from "@/types";
 
 // 处置告警（处理/忽略/确认/已消警）
@@ -9,6 +10,29 @@ export function handleAlarm(
 ): Promise<Alarm> {
   return http<Alarm>({
     url: `/v1/alarms/${id}/handle`,
+    method: "POST",
+    data: req,
+  });
+}
+
+// 告警一键转隐患（监测→治理闭环）
+export interface AlarmToHazardRequest {
+  title?: string;
+  level?: string;
+  category?: string | null;
+  description?: string | null;
+  location_desc?: string | null;
+  project_id?: number | null;
+  assignee_id?: number | null;
+  due_at?: string | null;
+}
+
+export function convertAlarmToHazard(
+  id: number,
+  req: AlarmToHazardRequest,
+): Promise<Hazard> {
+  return http<Hazard>({
+    url: `/v1/alarms/${id}/convert-to-hazard`,
     method: "POST",
     data: req,
   });

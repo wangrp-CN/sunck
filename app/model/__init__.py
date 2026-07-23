@@ -14,6 +14,7 @@ from app.model import (  # noqa: F401
     fence,
     hazard,
     job,
+    notification,
     person,
     project,
     realtime,

@@ -8,20 +8,23 @@
 所有查询均经 apply_data_scope 施加部门数据隔离；端点统一提交（service 不 commit）。
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.core.clock import now_local
 from app.core.constants import (
+    ALARM_LEVEL_TO_HAZARD_LEVEL,
     HAZARD_TERMINAL_STATUSES,
     HAZARD_TRANSITIONS,
 )
 from app.core.data_scope import DataScope, apply_data_scope
 from app.core.exceptions import BusinessError
+from app.model.alarm import Alarm
 from app.model.hazard import Hazard
 from app.schema.hazard import HazardOut
+from app.service.alarm_service import alarm_type_label
 
 
 def _is_overdue(h: Hazard, now_utc: datetime) -> bool:
@@ -51,6 +54,7 @@ def to_hazard_out(h: Hazard, now_utc: datetime | None = None) -> HazardOut:
         discovered_by_name=h.discovered_by_name,
         discovered_at=h.discovered_at,
         source=h.source,
+        source_alarm_id=h.source_alarm_id,
         status=h.status,
         assignee_id=h.assignee_id,
         assignee_name=assignee_name,
@@ -80,6 +84,61 @@ def create_hazard(db: Session, data: dict, user_id: int | None) -> HazardOut:
     db.flush()
     db.refresh(h)
     return to_hazard_out(h)
+
+
+def convert_alarm_to_hazard(
+    db: Session,
+    alarm_id: int,
+    operator_id: int | None,
+    overrides: dict | None = None,
+) -> HazardOut | None:
+    """告警一键转隐患：把一条告警转换为隐患治理工单，形成监测→治理闭环。
+
+    转换后回填 `alarm.hazard_id` 与 `hazard.source_alarm_id` 双向关联。
+    若该告警已转过隐患，按业务错误返回（调用方转 HTTP 200 + body code 400）。
+    """
+    overrides = overrides or {}
+    alarm = db.get(Alarm, alarm_id)
+    if alarm is None:
+        return None
+    if alarm.hazard_id is not None:
+        raise BusinessError("该告警已转为隐患，不可重复转换", code=400)
+
+    title = overrides.get("title") or "告警转隐患：{}/{}".format(
+        alarm_type_label(alarm.alarm_type),
+        alarm.device_name or alarm.device_no or "未知设备",
+    )
+    level = overrides.get("level") or ALARM_LEVEL_TO_HAZARD_LEVEL.get(alarm.alarm_level, "一般")
+    raw_due = overrides.get("due_at")
+    if isinstance(raw_due, str):
+        try:
+            due_at = datetime.fromisoformat(raw_due)
+        except ValueError:
+            due_at = now_local() + timedelta(days=7)
+    else:
+        due_at = raw_due or (now_local() + timedelta(days=7))
+    data = {
+        "project_id": overrides.get("project_id", alarm.project_id),
+        "title": title,
+        "level": level,
+        "category": overrides.get("category") or "施工安全",
+        "description": overrides.get("description") or alarm.alarm_info,
+        "location_desc": overrides.get("location_desc") or alarm.fence_name,
+        "lng": overrides.get("lng"),
+        "lat": overrides.get("lat"),
+        "discovered_by_name": overrides.get("discovered_by_name") or "系统(告警转隐患)",
+        "discovered_at": now_local(),
+        "source": "系统",
+        "assignee_id": overrides.get("assignee_id"),
+        "due_at": due_at,
+        "source_alarm_id": alarm.id,
+    }
+    out = create_hazard(db, data, operator_id)
+    # 回填告警侧关联（create_hazard 已 flush，hazard.id 可用）
+    hazard_id = out.id
+    alarm.hazard_id = hazard_id
+    db.flush()
+    return out
 
 
 def _base_stmt(scope: DataScope):
