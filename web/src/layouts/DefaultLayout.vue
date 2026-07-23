@@ -147,6 +147,12 @@ function onNotifClick(item: NotificationItem) {
   markRead(item);
 }
 
+// 跳转到独立消息中心页
+function goAllNotif() {
+  notifVisible.value = false;
+  router.push({ name: "notifications" });
+}
+
 onMounted(() => {
   refreshUnread();
   // 每 30s 轮询未读数量（轻量接口）
@@ -205,6 +211,10 @@ onUnmounted(() => {
         <el-menu-item index="/hazards">
           <el-icon><Bell /></el-icon>
           <span>隐患治理</span>
+        </el-menu-item>
+        <el-menu-item index="/notifications">
+          <el-icon><Bell /></el-icon>
+          <span>消息中心</span>
         </el-menu-item>
         <el-sub-menu index="/system">
           <template #title>
@@ -293,6 +303,11 @@ onUnmounted(() => {
           small
           @current-change="onNotifPageChange"
         />
+      </div>
+      <div class="notif-footer">
+        <el-button text type="primary" size="small" @click="goAllNotif">
+          查看全部通知
+        </el-button>
       </div>
     </el-drawer>
   </el-container>
@@ -425,5 +440,12 @@ onUnmounted(() => {
   margin-top: 8px;
   display: flex;
   justify-content: center;
+}
+.notif-footer {
+  margin-top: 8px;
+  display: flex;
+  justify-content: center;
+  border-top: 1px solid #ebeef5;
+  padding-top: 8px;
 }
 </style>

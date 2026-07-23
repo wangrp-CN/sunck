@@ -91,6 +91,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "隐患治理" },
       },
       {
+        path: "notifications",
+        name: "notifications",
+        component: () => import("@/views/NotificationView.vue"),
+        meta: { title: "消息中心" },
+      },
+      {
         path: "system/users",
         name: "system-users",
         component: () => import("@/views/SystemUserView.vue"),

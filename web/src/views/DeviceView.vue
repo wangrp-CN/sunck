@@ -8,6 +8,11 @@ import {
   fetchDevices,
   updateDevice,
 } from "@/api/device";
+import {
+  DEVICE_ACTIONS,
+  sendCommand,
+  type CommandResult,
+} from "@/api/realtime";
 import { fetchProjects } from "@/api/project";
 import type {
   Device,
@@ -23,6 +28,7 @@ const auth = useAuthStore();
 const canAdd = computed(() => auth.user?.permission_codes.includes("device:add") ?? false);
 const canEdit = computed(() => auth.user?.permission_codes.includes("device:edit") ?? false);
 const canDelete = computed(() => auth.user?.permission_codes.includes("device:delete") ?? false);
+const canCommand = computed(() => auth.user?.permission_codes.includes("device:command") ?? false);
 
 const loading = ref(false);
 const keyword = ref("");
@@ -222,6 +228,60 @@ async function handleDelete(row: Device) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 下发设备指令（接口 2/4/6）：弹窗选择动作并下发，回显下发报文
+// ---------------------------------------------------------------------------
+const cmdVisible = ref(false);
+const cmdLoading = ref(false);
+const cmdDevice = ref<Device | null>(null);
+const cmdAction = ref<string>("");
+const cmdParamsText = ref<string>("{}");
+const cmdResult = ref<CommandResult | null>(null);
+
+const cmdActions = computed<string[]>(() =>
+  cmdDevice.value ? DEVICE_ACTIONS[cmdDevice.value.device_type as DeviceType] || [] : [],
+);
+
+function openCommand(row: Device) {
+  cmdDevice.value = row;
+  cmdAction.value = cmdActions.value[0] || "";
+  cmdParamsText.value = "{}";
+  cmdResult.value = null;
+  cmdVisible.value = true;
+}
+
+async function sendCmd() {
+  if (!cmdDevice.value || !cmdAction.value) {
+    ElMessage.warning("请选择指令动作");
+    return;
+  }
+  let params: Record<string, unknown> | null = null;
+  const raw = cmdParamsText.value.trim();
+  if (raw && raw !== "{}") {
+    try {
+      params = JSON.parse(raw);
+    } catch {
+      ElMessage.error("参数必须是合法 JSON");
+      return;
+    }
+  }
+  cmdLoading.value = true;
+  try {
+    const res = await sendCommand({
+      device_type: cmdDevice.value.device_type as DeviceType,
+      device_no: cmdDevice.value.device_no,
+      action: cmdAction.value,
+      params,
+    });
+    cmdResult.value = res;
+    ElMessage.success(`指令已下发：${res.topic}`);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "指令下发失败");
+  } finally {
+    cmdLoading.value = false;
+  }
+}
+
 onMounted(async () => {
   if (!auth.user) {
     try {
@@ -291,6 +351,7 @@ onMounted(async () => {
       <el-table-column label="操作" width="150" fixed="right">
         <template #default="{ row }">
           <el-button v-if="canEdit" link type="primary" @click="openEdit(row)">编辑</el-button>
+          <el-button v-if="canCommand" link type="primary" @click="openCommand(row)">下发指令</el-button>
           <el-button v-if="canDelete" link type="danger" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -372,6 +433,47 @@ onMounted(async () => {
         <el-button type="primary" :loading="submitting" @click="handleSubmit">保存</el-button>
       </template>
     </el-dialog>
+
+    <!-- 下发设备指令 -->
+    <el-dialog
+      v-model="cmdVisible"
+      title="下发设备指令"
+      width="520px"
+      :close-on-click-modal="false"
+    >
+      <el-descriptions :column="1" border size="small" class="cmd-desc">
+        <el-descriptions-item label="设备名称">{{ cmdDevice?.name }}</el-descriptions-item>
+        <el-descriptions-item label="设备编号">{{ cmdDevice?.device_no }}</el-descriptions-item>
+        <el-descriptions-item label="设备类型">{{ deviceTypeLabel(cmdDevice?.device_type || "") }}</el-descriptions-item>
+      </el-descriptions>
+      <el-form label-width="84px" class="cmd-form">
+        <el-form-item label="指令动作">
+          <el-select v-model="cmdAction" placeholder="请选择动作" class="full">
+            <el-option v-for="a in cmdActions" :key="a" :label="a" :value="a" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="参数(JSON)">
+          <el-input
+            v-model="cmdParamsText"
+            type="textarea"
+            :rows="3"
+            placeholder='可选，例如 {"interval": 30}'
+          />
+        </el-form-item>
+      </el-form>
+      <el-alert
+        v-if="cmdResult"
+        type="success"
+        :closable="false"
+        class="cmd-result"
+        title="下发成功"
+        :description="`topic: ${cmdResult.topic}\n动作: ${cmdResult.action}\n报文: ${JSON.stringify(cmdResult.payload)}`"
+      />
+      <template #footer>
+        <el-button @click="cmdVisible = false">关闭</el-button>
+        <el-button type="primary" :loading="cmdLoading" @click="sendCmd">下发</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -383,4 +485,8 @@ onMounted(async () => {
 .full { width: 100%; }
 .table { width: 100%; }
 .pager { margin-top: 12px; display: flex; justify-content: flex-end; }
+.cmd-desc { margin-bottom: 12px; }
+.cmd-form { margin-top: 4px; }
+.cmd-form .full { width: 100%; }
+.cmd-result { white-space: pre-line; }
 </style>
