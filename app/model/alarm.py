@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.model.base import Base, CreatorMixin, TimestampMixin
@@ -60,6 +60,13 @@ class Alarm(Base, TimestampMixin, CreatorMixin):
         nullable=True,
         index=True,
         comment="关联隐患ID(告警转隐患)",
+    )
+
+    # 查询索引（与手写迁移 k5l6m7n8o9p0 一致）：alarm_time 驱动趋势/近期/分页的
+    # range + order_by；handle_status+alarm_time 支撑看板「待处理计数」复合过滤。
+    __table_args__ = (
+        Index("ix_alarm_alarm_time", "alarm_time"),
+        Index("ix_alarm_handle_status_time", "handle_status", "alarm_time"),
     )
 
 

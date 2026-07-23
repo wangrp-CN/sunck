@@ -127,6 +127,13 @@ def health() -> dict:
 def metrics():
     from fastapi.responses import Response
 
+    # 抓取前刷新 DB 连接池实时指标（饱和度/容量/借出计数）。
+    try:
+        from app.core.metrics import update_pool_metrics
+
+        update_pool_metrics()
+    except Exception:  # noqa: BLE001
+        pass
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 

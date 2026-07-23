@@ -6,10 +6,14 @@
   `Base.metadata` 生成（见 alembic/env.py）。
 """
 
+import time
+
 from sqlalchemy import create_engine
+from sqlalchemy import event as _sa_event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import settings
+from app.core import metrics as _metrics
 
 # 会话时区固定为业务时区 Asia/Shanghai（#11 时区治理）：
 # - naive 的写入（如前端 YYYY-MM-DDTHH:mm:ss）按北京解释，避免部署到 UTC 机整体漂移；
@@ -79,3 +83,36 @@ def get_db() -> Session:
         raise
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# 连接池事件（基础设施审计 · pool 监控盲区补齐）
+# - checkout：每次借出连接计数（按池区分），反映连接获取频率。
+# - do_connect/connect：配对测量「新建物理连接」时延（池溢出被迫新建连接时上升）。
+#   注意：池饱和（请求排队等连接）的主信号是 /metrics 中的
+#   db_pool_checkedout 接近 db_pool_capacity，而非本时延。
+# ---------------------------------------------------------------------------
+_connect_starts: dict[int, float] = {}
+
+
+def _register_pool_events(engine_obj, label: str) -> None:
+    # do_connect/connect 是引擎级事件（新建物理连接前后）；
+    # checkout 是池级事件（每次从池借出，含复用）。
+    def _on_do_connect(dialect, conn_rec, cargs, cparams):
+        _connect_starts[id(conn_rec)] = time.perf_counter()
+
+    def _on_connect(dbapi_connection, connection_record):
+        start = _connect_starts.pop(id(connection_record), None)
+        if start is not None:
+            _metrics.DB_POOL_CONNECT_LATENCY.labels(pool=label).observe(time.perf_counter() - start)
+
+    def _on_checkout(dbapi_connection, connection_record, anchor):
+        _metrics.DB_POOL_CHECKOUT_TOTAL.labels(pool=label).inc()
+
+    _sa_event.listens_for(engine_obj, "do_connect")(_on_do_connect)
+    _sa_event.listens_for(engine_obj, "connect")(_on_connect)
+    _sa_event.listens_for(engine_obj.pool, "checkout")(_on_checkout)
+
+
+_register_pool_events(engine, "api")
+_register_pool_events(ingest_engine, "ingest")

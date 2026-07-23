@@ -4,6 +4,28 @@
 
 ---
 
+## [2026-07-23] 基础设施加固（告警复合索引 + DB 连接池指标）
+
+> 基础设施四维审计后的首个小包（① 查询索引缺口 + ② 连接池监控盲区）。补齐告警时序/状态查询索引，并首次把 DB 连接池饱和度纳入 Prometheus 可观测，为后续「read/看板独立池」决策提供数据支撑。
+
+### 1) 告警复合索引（缓解趋势/近期/看板慢查询）
+- 手写迁移 `alembic/versions/k5l6m7n8o9p0_add_alarm_indexes.py`（`down_revision=j4k5l6m7n8o9`）：
+  - `ix_alarm_alarm_time(alarm_time)`：`alarm_time` 是 range 过滤/order_by/trend group_by 核心列，原无索引。
+  - `ix_alarm_handle_status_time(handle_status, alarm_time)`：看板「待处理计数」与「按状态取近期」复合过滤。
+- `app/model/alarm.py`：补 `__table_args__` 索引定义，使 ORM metadata 与迁移一致。
+
+### 2) DB 连接池 Prometheus 指标（池监控盲区补齐）
+- `app/core/metrics.py`：新增 `db_pool_checkedout / checkedin / size / overflow / capacity`(Gauge) + `db_pool_checkout_total`(Counter) + `db_pool_connect_latency_seconds`(Histogram)，均带 `pool=api|ingest` 标签；`update_pool_metrics()` 在抓取时从 `engine.pool` 实时写 Gauge。
+- `app/core/database.py`：双引擎（API 池 + 独立 ingest 池）注册 PoolEvents —— `checkout` 计次、`do_connect/connect` 配对测物理连接建立时延。
+- `app/main.py`：`/metrics` 端点抓取前调用 `update_pool_metrics()`。
+- 饱和度主信号：`db_pool_checkedout` 接近 `db_pool_capacity`(=pool_size+max_overflow) 即池将耗尽（api=30 / ingest=16）。
+
+### 3) 测试与门禁
+- 新增 `tests/test_db_pool_metrics.py`：指标注册+实时写入（容量断言 api=30/ingest=16）、alarm 两索引存在性、`/metrics` 端点暴露 `db_pool_*`。
+- ruff / ruff-format 通过；DB 重测试 37 项全绿（告警生命周期/分页/看板聚合/实时等）；`alembic upgrade head` 干净。
+
+---
+
 ## [2026-07-22] 业务闭环收口（告警→隐患一键转工单 + 站内信通知中心）
 
 > 在「隐患治理闭环」模块基础上，打通**监测→治理**全链路：告警一键转为隐患工单（双向溯源），新告警触发站内信通知，前端「告警管理」内嵌转隐患弹窗、全局铃铛抽屉实时查看与已读。SMS / 语音通道预留适配器，待第三方凭据就绪即可启用。

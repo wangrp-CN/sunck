@@ -87,3 +87,74 @@ INGEST_PROCESS_LATENCY = Histogram(
     "单条上行报文处理时延（秒，含落库/规则/告警/推送）",
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0),
 )
+
+# ---------------------------------------------------------------------------
+# 数据库连接池（基础设施审计 · pool 监控盲区补齐）
+# 饱和度主信号：db_pool_checkedout 接近 db_pool_capacity 即池将耗尽（请求开始排队）。
+# 数值在 /metrics 抓取时由 update_pool_metrics() 从 engine.pool 实时写入；
+# checkout 计数与物理连接建立时延经 database.py 注册的 PoolEvents 采集。
+# ---------------------------------------------------------------------------
+DB_POOL_CHECKEDOUT = Gauge(
+    "db_pool_checkedout",
+    "当前已借出的数据库连接数（按池 api/ingest 区分）",
+    ["pool"],
+)
+
+DB_POOL_CHECKEDIN = Gauge(
+    "db_pool_checkedin",
+    "当前池中空闲的数据库连接数",
+    ["pool"],
+)
+
+DB_POOL_SIZE = Gauge(
+    "db_pool_size",
+    "连接池基线大小（pool_size）",
+    ["pool"],
+)
+
+DB_POOL_OVERFLOW = Gauge(
+    "db_pool_overflow",
+    "连接池溢出数（SQLAlchemy 原生：空闲时为负值，表示尚未用满基线）",
+    ["pool"],
+)
+
+DB_POOL_CAPACITY = Gauge(
+    "db_pool_capacity",
+    "连接池总容量（pool_size + max_overflow），饱和度 = checkedout / capacity",
+    ["pool"],
+)
+
+DB_POOL_CHECKOUT_TOTAL = Counter(
+    "db_pool_checkout_total",
+    "连接借出总次数（按池区分，反映连接获取频率）",
+    ["pool"],
+)
+
+DB_POOL_CONNECT_LATENCY = Histogram(
+    "db_pool_connect_latency_seconds",
+    "新建物理数据库连接时延（秒，按池区分；池溢出被迫新建连接时上升）",
+    ["pool"],
+    buckets=(0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5),
+)
+
+
+def update_pool_metrics() -> None:
+    """抓取 /metrics 前刷新连接池实时指标（懒加载引擎，避免循环导入）。"""
+    from app.core.database import engine, ingest_engine, settings
+
+    def _set(label: str, pool, capacity: int) -> None:
+        try:
+            DB_POOL_CHECKEDOUT.labels(pool=label).set(pool.checkedout())
+            DB_POOL_CHECKEDIN.labels(pool=label).set(pool.checkedin())
+            DB_POOL_SIZE.labels(pool=label).set(pool.size())
+            DB_POOL_OVERFLOW.labels(pool=label).set(pool.overflow())
+            DB_POOL_CAPACITY.labels(pool=label).set(capacity)
+        except Exception:  # noqa: BLE001
+            pass
+
+    _set("api", engine.pool, settings.db_pool_size + settings.db_max_overflow)
+    _set(
+        "ingest",
+        ingest_engine.pool,
+        settings.ingest_db_pool_size + settings.ingest_db_max_overflow,
+    )
