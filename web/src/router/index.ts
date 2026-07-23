@@ -97,6 +97,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "消息中心" },
       },
       {
+        path: "audit-logs",
+        name: "audit-logs",
+        component: () => import("@/views/AuditLogView.vue"),
+        meta: { title: "操作审计" },
+      },
+      {
         path: "system/users",
         name: "system-users",
         component: () => import("@/views/SystemUserView.vue"),

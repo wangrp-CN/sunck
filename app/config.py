@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     # 以「user_id + 路径 + 查询串」为键缓存 3s，把并发重复聚合折叠为每窗口 1 次计算。
     # 测试环境默认关闭，避免跨用例缓存命中破坏隔离。
     resp_cache_enabled: bool = True
+    # 操作审计中间件：对写操作（POST/PUT/PATCH/DELETE）自动落审计日志。
+    # 测试环境默认关闭，避免用例间审计行累积干扰断言。
+    audit_enabled: bool = True
     # 初始超级管理员（首次播种时写入，生产环境请通过环境变量覆盖）
     default_admin_username: str = "admin"
     default_admin_password: str = "Admin@123456"

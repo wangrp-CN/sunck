@@ -10,6 +10,7 @@ fence（电子围栏）、job（作业计划）、alarm（告警）。
 from app.model import (  # noqa: F401
     alarm,
     attachment,
+    audit,
     device,
     fence,
     hazard,

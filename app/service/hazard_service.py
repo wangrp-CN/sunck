@@ -8,6 +8,7 @@
 所有查询均经 apply_data_scope 施加部门数据隔离；端点统一提交（service 不 commit）。
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import or_, select
@@ -25,6 +26,8 @@ from app.model.alarm import Alarm
 from app.model.hazard import Hazard
 from app.schema.hazard import HazardOut
 from app.service.alarm_service import alarm_type_label
+
+logger = logging.getLogger("rail_monitor.hazard")
 
 
 def _is_overdue(h: Hazard, now_utc: datetime) -> bool:
@@ -73,7 +76,11 @@ def to_hazard_out(h: Hazard, now_utc: datetime | None = None) -> HazardOut:
 
 
 def create_hazard(db: Session, data: dict, user_id: int | None) -> HazardOut:
-    """创建隐患；发现时间缺省填当前时间。"""
+    """创建隐患；发现时间缺省填当前时间。
+
+    创建成功后按隐患所属项目的数据范围收敛推送站内信（与告警通知同源），
+    确保「监测→治理」闭环的治理侧通知同样遵守部门数据隔离、不越权广播。
+    """
     if not data.get("title"):
         raise BusinessError("隐患标题不能为空", code=400)
     if data.get("discovered_at") is None:
@@ -83,6 +90,13 @@ def create_hazard(db: Session, data: dict, user_id: int | None) -> HazardOut:
     db.add(h)
     db.flush()
     db.refresh(h)
+    # 治理侧通知（数据范围收敛，失败不影响隐患落库）
+    try:
+        from app.core.notify import notify_hazard_created
+
+        notify_hazard_created(db, h)
+    except Exception:  # noqa: BLE001
+        logger.warning("隐患站内信通知失败（不影响隐患落库）")
     return to_hazard_out(h)
 
 

@@ -216,6 +216,10 @@ onUnmounted(() => {
           <el-icon><Bell /></el-icon>
           <span>消息中心</span>
         </el-menu-item>
+        <el-menu-item index="/audit-logs">
+          <el-icon><Document /></el-icon>
+          <span>操作审计</span>
+        </el-menu-item>
         <el-sub-menu index="/system">
           <template #title>
             <el-icon><Setting /></el-icon>

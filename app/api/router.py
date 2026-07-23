@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     alarms,
     attachments,
+    audit_logs,
     auth,
     dashboard,
     departments,
@@ -39,3 +40,4 @@ api_router.include_router(realtime.router, prefix="/v1/realtime", tags=["实时�
 api_router.include_router(dashboard.router, prefix="/v1/dashboard", tags=["大屏"])
 api_router.include_router(media.router, prefix="/v1/media", tags=["媒体管理"])
 api_router.include_router(attachments.router, prefix="/v1/attachments", tags=["附件"])
+api_router.include_router(audit_logs.router, prefix="/v1/audit-logs", tags=["操作审计"])

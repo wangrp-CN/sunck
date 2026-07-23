@@ -137,6 +137,11 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(MetricsMiddleware)
 
+# 操作审计中间件：写请求自动落审计日志（受 settings.audit_enabled 总开关控制）
+from app.core.audit import AuditMiddleware  # noqa: E402
+
+app.add_middleware(AuditMiddleware)
+
 
 @app.get("/health", tags=["系统"])
 def health() -> dict:

@@ -18,8 +18,9 @@ def test_pool_metrics_update_and_capacity():
     update_pool_metrics()
     # api 池容量 = db_pool_size(10) + db_max_overflow(20)
     assert DB_POOL_CAPACITY.labels(pool="api")._value.get() == 30
-    # ingest 池容量 = ingest_db_pool_size(8) + ingest_db_max_overflow(8)
-    assert DB_POOL_CAPACITY.labels(pool="ingest")._value.get() == 16
+    # ingest 池容量 = ingest_db_pool_size(12) + ingest_db_max_overflow(8)
+    # （ingest_db_pool_size 默认值已随性能调优提升至 12，见 app/config.py）
+    assert DB_POOL_CAPACITY.labels(pool="ingest")._value.get() == 20
     # read 池容量 = read_db_pool_size(10) + read_db_max_overflow(10)（读/看板独立池）
     assert DB_POOL_CAPACITY.labels(pool="read")._value.get() == 20
     # checkedout 为数值（>=0），证明 update 成功写入

@@ -14,6 +14,9 @@ settings.captcha_enabled = False
 # （同一键在用例间复用会返回陈旧响应，导致断言随机失败）。
 settings.resp_cache_enabled = False
 
+# 关闭操作审计中间件：避免用例间审计行累积干扰断言（审计逻辑由专项测试覆盖）。
+settings.audit_enabled = False
+
 
 @pytest.fixture
 def client():
