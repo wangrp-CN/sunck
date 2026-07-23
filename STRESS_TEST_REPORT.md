@@ -150,18 +150,75 @@
 
 ---
 
+## 7.5 双杠杆复测（broker 缓冲 + ingest 并行度，2026-07-23）
+
+**调优**：同时启用 §7.4 的两项杠杆——① Mosquitto `max_queued_messages=100000`（+ `max_inflight_messages=1000`）放大订阅端 QoS1 缓冲；② 后端 `INGEST_WORKERS=16` / `INGEST_DB_POOL_SIZE=20`（批处理仍 500/1.0）。同口径复跑（1000 设备@2s + 100 查看者 150s）。
+
+### 7.5.1 千台设备上行（mqtt_flood, 153.4s）
+
+| 指标 | 值 |
+|------|-----|
+| 上行速率 | **495.3 msg/s**，发布端 0 错误 |
+| 累计发布 | **76,000** 条 |
+| 应用层 ingestion 异常 | **0**（`INGEST_ERROR_LINES=0`） |
+| 落库 DeviceLocation(LOC-S) | **76,000** 行 |
+| **端到端落库率** | **100.00%**（76,000 / 76,000） |
+
+### 7.5.2 HTTP 查看者负载（Locust 150s, 100 并发）
+
+| 端点 | #请求 | 失败 | 中位(ms) | P95(ms) | P99(ms) | 吞吐(req/s) |
+|------|------|------|---------|--------|--------|-----------|
+| dashboard/stats | 1762 | 0(0.00%) | **100** | 440 | 600 | 11.76 |
+| alarms/list | 1688 | 0(0.00%) | **100** | 220 | 340 | 11.27 |
+| realtime/locations | 1387 | 0(0.00%) | **120** | 270 | 390 | 9.26 |
+| realtime/online-status | 734 | 0(0.00%) | **120** | 270 | 450 | 4.90 |
+| devices/list | 1007 | 0(0.00%) | **110** | 230 | 380 | 6.72 |
+| media/access（预期 404） | 364 | 364(100%) | 85 | 210 | 430 | 2.43 |
+| **真实端点合计** | **6578** | **0(0.00%)** | **~110** | — | — | **~43.9** |
+
+- 聚合（含 media）：6942 请求，失败率 5.24%（**全部 media 预期 404**），中位 **110ms**，吞吐 **46.35 req/s**。真实读路径 **0% 失败**。
+
+### 7.5.3 与历次对比
+
+| 指标 | 基线(无批处理) | 批处理500/1.0(workers=4) | 双杠杆(workers=16+缓冲) |
+|------|---------------|--------------------------|------------------------|
+| HTTP 真实端点失败率 | 0.00% | 0.00% | **0.00%** |
+| 中位延迟(聚合) | 35ms | 46ms | **110ms** ⚠️ |
+| 吞吐(HTTP) | 47.97 | 48.13 | 46.35 |
+| 应用层丢失 | 0% | 0% | **0%** |
+| **端到端落库率** | 87.42% | 86.39% | **100.00%** ✅ |
+
+### 7.5.4 结论
+
+- **落库率目标达成**：从 ~86% 提升到 **100.00%**（76,000/76,000，零丢失、零溢出）。双杠杆协同生效——`max_queued_messages=10万` 给订阅端(后端)足够缓冲吸收瞬时拥塞，根除 broker 在默认 1000 缓冲下对 QoS1 的丢弃；`INGEST_WORKERS=16` 把消费并行度拉到追平 495 msg/s 峰值，缓冲始终能排空。
+- **代价：HTTP 读延迟上升约 2.4×（中位 46ms→110ms）**：根因是 16 条 ingest 写线程与 100 个 HTTP 读查询**共用同一 PG 实例**（§6 注③），写入并发翻倍挤占读查询容量；P95 dashboard 440ms / P99 600ms 仍 <1s，属可接受区间。
+- **取舍建议**：若不愿读延迟升高，可回退到 `INGEST_WORKERS=8`（或 4）+ **仅保留** `max_queued_messages` 放大——broker 缓冲已根除丢包，worker 数只需足以在洪泛结束后排空缓冲（典型非满压工况 4 亦够），并非必须 16。生产长期解法是 ingestion 写走独立 PG 实例/只读副本（§6 注③）。
+
+---
+
 ## 8. 复现命令
 
 ```bash
+# 0) 主机级调优（一次性，落库率 100% 的关键）
+#    a) Mosquitto 放大订阅端 QoS1 缓冲：/opt/homebrew/etc/mosquitto/mosquitto.conf 追加
+#       max_queued_messages 100000
+#       max_inflight_messages 1000
+#       重启 mosquitto 生效（brew services restart mosquitto）
+#    b) 后端 env 调大 ingest 并行度（见下方 export）
+
 # 1) 登记千台设备（幂等，独立 STRESS 项目）
 .venv/bin/python scripts/seed_stress.py
-# 2) 后台跑设备上行（千台 @2s ≈ 495 msg/s，153s）
+# 2) 启动后端（关键 env：批处理 + workers/pool 放大）
+export CAPTCHA_ENABLED=false INGEST_BATCH_SIZE=500 INGEST_BATCH_MAX_WAIT=1.0 \
+       INGEST_WORKERS=16 INGEST_DB_POOL_SIZE=20
+nohup .venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 >/tmp/backend_stress.log 2>&1 &
+# 3) 后台跑设备上行（千台 @2s ≈ 495 msg/s，153s）
 nohup .venv/bin/python scripts/mqtt_flood.py --devices 1000 --interval 2 \
         --duration 150 --out /tmp/mqtt_flood.json >/tmp/mqtt_flood.log 2>&1 &
-# 3) 跑 HTTP 查看者负载（100 并发，120s）
+# 4) 跑 HTTP 查看者负载（100 并发，150s）
 .venv/bin/python -m locust -f scripts/locustfile.py ViewerUser \
-        --headless -u 100 -r 20 -t 120s --csv /tmp/locust_viewer --host http://127.0.0.1:8000
-# 4) 落库率核对
+        --headless -u 100 -r 20 -t 150s --csv /tmp/locust_viewer --host http://127.0.0.1:8000
+# 5) 落库率核对（建议洪泛结束后再等 30s 排空缓冲）
 .venv/bin/python - <<'PY'
 from app.core.database import SessionLocal
 from sqlalchemy import func, select
@@ -170,6 +227,6 @@ db=SessionLocal()
 n=db.scalar(select(func.count()).select_from(DeviceLocation).where(DeviceLocation.device_no.like("LOC-S%")))
 print(f"LOC-S rows={n}  rate={n/76000*100:.2f}%"); db.close()
 PY
-# 5) 清理
+# 6) 清理
 .venv/bin/python scripts/seed_stress.py clean
 ```
