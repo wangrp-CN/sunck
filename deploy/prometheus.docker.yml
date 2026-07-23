@@ -1,0 +1,9 @@
+global:
+  scrape_interval: 15s
+scrape_configs:
+  - job_name: rail_monitor
+    # 容器内抓取宿主机原生后端：需 docker-compose 给 prometheus 服务加
+    # extra_hosts: ["host.docker.internal:host-gateway"]，使 host.docker.internal 指向宿主机。
+    # 原生部署（非容器）请改用 deploy/prometheus.yml（target 为 127.0.0.1:8000）。
+    static_configs:
+      - targets: ['host.docker.internal:8000']

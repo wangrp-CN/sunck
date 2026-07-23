@@ -4,6 +4,39 @@
 
 ---
 
+## [2026-07-23] 基础设施加固（二）：Grafana 面板 + 读/看板独立池 + ingestion 批处理
+
+> 基础设施四维审计的延续包（按优先级 ③→④）+ 把上一包的 db_pool_* 指标接进 Grafana。
+
+### 1) db_pool_* 指标接入 Grafana 面板（任务 ③ 的数据支撑已落地）
+- `deploy/grafana-dashboard.json`：新增「数据库连接池（饱和度/健康）」行，含 4 面板：
+  - 池饱和度 stat（max(checkedout/capacity)，>90% 告警）；
+  - 连接占用/空闲/容量按池 timeseries；借出速率；新建物理连接时延 P50/P95/P99。
+- `deploy/grafana/provisioning/`：新增 datasource + dashboard provider，配合 `docker-compose.yml`
+  的 grafana/prometheus 卷挂载与 `extra_hosts: host.docker.internal:host-gateway`，
+  `docker compose --profile optional up -d` 一键起出可用看板（新增 `deploy/prometheus.docker.yml` 指宿主机后端）。
+
+### 2) 读/看板独立连接池（审计 ③，缓解重查询挤占写连接）
+- `app/core/database.py`：新增 `read_engine` / `ReadSessionLocal` / `get_read_db`（独立池，同 PG 实例、
+  同步可见已提交写，非只读副本）；注册 PoolEvents(label=`read`)，`db_pool_*` 现含 `pool=read`(容量=20)。
+- `app/config.py`：新增 `read_db_pool_size/max_overflow/timeout/recycle`。
+- 路由：`dashboard.stats`/`recent_alarms` 与 `realtime` 四个只读端点(locations/online-status/devices/trajectory)
+  改用 `get_read_db`；`realtime.send_command` 仍走写池。
+
+### 3) ingestion 落库批处理（审计 ④，降低千台洪泛 WAL 开销）
+- `app/service/pipeline.py`：`handle_upstream` 新增 `autocommit` 参数（默认 True，兼容既有 2 参调用）；
+  `autocommit=False` 时不内部提交/关闭会话，并将待推送 WS 消息随返回摘要带回。
+- `app/core/ingest.py`：工作线程按 `ingest_batch_size`(默认200)/`ingest_batch_max_wait`(默认0.5s) 攒批，
+  单会话一次性 commit，commit 后再推送 WS；批失败整体回滚并回退逐条处理（不丢数据）。
+- `app/config.py`：新增 `ingest_batch_size` / `ingest_batch_max_wait`（0 退化为逐条）。
+
+### 4) 测试与门禁
+- 新增/扩展：`tests/test_db_pool_metrics.py`（read 池容量断言=20、`get_read_db` 绑定 read_engine）、
+  `tests/test_ingest.py`（批处理全部处理且不丢报文、processed 计数精确）。
+- 全量后端测试分批跑通（154 passed / 1 skipped）；ruff / ruff-format 通过；`alembic upgrade head` 干净。
+
+---
+
 ## [2026-07-23] 基础设施加固（告警复合索引 + DB 连接池指标）
 
 > 基础设施四维审计后的首个小包（① 查询索引缺口 + ② 连接池监控盲区）。补齐告警时序/状态查询索引，并首次把 DB 连接池饱和度纳入 Prometheus 可观测，为后续「read/看板独立池」决策提供数据支撑。

@@ -24,9 +24,12 @@ def _reset_module():
 
 
 def _fake_collector(records: list):
-    """mock 处理器：记录 (device_type, device_no, 线程名)，不触碰 DB。"""
+    """mock 处理器：记录 (device_type, device_no, 线程名)，不触碰 DB。
 
-    def _proc(device_type, parsed):
+    兼容批处理路径传入的 db=/autocommit= 关键字参数。
+    """
+
+    def _proc(device_type, parsed, **kwargs):
         records.append((device_type, parsed.get("device_no"), threading.current_thread().name))
 
     return _proc
@@ -103,6 +106,36 @@ def test_stop_drains_in_flight():
 
     # 停止后 drained 逻辑应保证在途报文被处理
     assert len(records) == 10, f"stop 应排空在途报文，实得 {len(records)}"
+
+
+def test_ingest_batch_processes_all():
+    """批处理：小 batch_size 下攒批落库，全部处理且不丢报文，processed 计数精确。"""
+    _reset_module()
+    settings.ingest_enabled = True
+    settings.ingest_workers = 1
+    settings.ingest_batch_size = 2
+    settings.ingest_batch_max_wait = 0.2
+    ingest._queue = queue.Queue(maxsize=100)
+
+    records = []
+    ingest.set_processor(_fake_collector(records))
+    before = metrics.INGEST_PROCESSED_TOTAL._value.get()
+    ingest.start()
+
+    n = 5
+    for i in range(n):
+        ingest.enqueue("locate", {"device_no": f"B{i}"})
+
+    import time
+
+    waited = 0.0
+    while len(records) < n and waited < 5.0:
+        time.sleep(0.05)
+        waited += 0.05
+    ingest.stop()
+
+    assert len(records) == n, f"批处理应全部处理，实得 {len(records)}"
+    assert metrics.INGEST_PROCESSED_TOTAL._value.get() - before == n
 
 
 def test_default_processor_uses_ingest_pool():

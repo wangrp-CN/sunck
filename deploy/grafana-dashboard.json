@@ -26,7 +26,7 @@
       }
     ]
   },
-  "description": "涉铁工程智能监控平台后端可观测性面板：HTTP 流量/时延、告警产出、MQTT 上行、WebSocket 连接、异步 ingestion 背压。指标来源：后端 /metrics（prometheus_client）。",
+  "description": "涉铁工程智能监控平台后端可观测性面板：HTTP 流量/时延、告警产出、MQTT 上行、WebSocket 连接、异步 ingestion 背压、数据库连接池饱和度。指标来源：后端 /metrics（prometheus_client）。",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
@@ -246,6 +246,74 @@
       "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 20, "lineWidth": 1, "showPoints": "never" }, "unit": "none" }, "overrides": [] },
       "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "list", "placement": "bottom", "showLegend": true }, "tooltip": { "mode": "single", "sort": "none" } },
       "targets": [ { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum(ingest_queue_size)", "legendFormat": "queue_size", "refId": "A" } ]
+    },
+    {
+      "type": "row",
+      "title": "数据库连接池（饱和度 / 健康）",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
+      "id": 104,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "连接池饱和度（峰值池，%）",
+      "description": "db_pool_checkedout / db_pool_capacity 峰值；>90% 表示连接即将耗尽、请求将开始排队。",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 42 },
+      "id": 12,
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 90 } ] },
+          "unit": "percent",
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": { "colorMode": "background", "graphMode": "none", "justifyMode": "auto", "orientation": "auto", "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "textMode": "auto" },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "max by (pool) (db_pool_checkedout / clamp_min(db_pool_capacity, 1)) * 100", "legendFormat": "{{pool}}", "refId": "A" } ]
+    },
+    {
+      "type": "timeseries",
+      "title": "连接占用 / 空闲 / 容量（按池）",
+      "description": "api=HTTP 读写池；ingest=上行落库独立池；read=看板/实时只读池。",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 47 },
+      "id": 13,
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never" }, "unit": "short" }, "overrides": [] },
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "db_pool_checkedout", "legendFormat": "{{pool}} 借出", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "db_pool_checkedin", "legendFormat": "{{pool}} 空闲", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "db_pool_capacity", "legendFormat": "{{pool}} 容量", "refId": "C" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "连接借出速率（按池，次/秒）",
+      "description": "db_pool_checkout_total 速率，反映连接获取频率；突增常伴随慢查询或连接泄漏。",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 47 },
+      "id": 14,
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never" }, "unit": "ops" }, "overrides": [] },
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [ { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "sum by (pool) (rate(db_pool_checkout_total[5m]))", "legendFormat": "{{pool}}", "refId": "A" } ]
+    },
+    {
+      "type": "timeseries",
+      "title": "新建物理连接时延分位（P50/P95/P99，秒）",
+      "description": "db_pool_connect_latency_seconds：池溢出被迫新建物理连接时上升，是池容量不足的前兆。",
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 55 },
+      "id": 15,
+      "fieldConfig": { "defaults": { "custom": { "drawStyle": "line", "fillOpacity": 10, "lineWidth": 1, "showPoints": "never" }, "unit": "s" }, "overrides": [] },
+      "options": { "legend": { "calcs": ["mean", "max"], "displayMode": "table", "placement": "right", "showLegend": true }, "tooltip": { "mode": "multi", "sort": "desc" } },
+      "targets": [
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "histogram_quantile(0.50, sum by (le) (rate(db_pool_connect_latency_seconds_bucket[5m])))", "legendFormat": "P50", "refId": "A" },
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "histogram_quantile(0.95, sum by (le) (rate(db_pool_connect_latency_seconds_bucket[5m])))", "legendFormat": "P95", "refId": "B" },
+        { "datasource": { "type": "prometheus", "uid": "${datasource}" }, "expr": "histogram_quantile(0.99, sum by (le) (rate(db_pool_connect_latency_seconds_bucket[5m])))", "legendFormat": "P99", "refId": "C" }
+      ]
     }
   ]
 }

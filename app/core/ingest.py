@@ -24,6 +24,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from app.config import settings
 from app.core import metrics
+from app.core.database import IngestSessionLocal
 
 logger = logging.getLogger("rail_monitor.ingest")
 
@@ -51,15 +52,18 @@ def _resolve_processor():
         from app.core.database import IngestSessionLocal
         from app.service import pipeline
 
-        def _default(dtype, parsed):
+        def _default(dtype, parsed, db=None, autocommit=True):
             # 走 ingestion 独立连接池，与 HTTP API 流量隔离（维度⑥）
-            return pipeline.handle_upstream(dtype, parsed, sessionmaker_factory=IngestSessionLocal)
+            return pipeline.handle_upstream(
+                dtype, parsed, db=db, autocommit=autocommit, sessionmaker_factory=IngestSessionLocal
+            )
 
         _processor = _default
     return _processor
 
 
 def _run(item: _Item) -> None:
+    """单条处理（inline 回退 / stop 排空用，逐条独立会话、自动提交）。"""
     dtype, parsed = item
     start = time.perf_counter()
     try:
@@ -73,16 +77,75 @@ def _run(item: _Item) -> None:
         metrics.INGEST_QUEUE_SIZE.set(_queue.qsize())
 
 
+def _flush_batch(items: list[_Item]) -> None:
+    """批量处理：单会话累积落库，一次性 commit，commit 后再推送 WS（不丢数据）。
+
+    - 正常：一条 IngestSessionLocal 会话处理整批，仅一次 db.commit()。
+    - 失败：回滚并回退为逐条处理（与历史行为一致），保证在途报文不丢。
+    - 推送统一在批量 commit 之后，避免客户端早于落库看到位置/告警。
+    """
+    if not items:
+        return
+    proc = _resolve_processor()
+    db = IngestSessionLocal()
+    ok = 0
+    msgs: list[tuple[str, dict]] = []
+    try:
+        for dtype, parsed in items:
+            t0 = time.perf_counter()
+            try:
+                summary = proc(dtype, parsed, db=db, autocommit=False)
+            finally:
+                metrics.INGEST_PROCESS_LATENCY.observe(time.perf_counter() - t0)
+            ok += 1
+            if isinstance(summary, dict):
+                msgs.extend(summary.get("messages", []))
+        db.commit()
+        metrics.INGEST_PROCESSED_TOTAL.inc(ok)
+        # commit 后再推送，保证客户端所见即已落库
+        from app.ws import bridge
+
+        for ch, m in msgs:
+            bridge.emit(ch, m)
+    except Exception:  # noqa: BLE001
+        db.rollback()
+        metrics.INGEST_ERRORS_TOTAL.inc()
+        logger.exception("ingest 批处理失败，回退逐条处理 %d 条", len(items))
+        for dtype, parsed in items:
+            _run((dtype, parsed))
+    finally:
+        db.close()
+        metrics.INGEST_QUEUE_SIZE.set(_queue.qsize())
+
+
 def _consume() -> None:
+    """工作线程：攒批处理，凑满 batch_size 或等待 batch_max_wait 秒即 flush。"""
+    batch: list[_Item] = []
+    batch_start = 0.0
     while not _stopped.is_set():
         try:
             item = _queue.get(timeout=0.5)
         except queue.Empty:
+            # 空闲：若有未 flush 的批量，立即落库
+            if batch:
+                _flush_batch(batch)
+                batch = []
+                batch_start = 0.0
             continue
-        try:
-            _run(item)
-        finally:
-            _queue.task_done()
+        batch.append(item)
+        now = time.perf_counter()
+        if not batch_start:
+            batch_start = now
+        if settings.ingest_batch_size > 0 and (
+            len(batch) >= settings.ingest_batch_size
+            or (now - batch_start) >= settings.ingest_batch_max_wait
+        ):
+            _flush_batch(batch)
+            batch = []
+            batch_start = 0.0
+    # 退出前排空在途批量
+    if batch:
+        _flush_batch(batch)
 
 
 def start() -> None:

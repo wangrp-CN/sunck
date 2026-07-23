@@ -20,8 +20,23 @@ def test_pool_metrics_update_and_capacity():
     assert DB_POOL_CAPACITY.labels(pool="api")._value.get() == 30
     # ingest 池容量 = ingest_db_pool_size(8) + ingest_db_max_overflow(8)
     assert DB_POOL_CAPACITY.labels(pool="ingest")._value.get() == 16
+    # read 池容量 = read_db_pool_size(10) + read_db_max_overflow(10)（读/看板独立池）
+    assert DB_POOL_CAPACITY.labels(pool="read")._value.get() == 20
     # checkedout 为数值（>=0），证明 update 成功写入
     assert DB_POOL_CHECKEDOUT.labels(pool="api")._value.get() is not None
+
+
+def test_read_pool_session_binds_read_engine():
+    """get_read_db 返回的会话应绑定 read_engine（与写池 engine 隔离）。"""
+    from app.core.database import engine, get_read_db, read_engine
+
+    gen = get_read_db()
+    db = next(gen)
+    try:
+        assert db.bind is read_engine
+        assert db.bind is not engine
+    finally:
+        gen.close()
 
 
 def test_alarm_composite_indexes_exist():

@@ -20,7 +20,7 @@ from app.config import settings
 from app.core.cache import get_cached_json, set_cached_json
 from app.core.constants import down_topic
 from app.core.data_scope import DataScope
-from app.core.database import get_db
+from app.core.database import get_db, get_read_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.exceptions import BusinessError
 from app.core.geo import wgs84_to_gcj02
@@ -71,7 +71,7 @@ def _to_gcj(lng: float | None, lat: float | None) -> dict | None:
 def get_locations(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_read_db),
     scope: DataScope = Depends(get_data_scope),
     project_id: int | None = None,
     device_type: str | None = None,
@@ -116,7 +116,7 @@ def get_locations(
 def online_status(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_read_db),
     scope: DataScope = Depends(get_data_scope),
     project_id: int | None = None,
     device_type: str | None = None,
@@ -187,7 +187,7 @@ def online_status(
     dependencies=[Depends(require_permissions("device:list"))],
 )
 def get_devices(
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_read_db),
     scope: DataScope = Depends(get_data_scope),
     project_id: int | None = None,
     device_type: str | None = None,
@@ -214,7 +214,7 @@ def get_trajectory(
     device_no: str,
     start: str,
     end: str,
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_read_db),
     scope: DataScope = Depends(get_data_scope),
     project_id: int | None = None,
 ) -> ApiResponse:

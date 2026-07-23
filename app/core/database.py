@@ -68,6 +68,32 @@ IngestSessionLocal = sessionmaker(
     class_=Session,
 )
 
+# ---------------------------------------------------------------------------
+# 读 / 看板独立连接池（基础设施审计 · ③）
+# dashboard 大屏聚合 + realtime 实时只读端点走独立池，与 API 写事务池（engine）
+# 隔离，避免重查询在高并发下挤占写连接。连接同一 PostgreSQL 实例、同步复制，
+# 读池立即可见已提交写，无复制滞后（非只读副本）。
+# ---------------------------------------------------------------------------
+read_engine = create_engine(
+    settings.database_url,
+    pool_size=settings.read_db_pool_size,
+    max_overflow=settings.read_db_max_overflow,
+    pool_timeout=settings.read_db_pool_timeout,
+    pool_recycle=settings.read_db_pool_recycle,
+    pool_pre_ping=True,
+    future=True,
+    echo=settings.debug,
+    connect_args={"options": f"-c timezone={_SESSION_TZ}"},
+)
+
+ReadSessionLocal = sessionmaker(
+    bind=read_engine,
+    autoflush=False,
+    autocommit=False,
+    expire_on_commit=False,
+    class_=Session,
+)
+
 
 def get_db() -> Session:
     """FastAPI 依赖：提供数据库会话，异常时统一回滚，请求结束后关闭。
@@ -76,6 +102,22 @@ def get_db() -> Session:
     不会被回滚，而未提交的挂起改动在异常时回滚，避免半提交脏数据。
     """
     db = SessionLocal()
+    try:
+        yield db
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+
+def get_read_db() -> Session:
+    """只读会话依赖：dashboard / realtime 等重读端点使用独立读池，与写事务池隔离。
+
+    说明：读池连接同一 PG 实例，已提交写立即可见；仅用于纯只读查询。
+    若后续端点内存在写操作，应使用 get_db（写池）。
+    """
+    db = ReadSessionLocal()
     try:
         yield db
     except Exception:
@@ -116,3 +158,4 @@ def _register_pool_events(engine_obj, label: str) -> None:
 
 _register_pool_events(engine, "api")
 _register_pool_events(ingest_engine, "ingest")
+_register_pool_events(read_engine, "read")

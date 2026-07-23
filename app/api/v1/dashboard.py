@@ -17,7 +17,7 @@ from app.config import settings
 from app.core.cache import get_cached_json, set_cached_json
 from app.core.clock import LOCAL_TZ, day_end_local, day_start_local, ensure_aware_local, today_local
 from app.core.data_scope import DataScope, apply_data_scope
-from app.core.database import get_db
+from app.core.database import get_read_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.exceptions import BusinessError
 from app.core.responses import ApiResponse
@@ -190,7 +190,7 @@ def _compute_fence_stats(db: Session, scope: DataScope, s: datetime, e: datetime
 def stats(
     request: Request,
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_read_db),
     scope: DataScope = Depends(get_data_scope),
     granularity: str | None = Query(
         None,
@@ -377,7 +377,7 @@ def _resolve_trend_window(
     dependencies=[Depends(require_permissions("dashboard:view"))],
 )
 def recent_alarms(
-    db: Session = Depends(get_db),
+    db: Session = Depends(get_read_db),
     scope: DataScope = Depends(get_data_scope),
     limit: int = Query(20, ge=1, le=100),
 ) -> ApiResponse:

@@ -140,7 +140,7 @@ DB_POOL_CONNECT_LATENCY = Histogram(
 
 def update_pool_metrics() -> None:
     """抓取 /metrics 前刷新连接池实时指标（懒加载引擎，避免循环导入）。"""
-    from app.core.database import engine, ingest_engine, settings
+    from app.core.database import engine, ingest_engine, read_engine, settings
 
     def _set(label: str, pool, capacity: int) -> None:
         try:
@@ -157,4 +157,9 @@ def update_pool_metrics() -> None:
         "ingest",
         ingest_engine.pool,
         settings.ingest_db_pool_size + settings.ingest_db_max_overflow,
+    )
+    _set(
+        "read",
+        read_engine.pool,
+        settings.read_db_pool_size + settings.read_db_max_overflow,
     )

@@ -106,8 +106,11 @@ services:
     profiles: ["optional"]
     ports:
       - "9090:9090"
+    extra_hosts:
+      # 让容器内 prometheus 能回连宿主机原生后端（/metrics 在 8000）
+      - "host.docker.internal:host-gateway"
     volumes:
-      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus.docker.yml:/etc/prometheus/prometheus.yml:ro
 
   grafana:
     image: grafana/grafana:latest
@@ -117,6 +120,9 @@ services:
       - "3000:3000"
     volumes:
       - grafanadata:/var/lib/grafana
+      # 面板与数据源自动供给：compose 启动即加载「涉铁监控」看板，无需手动 import
+      - ./deploy/grafana-dashboard.json:/var/lib/grafana/dashboards/rail-monitor-backend.json:ro
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
 
 volumes:
   pgdata:

@@ -72,6 +72,13 @@ class Settings(BaseSettings):
     # 避免千台设备洪泛时 ingestion 抢占 API 连接（维度⑥）。
     ingest_db_pool_size: int = 8
     ingest_db_max_overflow: int = 8
+    # 读/看板独立连接池（基础设施审计·③）：dashboard 大屏聚合 + realtime 实时只读端点
+    # 走独立池，与 API 写事务池（engine）隔离，避免重查询在高并发下挤占写连接。
+    # 同一 PostgreSQL 实例、同步复制，读池立即可见已提交写，无复制滞后。
+    read_db_pool_size: int = 10
+    read_db_max_overflow: int = 10
+    read_db_pool_timeout: int = 10
+    read_db_pool_recycle: int = 1800
 
     # ---------- Redis ----------
     redis_host: str = "127.0.0.1"
@@ -97,6 +104,11 @@ class Settings(BaseSettings):
     ingest_workers: int = 4
     # 有界队列上限；超过即回退同步处理（背压），避免内存无限增长
     ingest_queue_max: int = 20000
+    # 落库批处理（基础设施审计 · ④）：工作线程攒批，单会话一次性 commit，
+    # 显著降低千台洪泛下的 WAL/commit 开销。凑满 batch_size 或等待 max_wait 秒即 flush。
+    # 批失败整体回退逐条处理（保活，不丢数据）。0 表示关闭批处理（退化为逐条）。
+    ingest_batch_size: int = 200
+    ingest_batch_max_wait: float = 0.5
 
     # ---------- MinIO 对象存储 ----------
     minio_endpoint: str = "127.0.0.1:9000"

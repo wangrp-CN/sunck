@@ -58,17 +58,24 @@ def handle_upstream(
     parsed: dict[str, Any],
     db: Session | None = None,
     sessionmaker_factory: type[Session] = SessionLocal,
+    autocommit: bool = True,
 ) -> dict:
     """处理一条已解析的上行报文，返回处理摘要。
 
     sessionmaker_factory：落库所用的会话工厂。默认 SessionLocal（API 共享池）；
     由 ingestion 异步调度层调用时传入 IngestSessionLocal（独立连接池，与 API 流量隔离）。
+    autocommit：是否在处理函数内提交并关闭会话。
+        - True（默认，兼容历史 2 参调用）：内部自行 commit/close，commit 后直接推送 WS。
+        - False（ingestion 批处理）：仅占用传入会话做落库/规则/告警，**不**提交也不关闭，
+          把待推送的 WS 消息随返回摘要带回，由调用方（ingest 工作线程）在批量 commit 后统一推送。
     """
     own = db is None
     if own:
         db = sessionmaker_factory()
     loc: DeviceLocation | None = None
     created_alarms: list = []
+    project_id = None
+    messages: list[tuple[str, dict]] = []  # 批处理模式下累积的 (channel, msg)
     try:
         dev = resolve_device(db, device_type, parsed["device_no"])
         project_id = dev["project_id"] if dev else None
@@ -129,7 +136,8 @@ def handle_upstream(
         # 违规解除 → 自动结束上一轮仍打开的对应告警
         reconcile_active_alarms(db, parsed["device_no"], current_violations)
 
-        db.commit()
+        if autocommit:
+            db.commit()
     except Exception as exc:  # noqa: BLE001
         logger.exception("上行处理失败 device=%s/%s: %s", device_type, parsed.get("device_no"), exc)
         if own:
@@ -139,20 +147,31 @@ def handle_upstream(
         if own:
             db.close()
 
-    # 推送（commit 后，跨线程安全）
+    # 推送（autocommit 模式下 commit 后直接推；批处理模式下累积消息交由调用方在批量 commit 后推送）
     if loc is not None:
         channel = ws_channel_for_project(project_id)
         loc_msg = _location_to_ws(loc)
-        bridge.emit(channel, loc_msg)
-        bridge.emit("global", loc_msg)
+        if autocommit:
+            bridge.emit(channel, loc_msg)
+            bridge.emit("global", loc_msg)
+        else:
+            messages.append((channel, loc_msg))
+            messages.append(("global", loc_msg))
         for a in created_alarms:
             msg = {"type": "alarm", "data": to_alarm_out(a)}
-            bridge.emit(channel, msg)
-            bridge.emit("global", msg)
+            if autocommit:
+                bridge.emit(channel, msg)
+                bridge.emit("global", msg)
+            else:
+                messages.append((channel, msg))
+                messages.append(("global", msg))
 
-    return {
+    summary = {
         "device_no": parsed["device_no"],
         "device_type": device_type,
         "project_id": project_id,
         "alarms_created": len(created_alarms),
     }
+    if not autocommit:
+        summary["messages"] = messages
+    return summary
