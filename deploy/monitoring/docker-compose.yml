@@ -1,0 +1,48 @@
+# 涉铁工程智能监控平台 —— 可观测性栈（Prometheus + Grafana）
+# 适用：后端以原生方式部署在宿主机（非容器）时，用本 compose 拉起监控组件。
+# 数据流：Prometheus 通过 host.docker.internal 抓取宿主机 :8000/metrics
+#        → Grafana 挂载 provisioning（数据源 + 面板）直接出图。
+# 用法（在 deploy/monitoring/ 目录）：
+#   docker compose up -d
+#   # 浏览器打开 http://<宿主机IP>:3000  （默认 admin/admin，请务必修改）
+# 关闭：docker compose down   （数据卷保留；加 -v 可清空）
+# 说明：compose 网络内 Prometheus 服务主机名为 prometheus，grafana datasource
+#       指向 http://prometheus:9090，无需改动。
+services:
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: railmon-prometheus
+    volumes:
+      - ../prometheus.docker.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: railmon-grafana
+    depends_on:
+      - prometheus
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana-dashboard.json:/var/lib/grafana/dashboards/rail-monitor.json:ro
+      - grafana_data:/var/lib/grafana
+    environment:
+      # 生产请通过环境变量覆盖：GRAFANA_ADMIN_PASSWORD=强密码 docker compose up -d
+      GF_SECURITY_ADMIN_USER: "admin"
+      GF_SECURITY_ADMIN_PASSWORD: "${GRAFANA_ADMIN_PASSWORD:-admin}"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s:%(http_port)s/"
+    ports:
+      - "3000:3000"
+    restart: unless-stopped
+
+volumes:
+  prometheus_data:
+  grafana_data:

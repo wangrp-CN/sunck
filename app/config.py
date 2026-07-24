@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     captcha_enabled: bool = True
     captcha_ttl_seconds: int = 300
     captcha_length: int = 4
+    # API 限流（防爆破/防刷）：基于 Redis 固定窗口，按「路径+客户端IP」分桶
+    rate_limit_enabled: bool = True
+    rate_limit_window_seconds: int = 60
+    rate_limit_default: int = 200  # 单 IP 单分钟全站请求上限
+    rate_limit_login: int = 10  # 单 IP 单分钟登录尝试上限（配合账户级锁定）
+    rate_limit_captcha: int = 30  # 单 IP 单分钟验证码获取上限
     # 响应级短 TTL 缓存（阶段3 收尾·查询优化）：监控大屏 / 实时看板高频只读端点，
     # 以「user_id + 路径 + 查询串」为键缓存 3s，把并发重复聚合折叠为每窗口 1 次计算。
     # 测试环境默认关闭，避免跨用例缓存命中破坏隔离。
@@ -153,6 +159,30 @@ class Settings(BaseSettings):
         if self.cors_origins in ("*", ""):
             return ["*"]
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+
+def assert_production_safe() -> None:
+    """生产环境安全护栏：存在不安全默认值时**拒绝启动**（fail-closed）。
+
+    仅当 app_env == "production" 时生效，避免误伤开发/测试环境。
+    校验项：
+      - secret_key 不得为默认占位值（否则 JWT 可被伪造）
+      - CORS_ORIGINS 不得为通配 '*'（否则任何站点可携带用户凭据跨域调用）
+      - debug 不得为 True
+    轮换 secret_key 的取舍：当前 JWT 无吊销列表，轮换会使全部存量令牌立即失效
+    （全体用户需重新登录），属可接受的安全实践；请在低峰期操作并提前通知。
+    """
+    if settings.app_env != "production":
+        return
+    errors: list[str] = []
+    if settings.secret_key in ("change-me-to-a-long-random-string", ""):
+        errors.append("secret_key 仍为默认占位值，请设置强随机值（如 `openssl rand -hex 32`）")
+    if settings.cors_origins in ("*", ""):
+        errors.append("生产环境 CORS_ORIGINS 不能为通配 '*'，请指定可信前端域名（逗号分隔）")
+    if settings.debug:
+        errors.append("生产环境 debug 应为 False")
+    if errors:
+        raise RuntimeError("生产环境配置不安全，拒绝启动：\n- " + "\n- ".join(errors))
 
 
 settings = Settings()

@@ -17,6 +17,9 @@ settings.resp_cache_enabled = False
 # 关闭操作审计中间件：避免用例间审计行累积干扰断言（审计逻辑由专项测试覆盖）。
 settings.audit_enabled = False
 
+# 关闭 API 限流中间件：避免并发/重试用例被限流干扰；限流逻辑由专项测试覆盖。
+settings.rate_limit_enabled = False
+
 
 @pytest.fixture
 def client():

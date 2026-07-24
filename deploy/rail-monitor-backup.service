@@ -1,0 +1,16 @@
+# 涉铁工程智能监控平台 —— 每日备份服务（oneshot，由 timer 触发）
+# 安装：
+#   sudo cp deploy/rail-monitor-backup.service /etc/systemd/system/
+#   sudo cp deploy/rail-monitor-backup.timer /etc/systemd/system/
+#   sudo systemctl enable --now rail-monitor-backup.timer
+[Unit]
+Description=Rail Monitor backup (PostgreSQL + MinIO)
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=railmonitor
+Group=railmonitor
+EnvironmentFile=/opt/rail_monitor/.env
+ExecStart=/opt/rail_monitor/deploy/scripts/backup.sh
+Nice=10

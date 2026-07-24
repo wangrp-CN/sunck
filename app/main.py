@@ -40,6 +40,7 @@ from app.core.ingest import start as ingest_start
 from app.core.ingest import stop as ingest_stop
 from app.core.logging import configure_logging
 from app.core.metrics import HTTP_REQUEST_COUNT, HTTP_REQUEST_LATENCY
+from app.core.ratelimit import _client_ip, decide_limit, is_allowed, is_exempt
 from app.core.responses import ApiResponse
 from app.mqtt import client as mqtt_client
 from app.ws import bridge
@@ -50,6 +51,11 @@ configure_logging()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # 启动：生产环境安全护栏（不安全默认值直接拒绝启动，fail-closed）
+    from app.config import assert_production_safe
+
+    assert_production_safe()
+
     # 启动：绑定事件循环到 WS 桥接（供 MQTT 线程跨线程推送）
     bridge.set_event_loop(asyncio.get_running_loop())
     # 启动：尝试连接 MQTT（失败仅告警，不阻断应用）
@@ -136,6 +142,34 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(MetricsMiddleware)
+
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    """API 限流（防爆破/防刷）：按「路径+客户端IP」固定窗口计数。
+
+    豁免 /health、/metrics、/docs、/openapi.json、/ws 与静态资源；
+    登录/验证码端点走更严配额。Redis 不可用时放行（fail-open）。
+    """
+
+    async def dispatch(self, request: Request, call_next):
+        if not settings.rate_limit_enabled:
+            return await call_next(request)
+        path = request.url.path
+        if is_exempt(path):
+            return await call_next(request)
+        limit, _scope = decide_limit(path)
+        allowed, _remaining = is_allowed(
+            path, _client_ip(request), limit, settings.rate_limit_window_seconds
+        )
+        if not allowed:
+            return JSONResponse(
+                status_code=429,
+                content={"code": 429, "message": "请求过于频繁，请稍后再试", "data": None},
+            )
+        return await call_next(request)
+
+
+app.add_middleware(RateLimitMiddleware)
 
 # 操作审计中间件：写请求自动落审计日志（受 settings.audit_enabled 总开关控制）
 from app.core.audit import AuditMiddleware  # noqa: E402

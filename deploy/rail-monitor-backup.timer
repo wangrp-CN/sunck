@@ -1,0 +1,11 @@
+# 涉铁工程智能监控平台 —— 每日备份定时器（默认凌晨 3 点）
+[Unit]
+Description=Daily Rail Monitor backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+Unit=rail-monitor-backup.service
+
+[Install]
+WantedBy=timers.target

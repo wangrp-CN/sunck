@@ -267,12 +267,20 @@ sudo systemctl reload nginx
 
 - `.env` 权限 `600`，属主 `railmonitor`；**切勿提交进 Git**。
 - `CORS_ORIGINS` 改为具体域名，不要 `*`。
-- `SECRET_KEY` 使用足够随机的长串；`DEFAULT_ADMIN_PASSWORD` 必须修改。
+- `SECRET_KEY` 使用足够随机的长串（`openssl rand -hex 32`）；`DEFAULT_ADMIN_PASSWORD` 必须修改。
 - 公网 **关闭** Swagger/Redoc（`nginx.conf` 已 `deny` `/docs`、`/redoc`）。
-- 启用 HTTPS，并 `return 301 https://$host$request_uri;` 强制跳转。
-- `/metrics` 仅对监控网段放通（在 `nginx.conf` 该 `location` 加 `allow/deny`）。
+- 启用 HTTPS（见 §12 一键脚本），并强制 HTTP→HTTPS 跳转。
+- `/metrics`、`/openapi.json` 已默认仅放通 `127.0.0.1`（`nginx.conf`），同机 Prometheus 抓取即可；远程监控请把对应 IP 加入 `allow`。
 - PostgreSQL / Redis / Mosquitto / MinIO 仅监听内网或加防火墙；Redis 务必设密码。
-- 定期备份 PostgreSQL（`pg_dump`）与 MinIO 数据卷。
+- **生产配置护栏（已内置）**：当 `APP_ENV=production` 时，若 `SECRET_KEY` 仍为默认占位值、或 `CORS_ORIGINS='*'`、或 `DEBUG=True`，后端**启动即拒绝服务**（fail-closed）。部署前务必在 `.env` 修正这三项。
+- **API 限流（已内置，基于 Redis）**：按「路径+客户端IP」固定窗口计数，防爆破/防刷。可调参数（`.env`）：
+  - `RATE_LIMIT_ENABLED`（默认 `true`）、`RATE_LIMIT_WINDOW_SECONDS`（默认 `60`）
+  - `RATE_LIMIT_DEFAULT`（单 IP 单分钟全站上限，默认 `200`）
+  - `RATE_LIMIT_LOGIN`（登录尝试上限，默认 `10`，与账户级锁定协同）
+  - `RATE_LIMIT_CAPTCHA`（验证码获取上限，默认 `30`）
+  - 豁免：`/health`、`/metrics`、`/docs`、`/openapi.json`、`/ws`、静态资源。超限返回 `429`。
+- **安全响应头（已内置，nginx.conf）**：`X-Frame-Options: DENY`、`X-Content-Type-Options: nosniff`、`Referrer-Policy`、`Content-Security-Policy`、`server_tokens off`（隐藏版本号）。HTTPS 下额外下发 `Strict-Transport-Security`。
+- 定期备份：见 §10；可观测性：见 §11。
 
 ---
 
@@ -295,3 +303,81 @@ bash scripts/native-services.sh start
 cd /opt/rail_monitor && .venv/bin/uvicorn app.main:app --port 8000   # 需 CAPTCHA_ENABLED=false
 cd web && npm run dev     # 开发热更新，:5173
 ```
+
+---
+
+## 10. 备份与恢复
+
+平台提供 `deploy/scripts/backup.sh` / `restore.sh`，覆盖 PostgreSQL（每日 dump + 保留策略）与 MinIO（可选 `mc` 镜像）。
+
+### 10.1 备份
+```bash
+# 手动执行（或交由 systemd timer 每日 03:00 自动跑）
+sudo bash deploy/scripts/backup.sh
+# 默认产物：/var/backups/rail_monitor/postgres/rail_monitor-<时间戳>.dump
+#           /var/backups/rail_monitor/minio/rail-monitor-<时间戳>/（需安装 mc）
+```
+启用每日自动备份：
+```bash
+sudo cp deploy/rail-monitor-backup.service /etc/systemd/system/
+sudo cp deploy/rail-monitor-backup.timer   /etc/systemd/system/
+sudo systemctl enable --now rail-monitor-backup.timer
+systemctl list-timers rail-monitor-backup.timer   # 确认已排程
+```
+可覆盖的环境变量：`BACKUP_DIR`、`RETAIN_DAYS`（默认 7 天）、`POSTGRES_*`、`MINIO_*`。
+
+### 10.2 恢复（runbook）
+> 恢复会覆盖目标库，请先对**当前生产库**另存一份备份再操作；建议先停后端写入。
+
+```bash
+# 1) 停后端
+sudo systemctl stop rail-monitor-api
+# 2) 恢复（交互确认）
+sudo bash deploy/scripts/restore.sh <备份标识> [目标库名]
+#    备份标识示例：20260724-093000（对应 postgres/rail_monitor-20260724-093000.dump）
+# 3) 重启后端
+sudo systemctl start rail-monitor-api
+```
+依赖：`pg_restore`（postgresql-client）、`mc`（minio-client，可选）。
+
+---
+
+## 11. 可观测性栈（Prometheus + Grafana 一键拉起）
+
+后端已暴露 `/metrics`（prometheus_client），指标覆盖 HTTP 流量/时延、告警产出、MQTT 上行、WebSocket 连接、异步 ingestion 背压、数据库连接池饱和度。`deploy/` 内含 Grafana 面板（`grafana-dashboard.json`，20 个面板）与数据源/面板 provisioning。
+
+后端以**原生方式**部署在宿主机时，用下方 compose 拉起监控组件（Prometheus 通过 `host.docker.internal` 抓取宿主机 `:8000/metrics`）：
+
+```bash
+cd deploy/monitoring
+# 可选：修改 Grafana 管理员密码
+#   export GRAFANA_ADMIN_PASSWORD='强密码'
+docker compose up -d
+# 打开 http://<宿主机IP>:3000 （默认 admin/admin，请务必修改）
+# 面板：左侧 ☰ → Dashboards → rail_monitor（已自动 provision）
+# Prometheus 自建查询：http://<宿主机IP>:9090
+```
+
+说明：
+- `deploy/monitoring/docker-compose.yml` 已挂载 `grafana/provisioning`（数据源指向 `http://prometheus:9090`）与 `grafana-dashboard.json`。
+- 若 Prometheus 也**原生**部署在宿主机（非容器），直接用 `deploy/prometheus.yml`（抓取 `127.0.0.1:8000`）启动 `prometheus --config.file=deploy/prometheus.yml` 即可，无需 docker。
+- `metrics.py` 中 `update_pool_metrics()` 在每次抓取时刷新连接池实时指标，无需额外配置。
+
+---
+
+## 12. HTTPS 启用（certbot 一键）
+
+强烈建议生产启用 HTTPS。`deploy/scripts/setup-tls.sh` 封装 certbot（nginx 插件），自动申请 Let's Encrypt 证书并改写 nginx 为 443(SSL)+HTTP→HTTPS 跳转+HSTS，并启用证书自动续期。
+
+前置：域名已解析到本机公网 IP、80 端口对外可达、已安装 `nginx` 与 `certbot`（含 `python3-certbot-nginx`）。
+
+```bash
+sudo bash deploy/scripts/setup-tls.sh <域名> <邮箱>
+# 示例：sudo bash deploy/scripts/setup-tls.sh monitor.example.com ops@example.com
+# 完成后：https://<域名> 可用，HTTP 自动跳转 HTTPS；证书 90 天有效，已配自动续期。
+# 续期预演（不实际改写）：certbot renew --dry-run
+```
+
+自带证书（不使用 certbot）的场景：把 `deploy/nginx.tls.conf` 复制到 `/etc/nginx/conf.d/rail-monitor.tls.conf`，填好证书路径，并在 `nginx.conf` 的 80 server 块末尾加 `return 301 https://$host$request_uri;`，再 `nginx -t && systemctl reload nginx`。
+
+> 回滚：`sudo certbot delete --cert-name <域名>`，并将 nginx 配置恢复为仅 80。
