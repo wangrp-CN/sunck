@@ -12,7 +12,8 @@
 - **基础设施**：三套 DB 连接池（API / 上行落库 / 看板只读）、ingestion 批处理落库、WebSocket 实时通道（含裸 HTTP 兜底 426）、千台压测调优（端到端落库率 **100%**，`INGEST_WORKERS=8` + `INGEST_DB_POOL_SIZE=12` + Mosquitto `max_queued_messages=100000`）。
 - **规模**：15 个后端路由 + 16 个前端页面，覆盖项目 / 设备 / 人员 / 机械 / 围栏 / 作业计划 / 告警 / 隐患 / 通知 / 大屏等域。
 - **合规**：RBAC + 部门数据隔离（`app.core.data_scope`）已应用于全部业务查询。
-- **部署闭环（✅ 2026-07-24）**：`deploy/` 已补齐 `nginx.conf`（反代 `/api`、WebSocket `/ws`、静态托管、`/health`/`/metrics` 透传、公网拦截 Swagger）+ `README.deploy.md`（前置依赖 / 后端迁移 / `.env` 模板 / systemd 启用 / 前端构建 / 验证 / 安全建议）。支持 Nginx 反代 + 前端静态托管的一键上线；`nginx -t` 语法校验通过，生产 uvicorn 启动冒烟（OpenAPI 就绪、5 个 P3 新路由全部注册）。
+- **部署闭环（✅ 2026-07-24）**：`deploy/` 已补齐 `nginx.conf`（反代 `/api`、WebSocket `/ws`、静态托管、`/health`/`/metrics` 透传、公网拦截 Swagger）+ `README.deploy.md`（前置依赖 / 后端迁移 / `.env` 模板 / systemd 启用 / 前端构建 / 验证 / 安全建议）+ `smoke_drill.sh`（全栈真起冒烟脚本）。
+- **目标机真起演练（✅ 2026-07-24 已执行）**：单一网络命名空间内拉起 PG/Redis/MQTT/MinIO + uvicorn，走**生产态验证码登录**（答案取自 Redis）拿到 JWT → P3 新端点（`devices/health`、`dashboard/project-compare`、`inspections/stats`、`videos/channels`、`dicts`、`jobs?is_template`）全部 200 → 写操作（建+删数据字典）成功 → Nginx(:8088) 反代透传 `/api` + SPA 首页 + history 回退全部 200 → 优雅关停（ingest 工作池正常停止）。**结论：部署闭环端到端可用。** 注意：`devices/health` 在线数依赖实时遥测；演练未跑模拟器时全部设备离线属预期。
 
 ---
 
