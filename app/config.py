@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     default_admin_username: str = "admin"
     default_admin_password: str = "Admin@123456"
 
+    # ---------- 智能核心 / 阈值预警 ----------
+    # 项目风险指数（0-100）达到该阈值即触发预警通知（站内信），默认 60（对应风险分档"高"起点）。
+    risk_alert_threshold: int = 60
+
     # ---------- PostgreSQL ----------
     postgres_host: str = "127.0.0.1"
     postgres_port: int = 5432

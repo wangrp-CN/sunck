@@ -18,6 +18,7 @@ from app.core.responses import ApiResponse
 from app.model.project import Project
 from app.model.system import User
 from app.service import metrics_snapshot as svc
+from app.service import risk_alert as alert_svc
 
 router = APIRouter()
 
@@ -78,3 +79,39 @@ def snapshot_run(
         raise BusinessError("仅超级管理员可手动触发快照", code=403)
     result = svc.run_snapshot(db, hours=hours, days=days)
     return ApiResponse.success(data=result, message="快照已生成")
+
+
+@router.get("/risk-alerts", dependencies=[Depends(require_permissions("dashboard:view"))])
+def risk_alerts(
+    db: Session = Depends(get_read_db),
+    scope: DataScope = Depends(get_data_scope),
+):
+    """当前越阈项目列表（受数据范围约束，按风险指数降序）。
+
+    每项含 ``is_new``（上升沿新越阈标记），供对比大屏 / 预警面板高亮。
+    """
+    proj_stmt = apply_data_scope(
+        select(Project.id).where(Project.is_deleted.is_(False)), Project, scope
+    )
+    allowed = {row[0] for row in db.execute(proj_stmt).all()}
+    if not allowed:
+        return ApiResponse.success(data={"total": 0, "items": []})
+    breaches = alert_svc.evaluate_risk_alerts(db)
+    items = [b for b in breaches if b["project_id"] in allowed]
+    return ApiResponse.success(data={"total": len(items), "items": items})
+
+
+@router.post("/risk-alerts/notify")
+def risk_alerts_notify(
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+):
+    """手动触发一次「新越阈」项目站内信预警（仅超级管理员）。
+
+    基于 RiskAlertState 去重：同一越阈快照不会重复下发（降噪）。
+    返回实际触发通知的项目数。
+    """
+    if not current.is_superuser:
+        raise BusinessError("仅超级管理员可手动触发预警通知", code=403)
+    sent = alert_svc.alert_newly_breached(db)
+    return ApiResponse.success(data={"notified_projects": sent}, message="预警通知已下发")

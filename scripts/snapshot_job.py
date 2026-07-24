@@ -28,6 +28,7 @@ except Exception:
 
 from app.core.database import SessionLocal
 from app.service import metrics_snapshot as svc
+from app.service import risk_alert as alert_svc
 
 
 def main() -> None:
@@ -40,6 +41,13 @@ def main() -> None:
     try:
         res = svc.run_snapshot(db, hours=args.hours, days=args.days)
         print(f"[snapshot] {datetime.now(timezone.utc).isoformat()} -> {res}", flush=True)
+
+        # 阈值预警（智能核心 v2）：评估越阈 + 基于 RiskAlertState 去重下发站内信。
+        breaches = alert_svc.evaluate_risk_alerts(db)
+        print(f"[snapshot] risk breaches={len(breaches)}", flush=True)
+        sent = alert_svc.alert_newly_breached(db)
+        if sent:
+            print(f"[snapshot] risk_alert notifications sent={sent}", flush=True)
     finally:
         db.close()
 

@@ -193,6 +193,20 @@ def metrics():
         update_pool_metrics()
     except Exception:  # noqa: BLE001
         pass
+    # 抓取前刷新项目风险指数 gauge（智能核心 v2 阈值预警）。
+    # 定时快照任务运行在独立 systemd 进程，其进程内 gauge 不会反映到对外 /metrics，
+    # 故由本 API 进程按 DB 最新快照刷新，确保 Grafana / 看板抓取准确。
+    try:
+        from app.core.database import ReadSessionLocal
+        from app.service.risk_alert import refresh_risk_gauges
+
+        _db = ReadSessionLocal()
+        try:
+            refresh_risk_gauges(_db)
+        finally:
+            _db.close()
+    except Exception:  # noqa: BLE001
+        pass
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 

@@ -403,3 +403,17 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
 - 窗口：默认设备健康 24h / 项目风险 7d，可用 `--hours` / `--days` 覆盖；
 - 也可经后端接口手动触发（仅超管）：`POST /api/v1/metrics/snapshot/run`；
 - 查询接口：`GET /api/v1/metrics/risk-trend`、`/health-trend`、`/risk-latest`（均需 `dashboard:view`）。
+
+### 13.1 项目风险指数阈值预警（智能核心 v2）
+
+快照任务在落库后自动评估「项目风险指数 ≥ `risk_alert_threshold`（默认 60，对应风险分档
+"高"起点）」的项目，经站内信（`category=risk_alert`，经 `notify_for_project` 按项目数据范围
+收敛接收人）下发预警。**降噪**：基于 `risk_alert_state` 表记录「最近一次为其下发预警所依据的
+快照时刻」，同一越阈快照不会重复轰炸（即使定时任务重跑或手动重复触发）。
+
+- 配置项：`app/config.py::risk_alert_threshold`（可按项目风险态势调高/调低）；
+- 可观测性：`/metrics` 暴露 `project_risk_index{project_id,project_name}` gauge（由 API 进程
+  每次抓取时按 DB 最新快照刷新，供 Grafana 配置阈值告警面板）；
+- 查询接口：`GET /api/v1/metrics/risk-alerts`（需 `dashboard:view`，返回越阈项目列表，
+  含 `is_new` 上升沿标记）；
+- 手动触发预警通知（仅超管）：`POST /api/v1/metrics/risk-alerts/notify`。
