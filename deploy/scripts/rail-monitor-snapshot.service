@@ -1,0 +1,12 @@
+[Unit]
+Description=Rail Monitor 风险/健康分时序快照（智能核心 v2）
+Documentation=deploy/README.deploy.md
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/rail_monitor
+EnvironmentFile=/opt/rail_monitor/.env
+ExecStart=/opt/rail_monitor/.venv/bin/python scripts/snapshot_job.py
+User=rail_monitor
+# 快照失败不应阻断系统；下一周期会自动重试（timer Persistent=true）

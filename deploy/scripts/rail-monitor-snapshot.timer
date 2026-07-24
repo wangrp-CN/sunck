@@ -1,0 +1,10 @@
+[Unit]
+Description=每日执行 Rail Monitor 风险/健康分时序快照
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+Unit=rail-monitor-snapshot.service
+
+[Install]
+WantedBy=timers.target

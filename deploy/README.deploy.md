@@ -381,3 +381,25 @@ sudo bash deploy/scripts/setup-tls.sh <域名> <邮箱>
 自带证书（不使用 certbot）的场景：把 `deploy/nginx.tls.conf` 复制到 `/etc/nginx/conf.d/rail-monitor.tls.conf`，填好证书路径，并在 `nginx.conf` 的 80 server 块末尾加 `return 301 https://$host$request_uri;`，再 `nginx -t && systemctl reload nginx`。
 
 > 回滚：`sudo certbot delete --cert-name <域名>`，并将 nginx 配置恢复为仅 80。
+
+---
+
+## 13. 指标快照定时任务（智能核心 v2）
+
+把「项目风险分 / 设备健康分」按时间落库为时序（`risk_health_snapshot` 表），供对比大屏趋势线、
+阈值预警与跨周期对比。聚合口径与 `devices/health`、`dashboard/project-compare` 端点**完全一致**。
+
+部署 unit（每日 02:30 执行）：`deploy/scripts/rail-monitor-snapshot.service` + `rail-monitor-snapshot.timer`。
+
+```bash
+sudo cp deploy/scripts/rail-monitor-snapshot.{service,timer} /etc/systemd/system/
+sudo sed -i 's#/opt/rail_monitor#<你的部署根>#g' /etc/systemd/system/rail-monitor-snapshot.*
+sudo systemctl daemon-reload
+sudo systemctl enable --now rail-monitor-snapshot.timer
+# 手动触发一次验证：
+sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/python scripts/snapshot_job.py
+```
+
+- 窗口：默认设备健康 24h / 项目风险 7d，可用 `--hours` / `--days` 覆盖；
+- 也可经后端接口手动触发（仅超管）：`POST /api/v1/metrics/snapshot/run`；
+- 查询接口：`GET /api/v1/metrics/risk-trend`、`/health-trend`、`/risk-latest`（均需 `dashboard:view`）。

@@ -20,6 +20,7 @@ from app.model import (  # noqa: F401
     person,
     project,
     realtime,
+    snapshot,
     system,
     video,
 )
