@@ -103,6 +103,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "对比大屏" },
       },
       {
+        path: "intelligence/correlation",
+        name: "intelligence-correlation",
+        component: () => import("@/views/AlarmCorrelationView.vue"),
+        meta: { title: "跨设备根因关联" },
+      },
+      {
         path: "alarms",
         name: "alarms",
         component: () => import("@/views/AlarmView.vue"),

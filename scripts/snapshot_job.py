@@ -29,12 +29,26 @@ except Exception:
 from app.core.database import SessionLocal
 from app.service import metrics_snapshot as svc
 from app.service import risk_alert as alert_svc
+from app.service import alarm_correlation as corr_svc
+from app.config import settings
 
 
 def main() -> None:
-    ap = argparse.ArgumentParser(description="风险/健康分时序快照")
+    ap = argparse.ArgumentParser(description="风险/健康分时序快照 + 关联计算")
     ap.add_argument("--hours", type=int, default=24, help="设备健康统计窗口(小时)")
     ap.add_argument("--days", type=int, default=7, help="项目风险统计窗口(天)")
+    ap.add_argument(
+        "--corr-window",
+        type=int,
+        default=settings.correlation_window_hours,
+        help="跨设备关联回溯窗口(小时)",
+    )
+    ap.add_argument(
+        "--corr-gap",
+        type=int,
+        default=settings.correlation_gap_minutes,
+        help="跨设备关联时间窗聚类间隔(分钟)",
+    )
     args = ap.parse_args()
 
     db = SessionLocal()
@@ -48,6 +62,16 @@ def main() -> None:
         sent = alert_svc.alert_newly_breached(db)
         if sent:
             print(f"[snapshot] risk_alert notifications sent={sent}", flush=True)
+
+        # 跨设备根因关联（#77）：全量重算事件组派生表。
+        corr = corr_svc.run_correlations(
+            db, window_hours=args.corr_window, cluster_gap_minutes=args.corr_gap
+        )
+        print(
+            f"[snapshot] correlations groups={corr['groups']} "
+            f"cross_device={corr['cross_device_groups']}",
+            flush=True,
+        )
     finally:
         db.close()
 

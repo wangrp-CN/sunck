@@ -65,6 +65,12 @@ class Settings(BaseSettings):
     # 项目风险指数（0-100）达到该阈值即触发预警通知（站内信），默认 60（对应风险分档"高"起点）。
     risk_alert_threshold: int = 60
 
+    # ---------- 智能核心 / 跨设备根因关联 ----------
+    # 关联聚类回溯窗口（小时）：仅聚合该窗口内的告警。
+    correlation_window_hours: int = 24
+    # 时间窗聚类间隔（分钟）：相邻告警间隔超过该值即拆分为新的事件组。
+    correlation_gap_minutes: int = 30
+
     # ---------- PostgreSQL ----------
     postgres_host: str = "127.0.0.1"
     postgres_port: int = 5432

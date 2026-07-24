@@ -432,3 +432,24 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
   失败不影响主面板。
 - 阈值常量 `web/src/api/metrics.ts::RISK_ALERT_THRESHOLD`（默认 60）需与后端
   `app/config.py::risk_alert_threshold` 保持一致。
+
+### 13.3 跨设备根因关联（智能核心 v2 · #77）
+
+将一段时间内「同项目 + 同空间范围 + 时间近邻」的告警聚合成*事件组*，揭示跨设备共因。
+
+- **空间范围三级判定**（优先级从高到低）：
+  1. `fence` —— 告警带 `fence_name`，按围栏名聚合（最准的现场共因锚点）；
+  2. `geo` —— 无围栏名但设备有最新定位，按经纬度网格（~1.1km，见 `GRID_SIZE_DEG`）聚合；
+  3. `device` —— 其余（无围栏名且无定位，或单机持续告警），按设备单聚。
+- **时间窗聚类**：同一 (项目, 空间范围) 桶内按 `alarm_time` 排序，相邻告警间隔超过
+  `correlation_gap_minutes`（默认 30）即切分为新的事件组。
+- **`correlated_event_group`** 为派生滚动表：每次计算**全量重算**（删旧插新），
+  `computed_at` 标记计算时刻（与风险快照不同——快照需回看趋势，关联组只反映当前共因）。
+- 快照定时任务（`scripts/snapshot_job.py`）每日执行时已顺带调用 `run_correlations`；
+  也可经接口手动触发（仅超管）：`POST /api/v1/metrics/correlations/run`
+  （参数 `window_hours`/`gap_minutes`，默认 24/30）。
+- 查询接口：`GET /api/v1/metrics/correlations`（需 `dashboard:view`，支持
+  `only_cross_device` 过滤）、`GET /api/v1/metrics/correlations/{id}/members`（成员告警明细）。
+- 前端：**智能分析 → 跨设备根因关联**（`/intelligence/correlation`，菜单项「跨设备根因关联」），
+  汇总卡 + 事件组表格 + 可展开成员明细 + 「仅看跨设备」筛选 + 超管「重新计算」按钮。
+- 关联参数 `app/config.py::correlation_window_hours` / `correlation_gap_minutes`。

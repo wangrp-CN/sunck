@@ -17,6 +17,7 @@ from app.core.exceptions import BusinessError
 from app.core.responses import ApiResponse
 from app.model.project import Project
 from app.model.system import User
+from app.service import alarm_correlation as corr_svc
 from app.service import metrics_snapshot as svc
 from app.service import risk_alert as alert_svc
 
@@ -115,3 +116,65 @@ def risk_alerts_notify(
         raise BusinessError("仅超级管理员可手动触发预警通知", code=403)
     sent = alert_svc.alert_newly_breached(db)
     return ApiResponse.success(data={"notified_projects": sent}, message="预警通知已下发")
+
+
+# ---------------------------------------------------------------------------
+# 跨设备根因关联（#77）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/correlations", dependencies=[Depends(require_permissions("dashboard:view"))])
+def correlations(
+    db: Session = Depends(get_read_db),
+    scope: DataScope = Depends(get_data_scope),
+    only_cross_device: bool = Query(False, description="仅返回跨设备关联组"),
+    limit: int = Query(100, ge=1, le=500, description="返回条数上限"),
+):
+    """当前跨设备根因关联事件组（受数据范围约束，按告警数降序）。
+
+    每个事件组代表「同项目 + 同空间范围 + 时间近邻」的一簇告警，
+    用于揭示多台设备在同一围栏 / 同一地理区域短时集中告警的共因。
+    """
+    proj_stmt = apply_data_scope(
+        select(Project.id).where(Project.is_deleted.is_(False)), Project, scope
+    )
+    allowed = {row[0] for row in db.execute(proj_stmt).all()}
+    if not allowed:
+        return ApiResponse.success(data={"total": 0, "items": []})
+    items = corr_svc.get_correlations(db, allowed, only_cross_device=only_cross_device, limit=limit)
+    return ApiResponse.success(data={"total": len(items), "items": items})
+
+
+@router.get(
+    "/correlations/{group_id}/members",
+    dependencies=[Depends(require_permissions("dashboard:view"))],
+)
+def correlation_members(
+    group_id: int,
+    db: Session = Depends(get_read_db),
+    scope: DataScope = Depends(get_data_scope),
+):
+    """某事件组的成员告警明细（受数据范围约束），供前端展开行查看。"""
+    members = corr_svc.get_correlation_members(db, group_id, scope)
+    if members is None:
+        raise BusinessError("事件组不存在", code=404)
+    return ApiResponse.success(data={"group_id": group_id, "total": len(members), "items": members})
+
+
+@router.post("/correlations/run")
+def correlations_run(
+    db: Session = Depends(get_db),
+    current: User = Depends(get_current_user),
+    window_hours: int = Query(24, ge=1, le=720, description="回溯窗口(小时)"),
+    gap_minutes: int = Query(30, ge=1, le=1440, description="时间窗聚类间隔(分钟)"),
+):
+    """手动触发一次跨设备关联计算（仅超级管理员）。
+
+    全量重算 ``correlated_event_group`` 派生表；快照定时任务每日也会自动执行。
+    """
+    if not current.is_superuser:
+        raise BusinessError("仅超级管理员可手动触发关联计算", code=403)
+    result = corr_svc.run_correlations(
+        db, window_hours=window_hours, cluster_gap_minutes=gap_minutes
+    )
+    return ApiResponse.success(data=result, message="关联计算完成")

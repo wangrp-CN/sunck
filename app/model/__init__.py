@@ -11,6 +11,7 @@ from app.model import (  # noqa: F401
     alarm,
     attachment,
     audit,
+    correlation,
     device,
     fence,
     hazard,

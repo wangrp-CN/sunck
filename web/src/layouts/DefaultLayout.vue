@@ -9,6 +9,7 @@ import {
   Setting,
   Location,
   Notebook,
+  Connection,
   Warning,
   Bell,
   Monitor,
@@ -187,6 +188,10 @@ onUnmounted(() => {
         <el-menu-item index="/projects/compare">
           <el-icon><TrendCharts /></el-icon>
           <span>对比大屏</span>
+        </el-menu-item>
+        <el-menu-item index="/intelligence/correlation">
+          <el-icon><Connection /></el-icon>
+          <span>跨设备根因关联</span>
         </el-menu-item>
         <el-sub-menu index="/devices-group">
           <template #title>

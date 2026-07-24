@@ -72,3 +72,86 @@ export function getRiskAlerts(): Promise<RiskAlertsResp> {
     method: "GET",
   });
 }
+
+// ---------------------------------------------------------------------------
+// 跨设备根因关联（#77）
+// ---------------------------------------------------------------------------
+
+export interface CorrelationItem {
+  id: number;
+  project_id: number | null;
+  project_name: string | null;
+  spatial_type: "fence" | "geo" | "device";
+  scope_key: string;
+  fence_name: string | null;
+  grid_cell: string | null;
+  started_at: string | null;
+  ended_at: string | null;
+  alarm_count: number;
+  device_count: number;
+  is_cross_device: boolean;
+  max_level: string | null;
+  device_nos: string[];
+  levels: string[];
+  alarm_types: string[];
+  alarm_ids: number[];
+  root_cause_hint: string | null;
+  computed_at: string | null;
+}
+
+export interface CorrelationsResp {
+  total: number;
+  items: CorrelationItem[];
+}
+
+export interface CorrelationMember {
+  id: number;
+  device_no: string | null;
+  device_name: string | null;
+  alarm_type: string | null;
+  alarm_level: string | null;
+  alarm_status: string | null;
+  handle_status: string | null;
+  alarm_time: string | null;
+  alarm_info: string | null;
+  fence_name: string | null;
+  project_id: number | null;
+}
+
+export interface CorrelationMembersResp {
+  group_id: number;
+  total: number;
+  items: CorrelationMember[];
+}
+
+// 当前跨设备根因关联事件组（受数据范围约束）
+export function getCorrelations(onlyCrossDevice = false, limit = 100): Promise<CorrelationsResp> {
+  return http<CorrelationsResp>({
+    url: "/v1/metrics/correlations",
+    method: "GET",
+    params: { only_cross_device: onlyCrossDevice, limit },
+  });
+}
+
+// 某事件组的成员告警明细（受数据范围约束），供展开行查看
+export function getCorrelationMembers(groupId: number): Promise<CorrelationMembersResp> {
+  return http<CorrelationMembersResp>({
+    url: `/v1/metrics/correlations/${groupId}/members`,
+    method: "GET",
+  });
+}
+
+// 手动触发一次关联计算（仅超级管理员）
+export function runCorrelations(windowHours = 24, gapMinutes = 30): Promise<{
+  groups: number;
+  cross_device_groups: number;
+  window_hours: number;
+  gap_minutes: number;
+  computed_at: string;
+}> {
+  return http({
+    url: "/v1/metrics/correlations/run",
+    method: "POST",
+    params: { window_hours: windowHours, gap_minutes: gapMinutes },
+  });
+}
