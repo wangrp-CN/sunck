@@ -5,6 +5,7 @@ import { useAuthStore } from "@/stores/auth";
 import {
   createDevice,
   deleteDevice,
+  exportDeviceReport,
   fetchDevices,
   updateDevice,
 } from "@/api/device";
@@ -40,6 +41,36 @@ const size = ref(20);
 
 // 项目字典：id -> name
 const projectMap = ref<Map<number, string>>(new Map());
+
+// ----- 导出（设备台账，Excel/PDF，按当前筛选条件全量）-----
+const exporting = ref<"" | "excel" | "pdf">("");
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+async function doExport(fmt: "excel" | "pdf") {
+  exporting.value = fmt;
+  try {
+    const blob = await exportDeviceReport(fmt, {
+      device_type: deviceTypeFilter.value || undefined,
+      keyword: keyword.value || undefined,
+    });
+    const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
+    const ext = fmt === "excel" ? "xlsx" : "pdf";
+    triggerDownload(blob, `设备台账_${ts}.${ext}`);
+    ElMessage.success(`已导出 ${ext.toUpperCase()}`);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "导出失败");
+  } finally {
+    exporting.value = "";
+  }
+}
 
 const deviceTypeMeta: Record<string, { label: string; tag: "" | "success" | "warning" | "info" }> = {
   locate: { label: "人机定位", tag: "success" },
@@ -315,6 +346,8 @@ onMounted(async () => {
       <el-button type="primary" @click="handleSearch">搜索</el-button>
       <el-button @click="handleReset">重置</el-button>
       <el-button v-if="canAdd" type="success" @click="openCreate">新增设备</el-button>
+      <el-button :loading="exporting === 'excel'" @click="doExport('excel')">导出 Excel</el-button>
+      <el-button :loading="exporting === 'pdf'" @click="doExport('pdf')">导出 PDF</el-button>
     </div>
 
     <el-table v-loading="loading" :data="tableData" border stripe class="table">

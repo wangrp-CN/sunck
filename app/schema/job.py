@@ -100,6 +100,7 @@ class WorkPlanOut(BaseModel):
     actual_start: datetime | None = None
     actual_end: datetime | None = None
     status: str = "草稿"
+    is_template: bool = False
     active: bool = False
     rule: WorkPlanRule | None = None
     created_by: int | None = None

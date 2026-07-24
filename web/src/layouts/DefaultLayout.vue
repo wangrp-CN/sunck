@@ -11,6 +11,10 @@ import {
   Notebook,
   Warning,
   Bell,
+  Monitor,
+  Compass,
+  VideoCamera,
+  TrendCharts,
 } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
@@ -180,6 +184,10 @@ onUnmounted(() => {
           <el-icon><Folder /></el-icon>
           <span>项目管理</span>
         </el-menu-item>
+        <el-menu-item index="/projects/compare">
+          <el-icon><TrendCharts /></el-icon>
+          <span>对比大屏</span>
+        </el-menu-item>
         <el-sub-menu index="/devices-group">
           <template #title>
             <el-icon><Cpu /></el-icon>
@@ -187,6 +195,10 @@ onUnmounted(() => {
           </template>
           <el-menu-item index="/devices">设备列表</el-menu-item>
           <el-menu-item index="/devices/online">在线看板</el-menu-item>
+          <el-menu-item index="/devices/health">
+            <el-icon><Monitor /></el-icon>
+            <span>设备健康</span>
+          </el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/persons">
           <el-icon><User /></el-icon>
@@ -203,6 +215,14 @@ onUnmounted(() => {
         <el-menu-item index="/jobs">
           <el-icon><Notebook /></el-icon>
           <span>作业计划</span>
+        </el-menu-item>
+        <el-menu-item index="/inspections">
+          <el-icon><Compass /></el-icon>
+          <span>巡检打卡</span>
+        </el-menu-item>
+        <el-menu-item index="/videos">
+          <el-icon><VideoCamera /></el-icon>
+          <span>视频AI</span>
         </el-menu-item>
         <el-menu-item index="/alarms">
           <el-icon><Warning /></el-icon>
@@ -228,6 +248,7 @@ onUnmounted(() => {
           <el-menu-item index="/system/users">用户管理</el-menu-item>
           <el-menu-item index="/system/roles">角色管理</el-menu-item>
           <el-menu-item index="/system/departments">部门管理</el-menu-item>
+          <el-menu-item index="/dicts">数据字典</el-menu-item>
         </el-sub-menu>
       </el-menu>
     </el-aside>

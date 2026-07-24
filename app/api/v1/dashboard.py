@@ -406,3 +406,118 @@ def recent_alarms(
         for a in rows
     ]
     return ApiResponse.success(data={"items": items, "total": len(items)}, message="查询成功")
+
+
+@router.get(
+    "/project-compare",
+    summary="多项目对比大屏（P3·⑪）",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("dashboard:view"))],
+)
+def project_compare(
+    db: Session = Depends(get_read_db),
+    scope: DataScope = Depends(get_data_scope),
+    days: int = Query(7, ge=1, le=90, description="告警统计窗口(天)"),
+) -> ApiResponse:
+    """按项目聚合 KPI 供横向对比：设备/人员/机械/围栏/计划/告警/隐患。
+
+    数据范围内的未删项目全量参与；告警按窗口统计（总数+未处理），
+    隐患统计未销号存量与超期数。
+    """
+    from app.model.hazard import Hazard
+
+    now_utc = datetime.now(timezone.utc)
+    since = now_utc - timedelta(days=days)
+
+    proj_stmt = apply_data_scope(
+        select(Project).where(Project.is_deleted.is_(False)), Project, scope
+    )
+    projects = db.scalars(proj_stmt.order_by(Project.id.asc())).all()
+    if not projects:
+        return ApiResponse.success(data={"window_days": days, "items": []})
+    pids = [p.id for p in projects]
+
+    def _count_by_project(model, extra_where=()) -> dict[int, int]:
+        stmt = (
+            select(model.project_id, func.count(model.id))
+            .where(model.project_id.in_(pids), *extra_where)
+            .group_by(model.project_id)
+        )
+        if hasattr(model, "is_deleted"):
+            stmt = stmt.where(model.is_deleted.is_(False))
+        return dict(db.execute(stmt).all())
+
+    # 三类设备合计
+    device_counts: dict[int, int] = {}
+    for _, model in _DEVICE_TYPES:
+        for pid, n in _count_by_project(model).items():
+            device_counts[pid] = device_counts.get(pid, 0) + n
+
+    person_counts = _count_by_project(Person)
+    machine_counts = _count_by_project(Machine)
+    fence_counts = _count_by_project(ElectronicFence)
+    active_plan_counts = _count_by_project(
+        WorkPlan,
+        (WorkPlan.is_start.is_(True), WorkPlan.status == "执行中"),
+    )
+
+    # 窗口内告警：总数 + 未处理
+    alarm_rows = db.execute(
+        select(Alarm.project_id, func.count(Alarm.id))
+        .where(Alarm.project_id.in_(pids), Alarm.alarm_time >= since)
+        .group_by(Alarm.project_id)
+    ).all()
+    alarm_counts = dict(alarm_rows)
+    unhandled_rows = db.execute(
+        select(Alarm.project_id, func.count(Alarm.id))
+        .where(
+            Alarm.project_id.in_(pids),
+            Alarm.alarm_time >= since,
+            Alarm.handle_status == "未处理",
+        )
+        .group_by(Alarm.project_id)
+    ).all()
+    unhandled_counts = dict(unhandled_rows)
+
+    # 隐患：未销号存量 + 超期
+    open_hazard_counts = _count_by_project(Hazard, (Hazard.status.notin_(["已销号", "已驳回"]),))
+    overdue_rows = db.execute(
+        select(Hazard.project_id, func.count(Hazard.id))
+        .where(
+            Hazard.project_id.in_(pids),
+            Hazard.is_deleted.is_(False),
+            Hazard.status.notin_(["已销号", "已驳回"]),
+            Hazard.due_at.is_not(None),
+            Hazard.due_at < now_utc,
+        )
+        .group_by(Hazard.project_id)
+    ).all()
+    overdue_counts = dict(overdue_rows)
+
+    items = []
+    for p in projects:
+        alarms = alarm_counts.get(p.id, 0)
+        unhandled = unhandled_counts.get(p.id, 0)
+        open_hazards = open_hazard_counts.get(p.id, 0)
+        overdue = overdue_counts.get(p.id, 0)
+        # 简单风险分：未处理告警*2 + 超期隐患*3 + 存量隐患
+        risk_score = unhandled * 2 + overdue * 3 + open_hazards
+        items.append(
+            {
+                "project_id": p.id,
+                "project_name": p.name,
+                "device_count": device_counts.get(p.id, 0),
+                "person_count": person_counts.get(p.id, 0),
+                "machine_count": machine_counts.get(p.id, 0),
+                "fence_count": fence_counts.get(p.id, 0),
+                "active_plan_count": active_plan_counts.get(p.id, 0),
+                "alarm_count": alarms,
+                "unhandled_alarm_count": unhandled,
+                "open_hazard_count": open_hazards,
+                "overdue_hazard_count": overdue,
+                "risk_score": risk_score,
+            }
+        )
+    # 风险分降序（高风险项目在前）
+    items.sort(key=lambda x: x["risk_score"], reverse=True)
+    return ApiResponse.success(data={"window_days": days, "items": items})

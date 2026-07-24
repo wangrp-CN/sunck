@@ -4,6 +4,7 @@ import { ElMessage } from "element-plus";
 import {
   createHazard,
   deleteHazard,
+  exportHazardReport,
   fetchHazardOptions,
   fetchHazardStats,
   fetchHazards,
@@ -134,6 +135,39 @@ function onSizeChange(s: number) {
   size.value = s;
   page.value = 1;
   loadHazards();
+}
+
+// ----- 导出（与告警报表导出对称：按当前筛选条件导出全量）-----
+const exporting = ref<"" | "excel" | "pdf">("");
+function triggerDownload(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+async function doExport(fmt: "excel" | "pdf") {
+  exporting.value = fmt;
+  try {
+    const blob = await exportHazardReport(fmt, {
+      project_id: filters.project_id ?? undefined,
+      level: filters.level || undefined,
+      status: filters.status || undefined,
+      keyword: filters.keyword || undefined,
+      overdue: filters.overdue,
+    });
+    const ts = new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "");
+    const ext = fmt === "excel" ? "xlsx" : "pdf";
+    triggerDownload(blob, `隐患报表_${ts}.${ext}`);
+    ElMessage.success(`已导出 ${ext.toUpperCase()}`);
+  } catch (e: any) {
+    ElMessage.error(e?.message || "导出失败");
+  } finally {
+    exporting.value = "";
+  }
 }
 
 // ----- 创建 / 编辑 -----
@@ -375,6 +409,8 @@ onMounted(async () => {
       </el-form>
       <div class="bar-actions">
         <el-button v-if="canCreate" type="success" @click="openCreate">新增隐患</el-button>
+        <el-button :loading="exporting === 'excel'" @click="doExport('excel')">导出 Excel</el-button>
+        <el-button :loading="exporting === 'pdf'" @click="doExport('pdf')">导出 PDF</el-button>
       </div>
     </div>
 

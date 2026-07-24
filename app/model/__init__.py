@@ -14,11 +14,14 @@ from app.model import (  # noqa: F401
     device,
     fence,
     hazard,
+    inspection,
     job,
     notification,
     person,
     project,
     realtime,
     system,
+    video,
 )
+from app.model import dict as dict_model  # noqa: F401
 from app.model.base import Base, TimestampMixin  # noqa: F401

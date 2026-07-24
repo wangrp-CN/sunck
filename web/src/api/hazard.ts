@@ -1,5 +1,5 @@
 // 隐患治理闭环 API 封装
-import { http } from "@/utils/request";
+import request, { http } from "@/utils/request";
 
 export type HazardLevel = "重大" | "较大" | "一般" | "低";
 export type HazardStatus =
@@ -122,4 +122,23 @@ export function fetchHazardStats(): Promise<HazardStats> {
 
 export function fetchHazardOptions(): Promise<HazardOptions> {
   return http<HazardOptions>({ url: "/v1/hazards/options", method: "GET" });
+}
+
+// 导出隐患报表（excel|pdf）——返回二进制 Blob
+export interface HazardExportParams {
+  project_id?: number;
+  level?: string;
+  status?: string;
+  keyword?: string;
+  overdue?: boolean;
+}
+export async function exportHazardReport(
+  fmt: "excel" | "pdf",
+  params: HazardExportParams,
+): Promise<Blob> {
+  const resp = await request.get("/v1/hazards/export", {
+    params: { ...params, fmt },
+    responseType: "blob",
+  });
+  return resp.data as Blob;
 }

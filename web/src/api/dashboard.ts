@@ -1,5 +1,5 @@
 import { http } from "@/utils/request";
-import type { DashboardStats, RecentAlarm } from "@/types";
+import type { DashboardStats, RecentAlarm, ProjectCompareResp } from "@/types";
 import type { Granularity } from "@/api/alarm";
 
 // 监控大屏聚合统计（支持周期联动：传 granularity + 时间窗）
@@ -23,5 +23,14 @@ export function getRecentAlarms(
     url: "/v1/dashboard/recent-alarms",
     method: "GET",
     params: { limit },
+  });
+}
+
+// 多项目横向对比大屏（P3·⑪）：按风险分降序
+export function getProjectCompare(days = 7): Promise<ProjectCompareResp> {
+  return http<ProjectCompareResp>({
+    url: "/v1/dashboard/project-compare",
+    method: "GET",
+    params: { days },
   });
 }

@@ -406,6 +406,7 @@ export interface WorkPlan {
   plan_end?: string | null;
   status: WorkPlanStatus;
   active?: boolean;
+  is_template?: boolean;
   rule?: WorkPlanRule | null;
   created_by?: number | null;
   created_at?: string | null;
@@ -450,6 +451,133 @@ export interface WorkPlanUpdate {
   machine_ids?: number[];
   device_bindings?: DeviceBinding[];
   fence_ids?: number[];
+}
+
+// ===================== 巡检打卡（P3·⑨） =====================
+export interface InspectionRecord {
+  id: number;
+  task_id: number;
+  project_id?: number | null;
+  checkin_by_name?: string | null;
+  checkin_at?: string | null;
+  lng?: number | null;
+  lat?: number | null;
+  result: string;
+  note?: string | null;
+  hazard_id?: number | null;
+}
+
+export interface InspectionTask {
+  id: number;
+  project_id?: number | null;
+  project_name?: string | null;
+  name: string;
+  content?: string | null;
+  assignee_id?: number | null;
+  assignee_name?: string | null;
+  start_time?: string | null;
+  end_time?: string | null;
+  status: string;
+  required_checkins: number;
+  checkin_count: number;
+  abnormal_count: number;
+  records: InspectionRecord[];
+}
+
+export interface InspectionTaskPage {
+  total: number;
+  items: InspectionTask[];
+  page: number;
+  size: number;
+}
+
+export interface InspectionStats {
+  task_total: number;
+  by_status: Record<string, number>;
+  checkin_total: number;
+  abnormal_total: number;
+}
+
+// ===================== 视频 AI（P3·⑧） =====================
+export interface VideoChannel {
+  id: number;
+  project_id?: number | null;
+  project_name?: string | null;
+  name: string;
+  channel_no: string;
+  stream_url?: string | null;
+  vendor?: string | null;
+  location_desc?: string | null;
+  lng?: number | null;
+  lat?: number | null;
+  status: string;
+  ai_enabled: boolean;
+  created_at?: string | null;
+}
+
+export interface VideoEvent {
+  id: number;
+  channel_id: number;
+  channel_name?: string | null;
+  channel_no?: string | null;
+  project_id?: number | null;
+  event_type: string;
+  event_type_label?: string | null;
+  confidence?: number | null;
+  snapshot_url?: string | null;
+  event_time?: string | null;
+  detail?: string | null;
+  handled: boolean;
+  alarm_id?: number | null;
+  created_at?: string | null;
+}
+
+// ===================== 设备健康（P3·⑫） =====================
+export interface DeviceHealthItem {
+  id: number;
+  device_type: string;
+  type_label: string;
+  name: string;
+  device_no: string;
+  project_id?: number | null;
+  project_name?: string | null;
+  status?: string | null;
+  online: boolean;
+  last_report_time?: string | null;
+  age_seconds?: number | null;
+  report_count: number;
+  alarm_count: number;
+  health_score: number;
+}
+
+export interface DeviceHealthResp {
+  window_hours: number;
+  threshold_seconds: number;
+  total: number;
+  online: number;
+  offline: number;
+  items: DeviceHealthItem[];
+}
+
+// ===================== 对比大屏（P3·⑪） =====================
+export interface ProjectCompareItem {
+  project_id: number;
+  project_name: string;
+  device_count: number;
+  person_count: number;
+  machine_count: number;
+  fence_count: number;
+  active_plan_count: number;
+  alarm_count: number;
+  unhandled_alarm_count: number;
+  open_hazard_count: number;
+  overdue_hazard_count: number;
+  risk_score: number;
+}
+
+export interface ProjectCompareResp {
+  window_days: number;
+  items: ProjectCompareItem[];
 }
 
 // ===================== 系统管理：用户 =====================

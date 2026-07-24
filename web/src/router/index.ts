@@ -79,6 +79,30 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "作业计划" },
       },
       {
+        path: "inspections",
+        name: "inspections",
+        component: () => import("@/views/InspectionView.vue"),
+        meta: { title: "巡检打卡" },
+      },
+      {
+        path: "videos",
+        name: "videos",
+        component: () => import("@/views/VideoView.vue"),
+        meta: { title: "视频AI" },
+      },
+      {
+        path: "devices/health",
+        name: "devices-health",
+        component: () => import("@/views/DeviceHealthView.vue"),
+        meta: { title: "设备健康" },
+      },
+      {
+        path: "projects/compare",
+        name: "projects-compare",
+        component: () => import("@/views/ProjectCompareView.vue"),
+        meta: { title: "对比大屏" },
+      },
+      {
         path: "alarms",
         name: "alarms",
         component: () => import("@/views/AlarmView.vue"),
@@ -101,6 +125,12 @@ const routes: RouteRecordRaw[] = [
         name: "audit-logs",
         component: () => import("@/views/AuditLogView.vue"),
         meta: { title: "操作审计" },
+      },
+      {
+        path: "dicts",
+        name: "dicts",
+        component: () => import("@/views/DictView.vue"),
+        meta: { title: "数据字典" },
       },
       {
         path: "system/users",

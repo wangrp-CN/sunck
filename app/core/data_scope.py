@@ -25,10 +25,12 @@ from app.model.alarm import Alarm
 from app.model.device import AntiIntrusionDevice, LocateDevice, TrainApproachDevice
 from app.model.fence import ElectronicFence
 from app.model.hazard import Hazard
+from app.model.inspection import InspectionTask
 from app.model.job import WorkPlan
 from app.model.person import Machine, Person
 from app.model.project import Project
 from app.model.system import Department, User, role_dept
+from app.model.video import VideoChannel
 
 # ---------------------------------------------------------------------------
 # 数据范围结果
@@ -135,6 +137,8 @@ _MODEL_DEPT_LINK: dict[type, str] = {
     WorkPlan: VIA_PROJECT,
     Alarm: VIA_PROJECT,
     Hazard: VIA_PROJECT,
+    InspectionTask: VIA_PROJECT,
+    VideoChannel: VIA_PROJECT,
 }
 
 

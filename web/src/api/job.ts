@@ -12,6 +12,7 @@ export function fetchJobs(params?: {
   keyword?: string;
   project_id?: number;
   status?: string;
+  is_template?: boolean;
   page?: number;
   size?: number;
 }): Promise<WorkPlanPage> {
@@ -92,5 +93,34 @@ export function fetchJobsByFence(fenceId: number): Promise<WorkPlan[]> {
   return http<WorkPlan[]>({
     url: `/v1/jobs/by-fence/${fenceId}`,
     method: "GET",
+  });
+}
+
+// 克隆作业计划（深拷贝绑定，执行态清零为草稿/未激活）
+export function cloneJob(id: number): Promise<WorkPlan> {
+  return http<WorkPlan>({
+    url: `/v1/jobs/${id}/clone`,
+    method: "POST",
+  });
+}
+
+// 将作业计划存为模板（深拷贝绑定，标记 is_template=true）
+export function saveJobAsTemplate(id: number): Promise<WorkPlan> {
+  return http<WorkPlan>({
+    url: `/v1/jobs/${id}/save-as-template`,
+    method: "POST",
+  });
+}
+
+// 模板库：仅列出 is_template=true 的计划
+export function fetchJobTemplates(params?: {
+  project_id?: number;
+  page?: number;
+  size?: number;
+}): Promise<WorkPlanPage> {
+  return http<WorkPlanPage>({
+    url: "/v1/jobs",
+    method: "GET",
+    params: { is_template: true, ...(params || {}) },
   });
 }

@@ -9,7 +9,11 @@
 - POST /{id}/transition  状态流转（hazard:handle）
 """
 
+from datetime import datetime
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 
 from app.core.data_scope import DataScope
 from app.core.database import get_db
@@ -62,6 +66,130 @@ def options() -> ApiResponse:
 def stats(db=Depends(get_db), scope: DataScope = Depends(get_data_scope)) -> ApiResponse:
     """按状态/等级/超期统计（受部门数据隔离约束）。"""
     return ApiResponse.success(data=svc.hazard_stats(db, scope))
+
+
+_EXPORT_COLUMNS = [
+    # (key, 表头, excel宽, pdf宽mm)
+    ("id", "ID", 8, 10),
+    ("project_name", "项目", 20, 30),
+    ("title", "隐患标题", 32, 42),
+    ("level", "等级", 8, 12),
+    ("category", "类别", 12, 18),
+    ("status", "状态", 10, 14),
+    ("is_overdue", "超期", 8, 10),
+    ("assignee_name", "责任人", 12, 16),
+    ("due_at", "整改期限", 20, 26),
+    ("discovered_by_name", "发现人", 12, 16),
+    ("discovered_at", "发现时间", 20, 26),
+    ("source", "来源", 8, 12),
+    ("closed_at", "销号时间", 20, 26),
+]
+
+
+def _fmt_dt(v) -> str:
+    """datetime → 北京时间可读串（与 schema 序列化口径一致）。"""
+    if v is None:
+        return ""
+    if isinstance(v, datetime):
+        if v.tzinfo is not None:
+            v = v.astimezone().replace(tzinfo=None)
+        return v.strftime("%Y-%m-%d %H:%M")
+    return str(v)
+
+
+@router.get(
+    "/export",
+    summary="导出隐患报表（Excel/PDF）",
+    dependencies=[Depends(require_permissions("hazard:list"))],
+)
+def export_hazards(
+    db=Depends(get_db),
+    scope: DataScope = Depends(get_data_scope),
+    fmt: str = Query("excel", description="导出格式：excel | pdf"),
+    project_id: int | None = None,
+    level: str | None = None,
+    status: str | None = None,
+    keyword: str | None = None,
+    overdue: bool = Query(False, description="仅看超期"),
+) -> StreamingResponse:
+    """按当前筛选条件导出全量隐患（受数据范围约束），与告警报表导出对称。"""
+    from app.service.report_common import build_simple_excel, build_simple_pdf
+
+    _, items = svc.list_hazards(
+        db,
+        scope,
+        project_id=project_id,
+        level=level,
+        status=status,
+        keyword=keyword,
+        overdue_only=overdue,
+        page=1,
+        size=1_000_000,
+    )
+    rows = []
+    by_status: dict[str, int] = {}
+    by_level: dict[str, int] = {}
+    overdue_cnt = 0
+    for o in items:
+        by_status[o.status] = by_status.get(o.status, 0) + 1
+        by_level[o.level] = by_level.get(o.level, 0) + 1
+        if o.is_overdue:
+            overdue_cnt += 1
+        rows.append(
+            {
+                "id": o.id,
+                "project_name": o.project_name or "",
+                "title": o.title,
+                "level": o.level,
+                "category": o.category or "",
+                "status": o.status,
+                "is_overdue": "是" if o.is_overdue else "",
+                "assignee_name": o.assignee_name or "",
+                "due_at": _fmt_dt(o.due_at),
+                "discovered_by_name": o.discovered_by_name or "",
+                "discovered_at": _fmt_dt(o.discovered_at),
+                "source": o.source,
+                "closed_at": _fmt_dt(o.closed_at),
+            }
+        )
+
+    filters = []
+    if project_id is not None:
+        filters.append(f"项目ID={project_id}")
+    if level:
+        filters.append(f"等级={level}")
+    if status:
+        filters.append(f"状态={status}")
+    if keyword:
+        filters.append(f"关键词={keyword}")
+    if overdue:
+        filters.append("仅超期")
+    meta = {
+        "title": "涉铁工程隐患治理报表",
+        "generated_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "filters_desc": "；".join(filters) or "全部",
+    }
+    summary_blocks = [
+        ("按状态", sorted(by_status.items())),
+        ("按等级", sorted(by_level.items())),
+        ("超期情况", [("超期未闭环", overdue_cnt), ("正常", len(rows) - overdue_cnt)]),
+    ]
+
+    tag = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if fmt == "pdf":
+        content = build_simple_pdf(_EXPORT_COLUMNS, rows, meta, summary_blocks)
+        media_type = "application/pdf"
+        filename = f"hazard_report_{tag}.pdf"
+    else:
+        content = build_simple_excel(_EXPORT_COLUMNS, rows, meta, summary_blocks)
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        filename = f"hazard_report_{tag}.xlsx"
+    disposition = f"attachment; filename={filename}; filename*=UTF-8''{quote(filename)}"
+    return StreamingResponse(
+        iter([content]),
+        media_type=media_type,
+        headers={"Content-Disposition": disposition},
+    )
 
 
 @router.get(

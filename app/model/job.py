@@ -47,6 +47,10 @@ class WorkPlan(Base, TimestampMixin, CreatorMixin, SoftDeleteMixin):
     )
     # 状态：草稿/执行中/已完成
     status: Mapped[str] = mapped_column(String(16), default="草稿", comment="计划状态")
+    # 模板标记：模板不参与执行/规则判定，仅作为克隆蓝本（P3·⑩）
+    is_template: Mapped[bool] = mapped_column(
+        Boolean, default=False, index=True, comment="是否模板(模板仅作克隆蓝本)"
+    )
     # 规则 JSON：{monitor_target, trigger_conditions, time_range, dwell_time}
     rule_json: Mapped[str | None] = mapped_column(Text, nullable=True, comment="规则配置(JSON)")
 

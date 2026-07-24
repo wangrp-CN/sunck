@@ -187,6 +187,7 @@ def _to_out(db: Session, plan: WorkPlan) -> WorkPlanOut:
         actual_start=plan.actual_start,
         actual_end=plan.actual_end,
         status=plan.status,
+        is_template=plan.is_template,
         active=is_plan_active_now(plan),
         rule=_parse_rule(plan.rule_json),
         created_by=plan.created_by,
@@ -244,11 +245,17 @@ def list_jobs(
     keyword: str | None = None,
     project_id: int | None = None,
     status: str | None = None,
+    is_template: bool = False,
     page: int = 1,
     size: int = 20,
 ) -> ApiResponse:
-    """分页列表；施加部门数据隔离与软删过滤。"""
-    stmt = select(WorkPlan).where(WorkPlan.is_deleted.is_(False))
+    """分页列表；施加部门数据隔离与软删过滤。
+
+    is_template=False（默认）仅普通计划；=True 仅模板（模板库视图）。
+    """
+    stmt = select(WorkPlan).where(
+        WorkPlan.is_deleted.is_(False), WorkPlan.is_template.is_(is_template)
+    )
     stmt = apply_data_scope(stmt, WorkPlan, scope)
     if project_id is not None:
         stmt = stmt.where(WorkPlan.project_id == project_id)
@@ -279,6 +286,7 @@ def list_active_jobs(
         WorkPlan.is_deleted.is_(False),
         WorkPlan.is_start.is_(True),
         WorkPlan.status == "执行中",
+        WorkPlan.is_template.is_(False),
     )
     stmt = apply_data_scope(stmt, WorkPlan, scope)
     if project_id is not None:
@@ -436,6 +444,107 @@ def complete_job(
     db.commit()
     db.refresh(plan)
     return ApiResponse.success(data=_to_out(db, plan), message="作业计划已完成")
+
+
+def _copy_plan(
+    db: Session,
+    src: WorkPlan,
+    *,
+    name: str,
+    is_template: bool,
+    user_id: int | None,
+) -> WorkPlan:
+    """深拷贝计划：基本信息 + 规则 + 四类绑定；执行态字段清零（草稿/未激活）。"""
+    new_plan = WorkPlan(
+        project_id=src.project_id,
+        name=name,
+        is_start=False,
+        description=src.description,
+        plan_time=src.plan_time,
+        plan_start=src.plan_start,
+        plan_end=src.plan_end,
+        status="草稿",
+        is_template=is_template,
+        rule_json=src.rule_json,
+        created_by=user_id,
+    )
+    db.add(new_plan)
+    db.flush()
+    # 深拷贝四类绑定
+    pids = db.scalars(
+        select(WorkPlanPerson.person_id).where(WorkPlanPerson.plan_id == src.id)
+    ).all()
+    mids = db.scalars(
+        select(WorkPlanMachine.machine_id).where(WorkPlanMachine.plan_id == src.id)
+    ).all()
+    fids = db.scalars(select(WorkPlanFence.fence_id).where(WorkPlanFence.plan_id == src.id)).all()
+    devs = db.scalars(select(WorkPlanDevice).where(WorkPlanDevice.plan_id == src.id)).all()
+    if pids:
+        db.bulk_insert_mappings(
+            WorkPlanPerson, [{"plan_id": new_plan.id, "person_id": i} for i in pids]
+        )
+    if mids:
+        db.bulk_insert_mappings(
+            WorkPlanMachine, [{"plan_id": new_plan.id, "machine_id": i} for i in mids]
+        )
+    if fids:
+        db.bulk_insert_mappings(
+            WorkPlanFence, [{"plan_id": new_plan.id, "fence_id": i} for i in fids]
+        )
+    if devs:
+        db.bulk_insert_mappings(
+            WorkPlanDevice,
+            [
+                {"plan_id": new_plan.id, "device_type": d.device_type, "device_no": d.device_no}
+                for d in devs
+            ],
+        )
+    return new_plan
+
+
+@router.post(
+    "/{job_id}/clone",
+    summary="克隆作业计划（从计划或模板生成草稿副本）",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("job:add"))],
+)
+def clone_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    scope: DataScope = Depends(get_data_scope),
+    current: User = Depends(get_current_user),
+) -> ApiResponse:
+    """深拷贝生成新草稿：基本信息/规则/绑定全量复制，执行态清零。
+
+    源可以是普通计划或模板（模板套用 = 克隆模板）。
+    """
+    src = _get_owned_plan(db, job_id, scope)
+    new_plan = _copy_plan(db, src, name=f"{src.name}(副本)", is_template=False, user_id=current.id)
+    db.commit()
+    db.refresh(new_plan)
+    return ApiResponse.success(data=_to_out(db, new_plan), message="作业计划已克隆")
+
+
+@router.post(
+    "/{job_id}/save-as-template",
+    summary="存为模板（模板仅作克隆蓝本，不参与执行）",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("job:add"))],
+)
+def save_job_as_template(
+    job_id: int,
+    db: Session = Depends(get_db),
+    scope: DataScope = Depends(get_data_scope),
+    current: User = Depends(get_current_user),
+) -> ApiResponse:
+    """把现有计划沉淀为模板；源计划本身不受影响。"""
+    src = _get_owned_plan(db, job_id, scope)
+    if src.is_template:
+        raise BusinessError("该计划已是模板，无需重复保存", code=400)
+    new_plan = _copy_plan(db, src, name=f"{src.name}(模板)", is_template=True, user_id=current.id)
+    db.commit()
+    db.refresh(new_plan)
+    return ApiResponse.success(data=_to_out(db, new_plan), message="已存为模板")
 
 
 @router.delete(

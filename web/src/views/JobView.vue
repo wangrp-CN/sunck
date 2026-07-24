@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { fetchJobs, fetchJob, createJob, updateJob, deleteJob, startJob, completeJob } from "@/api/job";
+import { fetchJobs, fetchJob, createJob, updateJob, deleteJob, startJob, completeJob, cloneJob, saveJobAsTemplate } from "@/api/job";
 import { fetchProjects } from "@/api/project";
 import { fetchPersons } from "@/api/person";
 import { fetchMachines } from "@/api/machine";
@@ -36,6 +36,7 @@ const filters = reactive({
   keyword: "",
   project_id: null as number | null,
   status: "" as string,
+  is_template: false,
 });
 
 async function loadProjects() {
@@ -53,6 +54,7 @@ async function loadGanttPlans() {
   try {
     const res = await fetchJobs({
       project_id: filters.project_id ?? undefined,
+      is_template: false,
       size: 1000,
     });
     ganttPlans.value = res.items;
@@ -68,6 +70,7 @@ async function loadJobs() {
       keyword: filters.keyword || undefined,
       project_id: filters.project_id ?? undefined,
       status: filters.status || undefined,
+      is_template: filters.is_template,
     });
     list.value = res.items;
     total.value = res.total;
@@ -83,6 +86,7 @@ function resetFilters() {
   filters.keyword = "";
   filters.project_id = null;
   filters.status = "";
+  filters.is_template = false;
   loadJobs();
 }
 
@@ -337,6 +341,32 @@ async function completePlan(row: WorkPlan) {
   }
 }
 
+// 克隆为副本（深拷贝绑定，执行态清零）
+async function clonePlan(row: WorkPlan) {
+  try {
+    await cloneJob(row.id);
+    ElMessage.success("已克隆为副本（草稿/未激活）");
+    loadJobs();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "克隆失败");
+  }
+}
+
+// 存为模板（深拷贝绑定，标记 is_template=true）
+async function saveTemplate(row: WorkPlan) {
+  if (row.is_template) {
+    ElMessage.info("该计划已是模板");
+    return;
+  }
+  try {
+    await saveJobAsTemplate(row.id);
+    ElMessage.success("已存为模板，可在模板库中复用");
+    loadJobs();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "存为模板失败");
+  }
+}
+
 function statusTag(s: string): "" | "info" | "success" | "warning" {
   if (s === "执行中") return "warning";
   if (s === "已完成") return "success";
@@ -401,6 +431,9 @@ onMounted(async () => {
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="模板库">
+          <el-switch v-model="filters.is_template" @change="loadJobs" />
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="loadJobs">查询</el-button>
           <el-button @click="resetFilters">重置</el-button>
@@ -423,7 +456,12 @@ onMounted(async () => {
 
     <el-table :data="list" v-loading="loading" border stripe style="width: 100%">
       <el-table-column prop="id" label="ID" width="70" />
-      <el-table-column prop="name" label="计划名称" min-width="160" />
+      <el-table-column prop="name" label="计划名称" min-width="160">
+        <template #default="{ row }">
+          <el-tag v-if="row.is_template" size="small" type="warning" effect="plain" style="margin-right: 6px">模板</el-tag>
+          {{ row.name }}
+        </template>
+      </el-table-column>
       <el-table-column label="项目" min-width="140">
         <template #default="{ row }">{{ row.project_name || "-" }}</template>
       </el-table-column>
@@ -489,6 +527,22 @@ onMounted(async () => {
             @click="handleDelete(row)"
           >
             删除
+          </el-button>
+          <el-button
+            v-if="canAdd"
+            link
+            type="primary"
+            @click="clonePlan(row)"
+          >
+            克隆
+          </el-button>
+          <el-button
+            v-if="canAdd && !row.is_template"
+            link
+            type="warning"
+            @click="saveTemplate(row)"
+          >
+            存为模板
           </el-button>
         </template>
       </el-table-column>
