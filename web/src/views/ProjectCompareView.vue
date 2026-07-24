@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useAuthStore } from "@/stores/auth";
 import { getProjectCompare } from "@/api/dashboard";
 import type { ProjectCompareResp } from "@/types";
@@ -21,22 +21,18 @@ async function load() {
   }
 }
 
-function riskTag(score: number): "" | "success" | "warning" | "danger" {
-  if (score === 0) return "success";
-  if (score < 5) return "warning";
-  return "danger";
-}
-function riskText(score: number): string {
-  if (score === 0) return "低风险";
-  if (score < 5) return "中风险";
-  return "高风险";
-}
-
-const maxRisk = computed(() =>
-  Math.max(1, ...(resp.value?.items || []).map((i) => i.risk_score)),
-);
-function riskWidth(score: number): string {
-  return `${(score / maxRisk.value) * 100}%`;
+// 风险分档：直接采用后端 risk_level（高/中/低），不再用前端阈值复算
+function riskLevelTag(level?: string | null): "" | "success" | "warning" | "danger" {
+  switch (level) {
+    case "高":
+      return "danger";
+    case "中":
+      return "warning";
+    case "低":
+      return "success";
+    default:
+      return "";
+  }
 }
 
 onMounted(async () => {
@@ -85,15 +81,16 @@ onMounted(async () => {
           <span :class="{ danger: row.overdue_hazard_count > 0 }">{{ row.overdue_hazard_count }}</span>
         </template>
       </el-table-column>
-      <el-table-column label="风险分" min-width="200">
+      <el-table-column label="风险分" min-width="240">
         <template #default="{ row }">
           <div class="risk-bar-wrap">
-            <div class="risk-bar" :class="riskTag(row.risk_score)" :style="{ width: riskWidth(row.risk_score) }"></div>
-            <span class="risk-score" :class="riskTag(row.risk_score)">{{ row.risk_score }}</span>
-            <el-tag :type="riskTag(row.risk_score)" size="small" style="margin-left: 6px">
-              {{ riskText(row.risk_score) }}
+            <div class="risk-bar" :class="riskLevelTag(row.risk_level)" :style="{ width: (row.risk_index || 0) + '%' }"></div>
+            <span class="risk-score" :class="riskLevelTag(row.risk_level)">{{ row.risk_index ?? 0 }}</span>
+            <el-tag :type="riskLevelTag(row.risk_level)" size="small" style="margin-left: 6px">
+              {{ row.risk_level || "—" }}
             </el-tag>
           </div>
+          <div class="risk-raw">原始分 {{ row.risk_score }}</div>
         </template>
       </el-table-column>
       <template #empty>暂无项目数据</template>
@@ -116,4 +113,5 @@ onMounted(async () => {
 .risk-score.success { color: #67c23a; }
 .risk-score.warning { color: #e6a23c; }
 .risk-score.danger { color: #f56c6c; }
+.risk-raw { font-size: 12px; color: #909399; margin-top: 2px; }
 </style>

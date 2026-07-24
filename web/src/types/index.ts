@@ -548,6 +548,8 @@ export interface DeviceHealthItem {
   report_count: number;
   alarm_count: number;
   health_score: number;
+  online_state?: string | null;
+  health_level?: string | null;
 }
 
 export interface DeviceHealthResp {
@@ -573,6 +575,8 @@ export interface ProjectCompareItem {
   open_hazard_count: number;
   overdue_hazard_count: number;
   risk_score: number;
+  risk_index?: number;
+  risk_level?: string | null;
 }
 
 export interface ProjectCompareResp {

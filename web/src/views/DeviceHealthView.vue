@@ -47,15 +47,45 @@ function projectName(id?: number | null) {
   if (id == null) return "—";
   return projects.value.find((p) => p.id === id)?.name ?? `ID:${id}`;
 }
-function healthTag(score: number): "" | "success" | "warning" | "danger" {
-  if (score >= 80) return "success";
-  if (score >= 40) return "warning";
-  return "danger";
+// 健康分档：直接采用后端 health_level（优/良/中/差），不再用前端阈值复算
+function healthLevelTag(level?: string | null): "" | "success" | "primary" | "warning" | "danger" {
+  switch (level) {
+    case "优":
+      return "success";
+    case "良":
+      return "primary";
+    case "中":
+      return "warning";
+    case "差":
+      return "danger";
+    default:
+      return "";
+  }
 }
-function healthText(score: number): string {
-  if (score >= 80) return "良好";
-  if (score >= 40) return "关注";
-  return "告警";
+// 进度条状态（优=绿 良=蓝 中=橙 差=红）
+function healthLevelStatus(level?: string | null): "" | "success" | "warning" | "exception" {
+  switch (level) {
+    case "优":
+      return "success";
+    case "中":
+      return "warning";
+    case "差":
+      return "exception";
+    default:
+      return "";
+  }
+}
+function onlineStateText(state?: string | null): string {
+  switch (state) {
+    case "fresh":
+      return "新鲜";
+    case "stale":
+      return "陈旧";
+    case "offline":
+      return "离线";
+    default:
+      return "—";
+  }
 }
 
 onMounted(async () => {
@@ -128,25 +158,28 @@ onMounted(async () => {
       <el-table-column label="项目" min-width="130">
         <template #default="{ row }">{{ projectName(row.project_id) }}</template>
       </el-table-column>
-      <el-table-column label="在线" width="80">
+      <el-table-column label="在线" width="110">
         <template #default="{ row }">
           <el-tag :type="row.online ? 'success' : 'danger'" size="small">
             {{ row.online ? "在线" : "离线" }}
+          </el-tag>
+          <el-tag :type="row.online ? 'info' : 'danger'" size="small" style="margin-left: 4px">
+            {{ onlineStateText(row.online_state) }}
           </el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="last_report_time" label="最近上报" min-width="150" />
       <el-table-column prop="report_count" label="窗口上报" width="100" />
       <el-table-column prop="alarm_count" label="窗口告警" width="100" />
-      <el-table-column label="健康分" width="160">
+      <el-table-column label="健康分" min-width="190">
         <template #default="{ row }">
           <el-progress
             :percentage="row.health_score"
-            :status="row.health_score >= 80 ? 'success' : row.health_score >= 40 ? 'warning' : 'exception'"
+            :status="healthLevelStatus(row.health_level)"
           />
-          <span class="health-text" :class="healthTag(row.health_score)">
-            {{ healthText(row.health_score) }}
-          </span>
+          <el-tag :type="healthLevelTag(row.health_level)" size="small" style="margin-left: 6px">
+            {{ row.health_level || "—" }}
+          </el-tag>
         </template>
       </el-table-column>
       <template #empty>暂无设备</template>
@@ -164,5 +197,4 @@ onMounted(async () => {
 .sum-num.online { color: #67c23a; }
 .sum-num.offline { color: #f56c6c; }
 .sum-label { font-size: 13px; color: #909399; margin-top: 4px; }
-.health-text { font-size: 12px; margin-left: 6px; }
 </style>
