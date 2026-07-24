@@ -208,6 +208,95 @@ def test_correlations_run_requires_admin(client: TestClient, wipe):
     assert r.status_code in (401, 403)
 
 
+def test_correlation_summary_and_trend(client: TestClient, admin_token: str, wipe):
+    """汇总（今日跨设备共因计数 / 累计 / 按级别）+ 趋势（按 started_at 日期分桶）。"""
+    h = {"Authorization": f"Bearer {admin_token}"}
+    db = SessionLocal()
+    try:
+        pid = db.scalar(select(Project.id).where(Project.is_deleted.is_(False)))
+        now = datetime.now(timezone.utc)
+        today_mid = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        rows = [
+            CorrelatedEventGroup(
+                project_id=pid,
+                project_name="P",
+                spatial_type="fence",
+                scope_key="F1",
+                fence_name="F1",
+                started_at=now,
+                alarm_count=3,
+                device_count=2,
+                is_cross_device=True,
+                max_level="严重",
+                computed_at=now,
+            ),
+            CorrelatedEventGroup(
+                project_id=pid,
+                project_name="P",
+                spatial_type="fence",
+                scope_key="F2",
+                fence_name="F2",
+                started_at=now,
+                alarm_count=2,
+                device_count=2,
+                is_cross_device=True,
+                max_level="警告",
+                computed_at=now,
+            ),
+            CorrelatedEventGroup(
+                project_id=pid,
+                project_name="P",
+                spatial_type="device",
+                scope_key="D1",
+                started_at=now,
+                alarm_count=1,
+                device_count=1,
+                is_cross_device=False,
+                max_level="提示",
+                computed_at=now,
+            ),
+            CorrelatedEventGroup(
+                project_id=pid,
+                project_name="P",
+                spatial_type="fence",
+                scope_key="F3",
+                fence_name="F3",
+                started_at=today_mid - timedelta(days=1),
+                alarm_count=2,
+                device_count=2,
+                is_cross_device=True,
+                max_level="警告",
+                computed_at=now,
+            ),
+        ]
+        db.add_all(rows)
+        db.commit()
+    finally:
+        db.close()
+
+    # 汇总
+    r = client.get("/api/v1/metrics/correlations/summary", headers=h)
+    assert r.status_code == 200, r.text
+    d = r.json()["data"]
+    assert d["today_cross_device"] == 2
+    assert d["cross_device_total"] == 3
+    assert d["total"] == 4
+    assert d["today_projects"] == 1
+    assert d["by_level"].get("严重") == 1
+    assert d["by_level"].get("警告") == 2
+
+    # 趋势：仅跨设备，近 30 天；今日 2、昨日 1、其余补 0
+    tr = client.get("/api/v1/metrics/correlations/trend?days=30&only_cross_device=true", headers=h)
+    assert tr.status_code == 200, tr.text
+    s = tr.json()["data"]["series"]
+    assert len(s) == 30
+    today_key = now.date().isoformat()
+    y_key = (today_mid - timedelta(days=1)).date().isoformat()
+    assert next(p for p in s if p["date"] == today_key)["count"] == 2
+    assert next(p for p in s if p["date"] == y_key)["count"] == 1
+    assert all(p["count"] == 0 for p in s if p["date"] not in (today_key, y_key))
+
+
 def _all_scope(db):
     """构造一个「全部数据」DataScope（超管视角），供成员查询。"""
     from app.core.data_scope import DataScope

@@ -146,6 +146,52 @@ def correlations(
 
 
 @router.get(
+    "/correlations/summary",
+    dependencies=[Depends(require_permissions("dashboard:view"))],
+)
+def correlations_summary(
+    db: Session = Depends(get_read_db),
+    scope: DataScope = Depends(get_data_scope),
+):
+    """跨设备关联汇总（受数据范围约束）。
+
+    用于大屏「今日新增跨设备共因」卡片：今日跨设备共因数、累计跨设备、按级别计数等。
+    """
+    proj_stmt = apply_data_scope(
+        select(Project.id).where(Project.is_deleted.is_(False)), Project, scope
+    )
+    allowed = {row[0] for row in db.execute(proj_stmt).all()}
+    summary = corr_svc.get_correlation_summary(db, allowed)
+    return ApiResponse.success(data=summary)
+
+
+@router.get(
+    "/correlations/trend",
+    dependencies=[Depends(require_permissions("dashboard:view"))],
+)
+def correlations_trend(
+    db: Session = Depends(get_read_db),
+    scope: DataScope = Depends(get_data_scope),
+    days: int = Query(30, ge=1, le=365, description="回溯天数"),
+    only_cross_device: bool = Query(False, description="仅统计跨设备共因"),
+):
+    """关联事件组每日计数趋势（受数据范围约束），供 sparkline 绘制。
+
+    按事件窗 ``started_at`` 的 UTC 日期分桶；返回最近 ``days`` 天的逐日计数。
+    """
+    proj_stmt = apply_data_scope(
+        select(Project.id).where(Project.is_deleted.is_(False)), Project, scope
+    )
+    allowed = {row[0] for row in db.execute(proj_stmt).all()}
+    series = corr_svc.get_correlation_trend(
+        db, allowed, days=days, only_cross_device=only_cross_device
+    )
+    return ApiResponse.success(
+        data={"days": days, "only_cross_device": only_cross_device, "series": series}
+    )
+
+
+@router.get(
     "/correlations/{group_id}/members",
     dependencies=[Depends(require_permissions("dashboard:view"))],
 )

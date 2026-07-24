@@ -300,3 +300,92 @@ def get_correlation_members(
             }
         )
     return out
+
+
+def get_correlation_summary(
+    db: Session,
+    allowed_project_ids: set[int],
+    today: datetime | None = None,
+) -> dict[str, Any]:
+    """跨设备关联汇总（受数据范围约束），供大屏「今日新增跨设备共因」卡片。
+
+    - ``today_cross_device``：事件窗 ``started_at`` 落在「今天」的跨设备共因数
+      （按 UTC 日期边界，与前端把时间戳按北京墙钟直读展示的既有约定一致）；
+    - ``cross_device_total`` / ``total``：累计跨设备 / 全部事件组；
+    - ``by_level``：按最高级别计数。
+    """
+    empty = {
+        "total": 0,
+        "cross_device_total": 0,
+        "today_cross_device": 0,
+        "today_projects": 0,
+        "by_level": {},
+    }
+    if not allowed_project_ids:
+        return empty
+    if today is None:
+        today = datetime.now(timezone.utc)
+    today_mid = today.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    rows = db.scalars(
+        select(CorrelatedEventGroup).where(CorrelatedEventGroup.project_id.in_(allowed_project_ids))
+    ).all()
+
+    total = len(rows)
+    cross = [r for r in rows if r.is_cross_device]
+    today_cross = [r for r in cross if r.started_at and r.started_at >= today_mid]
+    by_level: dict[str, int] = {}
+    for r in rows:
+        lv = r.max_level or "未知"
+        by_level[lv] = by_level.get(lv, 0) + 1
+    today_projects = len({r.project_id for r in today_cross if r.project_id})
+    return {
+        "total": total,
+        "cross_device_total": len(cross),
+        "today_cross_device": len(today_cross),
+        "today_projects": today_projects,
+        "by_level": by_level,
+    }
+
+
+def get_correlation_trend(
+    db: Session,
+    allowed_project_ids: set[int],
+    days: int = 30,
+    only_cross_device: bool = False,
+    today: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """关联事件组每日计数趋势（受数据范围约束），供 sparkline 绘制。
+
+    按 ``started_at`` 的 UTC 日期分桶；返回最近 ``days`` 天（含今天）的逐日计数，
+    缺数据的日期补 0，保证曲线连续。``only_cross_device=True`` 时仅统计跨设备共因。
+    """
+    if not allowed_project_ids:
+        return []
+    if today is None:
+        today = datetime.now(timezone.utc)
+    today_mid = today.replace(hour=0, minute=0, second=0, microsecond=0)
+    start = today_mid - timedelta(days=days - 1)
+
+    rows = db.scalars(
+        select(CorrelatedEventGroup).where(CorrelatedEventGroup.project_id.in_(allowed_project_ids))
+    ).all()
+
+    buckets: dict[str, int] = defaultdict(int)
+    for r in rows:
+        if only_cross_device and not r.is_cross_device:
+            continue
+        if not r.started_at:
+            continue
+        if r.started_at < start or r.started_at > today_mid + timedelta(days=1):
+            continue
+        d = r.started_at.astimezone(timezone.utc).date().isoformat()
+        buckets[d] += 1
+
+    series: list[dict[str, Any]] = []
+    cur = start
+    for _ in range(days):
+        d = cur.date().isoformat()
+        series.append({"date": d, "count": buckets.get(d, 0)})
+        cur += timedelta(days=1)
+    return series

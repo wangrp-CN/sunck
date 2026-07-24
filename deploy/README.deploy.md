@@ -449,7 +449,12 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
   也可经接口手动触发（仅超管）：`POST /api/v1/metrics/correlations/run`
   （参数 `window_hours`/`gap_minutes`，默认 24/30）。
 - 查询接口：`GET /api/v1/metrics/correlations`（需 `dashboard:view`，支持
-  `only_cross_device` 过滤）、`GET /api/v1/metrics/correlations/{id}/members`（成员告警明细）。
+  `only_cross_device` 过滤）、`GET /api/v1/metrics/correlations/{id}/members`（成员告警明细）、
+  `GET /api/v1/metrics/correlations/summary`（汇总：今日跨设备共因 / 累计跨设备 / 按级别计数）、
+  `GET /api/v1/metrics/correlations/trend`（近 N 天每日事件组计数，按 `started_at` 日期分桶，
+  支持 `only_cross_device`；供 sparkline 绘制）。
 - 前端：**智能分析 → 跨设备根因关联**（`/intelligence/correlation`，菜单项「跨设备根因关联」），
-  汇总卡 + 事件组表格 + 可展开成员明细 + 「仅看跨设备」筛选 + 超管「重新计算」按钮。
+  汇总卡 + 近 30 天趋势 sparkline（随「仅看跨设备」切换全部/跨设备）+ 事件组表格 + 可展开成员明细
+  + 「仅看跨设备」筛选 + 超管「重新计算」按钮；监控大屏右栏新增「今日新增跨设备共因」卡片
+  （大数字 + 近 30 天跨设备趋势 sparkline）。
 - 关联参数 `app/config.py::correlation_window_hours` / `correlation_gap_minutes`。

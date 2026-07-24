@@ -155,3 +155,44 @@ export function runCorrelations(windowHours = 24, gapMinutes = 30): Promise<{
     params: { window_hours: windowHours, gap_minutes: gapMinutes },
   });
 }
+
+// 跨设备关联汇总（受数据范围约束），大屏「今日新增跨设备共因」卡片用
+export interface CorrelationSummaryResp {
+  total: number;
+  cross_device_total: number;
+  today_cross_device: number;
+  today_projects: number;
+  by_level: Record<string, number>;
+}
+
+// 关联事件组每日计数趋势（sparkline 用）
+export interface CorrelationTrendPoint {
+  date: string; // YYYY-MM-DD
+  count: number;
+}
+
+export interface CorrelationTrendResp {
+  days: number;
+  only_cross_device: boolean;
+  series: CorrelationTrendPoint[];
+}
+
+// 跨设备关联汇总
+export function getCorrelationSummary(): Promise<CorrelationSummaryResp> {
+  return http<CorrelationSummaryResp>({
+    url: "/v1/metrics/correlations/summary",
+    method: "GET",
+  });
+}
+
+// 关联事件组每日计数趋势（按事件窗 started_at 分桶）
+export function getCorrelationTrend(
+  days = 30,
+  onlyCrossDevice = false,
+): Promise<CorrelationTrendResp> {
+  return http<CorrelationTrendResp>({
+    url: "/v1/metrics/correlations/trend",
+    method: "GET",
+    params: { days, only_cross_device: onlyCrossDevice },
+  });
+}

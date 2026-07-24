@@ -4,16 +4,20 @@ import { useAuthStore } from "@/stores/auth";
 import {
   getCorrelations,
   getCorrelationMembers,
+  getCorrelationTrend,
   runCorrelations,
   type CorrelationItem,
   type CorrelationMember,
+  type CorrelationTrendPoint,
 } from "@/api/metrics";
+import TrendLine from "@/components/TrendLine.vue";
 
 const auth = useAuthStore();
 
 const loading = ref(false);
 const onlyCross = ref(false);
 const items = ref<CorrelationItem[]>([]);
+const trend = ref<CorrelationTrendPoint[]>([]);
 
 // 成员明细懒加载缓存：groupId -> {loading, items}
 const memberMap = reactive<Record<number, { loading: boolean; items: CorrelationMember[] }>>({});
@@ -32,14 +36,20 @@ const summary = computed(() => {
 async function load() {
   loading.value = true;
   try {
-    const res = await getCorrelations(onlyCross.value, 100);
+    const [res, t] = await Promise.all([
+      getCorrelations(onlyCross.value, 100),
+      getCorrelationTrend(30, onlyCross.value).catch(() => ({ series: [] as CorrelationTrendPoint[] })),
+    ]);
     items.value = res.items;
+    trend.value = t.series;
   } catch (e: any) {
     ElMessage.error(e?.message || "加载关联事件组失败");
   } finally {
     loading.value = false;
   }
 }
+
+const trendPoints = computed(() => trend.value.map((p) => ({ t: p.date, v: p.count })));
 
 async function onRecalc() {
   loading.value = true;
@@ -158,6 +168,22 @@ onMounted(load);
           <div class="stat-label">涉及项目</div>
         </div>
       </div>
+    </el-card>
+
+    <el-card shadow="never" class="trend-card">
+      <div class="trend-head">
+        <span class="card-title">关联事件组趋势（近 30 天）</span>
+        <span class="trend-hint">{{ onlyCross ? "仅跨设备共因" : "全部事件组" }}</span>
+      </div>
+      <TrendLine
+        v-if="trendPoints.length"
+        :points="trendPoints"
+        :height="56"
+        :width="820"
+        color="#e6a23c"
+        :value-digits="0"
+      />
+      <el-empty v-else description="暂无趋势数据" :image-size="42" />
     </el-card>
 
     <el-card shadow="never">
@@ -315,5 +341,23 @@ onMounted(load);
 }
 .m-loading {
   height: 80px;
+}
+.trend-card {
+  margin-bottom: 12px;
+}
+.trend-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.card-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #303133;
+}
+.trend-hint {
+  font-size: 12px;
+  color: #909399;
 }
 </style>

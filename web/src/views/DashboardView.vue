@@ -5,8 +5,12 @@ import { getDashboardStats, getRecentAlarms } from "@/api/dashboard";
 import {
   getRiskAlerts,
   getRiskTrend,
+  getCorrelationSummary,
+  getCorrelationTrend,
   RISK_ALERT_THRESHOLD,
   type RiskAlertItem,
+  type CorrelationSummaryResp,
+  type CorrelationTrendPoint,
 } from "@/api/metrics";
 import {
   fetchDevices,
@@ -35,6 +39,12 @@ const loading = ref(false);
 // 智能核心 v2：项目风险预警（阈值越阈，受数据范围约束）
 const riskAlerts = ref<RiskAlertItem[]>([]);
 const alertTrendMap = ref<Record<number, { t: string; v: number }[]>>({});
+// 智能核心 v2：跨设备根因关联（今日新增共因卡片 + 近30天趋势）
+const corrSummary = ref<CorrelationSummaryResp | null>(null);
+const corrTrend = ref<CorrelationTrendPoint[]>([]);
+const corrTrendPoints = computed(() =>
+  corrTrend.value.map((p) => ({ t: p.date, v: p.count })),
+);
 // 趋势图按周期联动：粒度 + 时间范围（与告警报表/导出同一分桶口径）
 const trendGranularity = ref<Granularity>("day");
 const trendRange = ref<[string, string] | null>(null);
@@ -233,6 +243,21 @@ async function load() {
   }
   // 风险预警独立加载：即便 metrics 接口异常也不影响主面板
   void loadAlerts();
+  // 跨设备关联汇总/趋势独立加载（同上，互不影响主面板）
+  void loadCorrelation();
+}
+
+async function loadCorrelation() {
+  try {
+    const [s, t] = await Promise.all([
+      getCorrelationSummary(),
+      getCorrelationTrend(30, true).catch(() => ({ series: [] as CorrelationTrendPoint[] })),
+    ]);
+    corrSummary.value = s;
+    corrTrend.value = t.series;
+  } catch {
+    /* 拦截器已提示 */
+  }
 }
 
 async function loadAlerts() {
@@ -611,6 +636,30 @@ onUnmounted(() => {
             </div>
           </template>
           <el-empty v-else description="暂无越阈项目" :image-size="40" />
+        </el-card>
+
+        <!-- 智能核心 v2：今日新增跨设备共因（关联事件组，受数据范围约束） -->
+        <el-card shadow="never" class="bar-card corr-card">
+          <template #header>
+            <div class="card-head">
+              <span class="card-title">今日新增跨设备共因</span>
+              <span class="card-sub">近 30 天趋势</span>
+            </div>
+          </template>
+          <div class="corr-bignum">{{ corrSummary?.today_cross_device ?? "—" }}</div>
+          <div class="corr-sub">
+            涉及项目 {{ corrSummary?.today_projects ?? "—" }} 个 · 累计跨设备
+            {{ corrSummary?.cross_device_total ?? "—" }}
+          </div>
+          <TrendLine
+            v-if="corrTrendPoints.length"
+            :points="corrTrendPoints"
+            :height="40"
+            :width="248"
+            color="#f56c6c"
+            :value-digits="0"
+          />
+          <span v-else class="muted">暂无趋势</span>
         </el-card>
 
         <el-card shadow="never" class="bar-card">
@@ -1236,6 +1285,22 @@ onUnmounted(() => {
 .alert-card {
   margin-bottom: 16px;
   border-top: 3px solid #f56c6c;
+}
+/* 今日新增跨设备共因卡 */
+.corr-card {
+  margin-bottom: 16px;
+  border-top: 3px solid #f56c6c;
+}
+.corr-bignum {
+  font-size: 30px;
+  font-weight: 700;
+  color: #f56c6c;
+  line-height: 1.1;
+}
+.corr-sub {
+  font-size: 12px;
+  color: #909399;
+  margin: 4px 0 8px;
 }
 .alert-row {
   padding: 8px 0;
