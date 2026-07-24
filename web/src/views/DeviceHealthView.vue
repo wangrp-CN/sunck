@@ -3,7 +3,9 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { useAuthStore } from "@/stores/auth";
 import { fetchDeviceHealth } from "@/api/device";
 import { fetchProjects } from "@/api/project";
+import { getHealthTrend } from "@/api/metrics";
 import { DEVICE_TYPE_LABELS } from "@/api/realtime";
+import TrendLine from "@/components/TrendLine.vue";
 import type { DeviceHealthResp, Project } from "@/types";
 
 const auth = useAuthStore();
@@ -88,6 +90,43 @@ function onlineStateText(state?: string | null): string {
   }
 }
 
+// 健康分趋势 sparkline：仅在该设备被展开时懒加载近 30 天健康分序列
+const healthTrend = ref<Record<string, { t: string; v: number }[]>>({});
+const healthTrendLoading = ref<Set<string>>(new Set());
+
+function healthColor(level?: string | null): string {
+  switch (level) {
+    case "优":
+      return "#67c23a";
+    case "良":
+      return "#409eff";
+    case "中":
+      return "#e6a23c";
+    default:
+      return "#f56c6c";
+  }
+}
+
+async function onExpand(row: any, expandedRows: any[]) {
+  const no = row.device_no as string;
+  const isOpen = expandedRows.some((r) => r.device_no === no);
+  if (!isOpen || healthTrend.value[no]) return;
+  healthTrendLoading.value = new Set(healthTrendLoading.value).add(no);
+  try {
+    const res = await getHealthTrend(no, 30);
+    healthTrend.value = {
+      ...healthTrend.value,
+      [no]: (res.series || []).map((s) => ({ t: s.snapshot_at, v: s.health_score })),
+    };
+  } catch {
+    /* 拦截器已提示，静默避免影响主表 */
+  } finally {
+    const next = new Set(healthTrendLoading.value);
+    next.delete(no);
+    healthTrendLoading.value = next;
+  }
+}
+
 onMounted(async () => {
   if (!auth.user) {
     try {
@@ -149,7 +188,29 @@ onMounted(async () => {
       border
       stripe
       style="width: 100%"
+      @expand-change="onExpand"
     >
+      <el-table-column type="expand" width="40">
+        <template #default="{ row }">
+          <div class="health-trend">
+            <div class="health-trend-head">
+              <span>近 30 天健康分趋势</span>
+              <span class="muted">设备 {{ row.device_no }}</span>
+            </div>
+            <TrendLine
+              v-if="(healthTrend[row.device_no] || []).length"
+              :points="healthTrend[row.device_no]"
+              :color="healthColor(row.health_level)"
+              :height="72"
+              :width="460"
+            />
+            <span v-else-if="healthTrendLoading.has(row.device_no)" class="muted">
+              加载趋势中…
+            </span>
+            <span v-else class="muted">暂无快照数据</span>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column prop="device_no" label="设备编号" width="150" />
       <el-table-column prop="name" label="名称" min-width="140" />
       <el-table-column label="类型" width="110">
@@ -197,4 +258,7 @@ onMounted(async () => {
 .sum-num.online { color: #67c23a; }
 .sum-num.offline { color: #f56c6c; }
 .sum-label { font-size: 13px; color: #909399; margin-top: 4px; }
+.health-trend { padding: 8px 12px; }
+.health-trend-head { display: flex; justify-content: space-between; margin-bottom: 6px; font-size: 13px; color: #606266; }
+.muted { color: #c0c4cc; font-size: 12px; }
 </style>

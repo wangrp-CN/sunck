@@ -3,11 +3,18 @@ import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { Location } from "@element-plus/icons-vue";
 import { getDashboardStats, getRecentAlarms } from "@/api/dashboard";
 import {
+  getRiskAlerts,
+  getRiskTrend,
+  RISK_ALERT_THRESHOLD,
+  type RiskAlertItem,
+} from "@/api/metrics";
+import {
   fetchDevices,
   fetchLocations,
   type DeviceItem,
   type LocationItem,
 } from "@/api/realtime";
+import TrendLine from "@/components/TrendLine.vue";
 import { fetchFences } from "@/api/fence";
 import {
   exportAlarmReport,
@@ -25,6 +32,9 @@ import type { DashboardStats, MapDevice, MapFence, RecentAlarm } from "@/types";
 const stats = ref<DashboardStats | null>(null);
 const recent = ref<RecentAlarm[]>([]);
 const loading = ref(false);
+// 智能核心 v2：项目风险预警（阈值越阈，受数据范围约束）
+const riskAlerts = ref<RiskAlertItem[]>([]);
+const alertTrendMap = ref<Record<number, { t: string; v: number }[]>>({});
 // 趋势图按周期联动：粒度 + 时间范围（与告警报表/导出同一分桶口径）
 const trendGranularity = ref<Granularity>("day");
 const trendRange = ref<[string, string] | null>(null);
@@ -148,9 +158,55 @@ function levelColor(level: string | null): string {
   return (level && LEVEL_COLORS[level]) || "#909399";
 }
 
+// 风险预警分档配色（高红/中橙/低绿）
+function alertRiskTag(level?: string | null): "" | "success" | "warning" | "danger" {
+  switch (level) {
+    case "高":
+      return "danger";
+    case "中":
+      return "warning";
+    default:
+      return "success";
+  }
+}
+function alertRiskColor(level?: string | null): string {
+  switch (level) {
+    case "高":
+      return "#f56c6c";
+    case "中":
+      return "#e6a23c";
+    default:
+      return "#67c23a";
+  }
+}
+
 function fmtTime(t: string | null): string {
   if (!t) return "—";
   return t.replace("T", " ").slice(0, 19);
+}
+
+// 越阈项目近 30 天风险趋势（仅对越阈项目拉取，数量很少）
+async function loadAlertTrends() {
+  const items = riskAlerts.value;
+  if (!items.length) {
+    alertTrendMap.value = {};
+    return;
+  }
+  try {
+    const results = await Promise.all(
+      items.map((it) => getRiskTrend(it.project_id, 30).catch(() => ({ series: [] as any[] }))),
+    );
+    const map: Record<number, { t: string; v: number }[]> = {};
+    items.forEach((it, i) => {
+      map[it.project_id] = (results[i].series || []).map((s) => ({
+        t: s.snapshot_at,
+        v: s.risk_index,
+      }));
+    });
+    alertTrendMap.value = map;
+  } catch {
+    /* 静默 */
+  }
 }
 
 async function load() {
@@ -174,6 +230,18 @@ async function load() {
     // 拦截器已提示
   } finally {
     loading.value = false;
+  }
+  // 风险预警独立加载：即便 metrics 接口异常也不影响主面板
+  void loadAlerts();
+}
+
+async function loadAlerts() {
+  try {
+    const alerts = await getRiskAlerts();
+    riskAlerts.value = alerts.items || [];
+    await loadAlertTrends();
+  } catch {
+    /* 拦截器已提示 */
   }
 }
 
@@ -511,6 +579,40 @@ onUnmounted(() => {
 
       <!-- 右：分布条形 -->
       <el-col :span="8">
+        <!-- 智能核心 v2：项目风险预警（阈值越阈，含 is_new 上升沿标记） -->
+        <el-card shadow="never" class="bar-card alert-card">
+          <template #header>
+            <div class="card-head">
+              <span class="card-title">项目风险预警</span>
+              <span class="card-sub">阈值 {{ RISK_ALERT_THRESHOLD }}</span>
+            </div>
+          </template>
+          <template v-if="riskAlerts.length">
+            <div v-for="a in riskAlerts" :key="a.project_id" class="alert-row">
+              <div class="alert-row-head">
+                <span class="alert-name">{{ a.project_name }}</span>
+                <el-tag v-if="a.is_new" type="danger" size="small" effect="dark">新</el-tag>
+                <el-tag :type="alertRiskTag(a.risk_level)" size="small">
+                  {{ a.risk_level || "—" }}
+                </el-tag>
+                <span class="alert-idx" :style="{ color: alertRiskColor(a.risk_level) }">
+                  {{ a.risk_index }}
+                </span>
+              </div>
+              <TrendLine
+                v-if="(alertTrendMap[a.project_id] || []).length"
+                :points="alertTrendMap[a.project_id]"
+                :threshold="RISK_ALERT_THRESHOLD"
+                :color="alertRiskColor(a.risk_level)"
+                :height="34"
+                :width="248"
+              />
+              <span v-else class="muted">暂无趋势</span>
+            </div>
+          </template>
+          <el-empty v-else description="暂无越阈项目" :image-size="40" />
+        </el-card>
+
         <el-card shadow="never" class="bar-card">
           <template #header>
             <div class="card-head">
@@ -1129,5 +1231,40 @@ onUnmounted(() => {
   font-weight: 400;
   color: #c0c4cc;
   margin-left: 8px;
+}
+/* 项目风险预警卡 */
+.alert-card {
+  margin-bottom: 16px;
+  border-top: 3px solid #f56c6c;
+}
+.alert-row {
+  padding: 8px 0;
+  border-bottom: 1px dashed #ebeef5;
+}
+.alert-row:last-child {
+  border-bottom: none;
+}
+.alert-row-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.alert-name {
+  font-weight: 600;
+  color: #303133;
+  font-size: 13px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alert-idx {
+  font-weight: 700;
+  font-size: 15px;
+}
+.muted {
+  color: #c0c4cc;
+  font-size: 12px;
 }
 </style>

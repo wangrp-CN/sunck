@@ -2,6 +2,8 @@
 import { onMounted, ref } from "vue";
 import { useAuthStore } from "@/stores/auth";
 import { getProjectCompare } from "@/api/dashboard";
+import { getRiskTrend, RISK_ALERT_THRESHOLD } from "@/api/metrics";
+import TrendLine from "@/components/TrendLine.vue";
 import type { ProjectCompareResp } from "@/types";
 
 const auth = useAuthStore();
@@ -10,10 +12,43 @@ const days = ref(7);
 const resp = ref<ProjectCompareResp | null>(null);
 const loading = ref(false);
 
+// 风险趋势 sparkline：load 后并行拉取各项目近 30 天风险指数序列
+const trendMap = ref<Record<number, { t: string; v: number }[]>>({});
+const trendLoading = ref(false);
+
+async function loadTrends() {
+  const items = resp.value?.items || [];
+  if (!items.length) {
+    trendMap.value = {};
+    return;
+  }
+  trendLoading.value = true;
+  try {
+    const results = await Promise.all(
+      items.map((it) =>
+        getRiskTrend(it.project_id, 30).catch(() => ({ series: [] as any[] })),
+      ),
+    );
+    const map: Record<number, { t: string; v: number }[]> = {};
+    items.forEach((it, i) => {
+      map[it.project_id] = (results[i].series || []).map((s) => ({
+        t: s.snapshot_at,
+        v: s.risk_index,
+      }));
+    });
+    trendMap.value = map;
+  } catch {
+    /* 拦截器已提示，这里静默避免阻塞对比主表 */
+  } finally {
+    trendLoading.value = false;
+  }
+}
+
 async function load() {
   loading.value = true;
   try {
     resp.value = await getProjectCompare(days.value);
+    await loadTrends();
   } catch (e: any) {
     ElMessage.error(e?.message || "加载对比数据失败");
   } finally {
@@ -32,6 +67,18 @@ function riskLevelTag(level?: string | null): "" | "success" | "warning" | "dang
       return "success";
     default:
       return "";
+  }
+}
+
+// sparkline 颜色：随风险分档走（高红/中橙/低绿）
+function riskTrendColor(level?: string | null): string {
+  switch (level) {
+    case "高":
+      return "#f56c6c";
+    case "中":
+      return "#e6a23c";
+    default:
+      return "#67c23a";
   }
 }
 
@@ -93,6 +140,21 @@ onMounted(async () => {
           <div class="risk-raw">原始分 {{ row.risk_score }}</div>
         </template>
       </el-table-column>
+      <el-table-column label="风险趋势(30天)" width="170">
+        <template #default="{ row }">
+          <div class="trend-cell">
+            <TrendLine
+              v-if="(trendMap[row.project_id] || []).length"
+              :points="trendMap[row.project_id]"
+              :threshold="RISK_ALERT_THRESHOLD"
+              :color="riskTrendColor(row.risk_level)"
+              :height="36"
+              :width="150"
+            />
+            <span v-else class="muted">{{ trendLoading ? "加载中…" : "—" }}</span>
+          </div>
+        </template>
+      </el-table-column>
       <template #empty>暂无项目数据</template>
     </el-table>
   </div>
@@ -114,4 +176,6 @@ onMounted(async () => {
 .risk-score.warning { color: #e6a23c; }
 .risk-score.danger { color: #f56c6c; }
 .risk-raw { font-size: 12px; color: #909399; margin-top: 2px; }
+.trend-cell { display: flex; align-items: center; height: 36px; }
+.muted { color: #c0c4cc; font-size: 12px; }
 </style>

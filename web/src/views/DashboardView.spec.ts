@@ -35,6 +35,11 @@ vi.mock("@/api/dashboard", () => ({
   getDashboardStats: vi.fn(),
   getRecentAlarms: vi.fn(),
 }));
+vi.mock("@/api/metrics", () => ({
+  getRiskAlerts: vi.fn(),
+  getRiskTrend: vi.fn(),
+  RISK_ALERT_THRESHOLD: 60,
+}));
 vi.mock("@/api/realtime", () => ({
   fetchDevices: vi.fn(),
   fetchLocations: vi.fn(),
@@ -50,6 +55,7 @@ vi.mock("@/components/WorkPlanPopup.vue", () => ({ default: { name: "WPP", templ
 vi.mock("@/components/DailyTrendChart.vue", () => ({ default: { name: "DTC", template: "<div/>" } }));
 
 import { getDashboardStats, getRecentAlarms } from "@/api/dashboard";
+import { getRiskAlerts, getRiskTrend } from "@/api/metrics";
 import { fetchDevices, fetchLocations } from "@/api/realtime";
 import { fetchFences } from "@/api/fence";
 import { exportAlarmReport, fetchSnapshotPreview } from "@/api/alarm";
@@ -66,6 +72,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(getDashboardStats).mockResolvedValue(stats as any);
   vi.mocked(getRecentAlarms).mockResolvedValue(recent as any);
+  vi.mocked(getRiskAlerts).mockResolvedValue({ items: [] } as any);
+  vi.mocked(getRiskTrend).mockResolvedValue({ series: [] } as any);
   vi.mocked(fetchDevices).mockResolvedValue({ items: [], total: 0 } as any);
   vi.mocked(fetchLocations).mockResolvedValue({ items: [], total: 0 } as any);
   vi.mocked(fetchFences).mockResolvedValue({ items: [], total: 0 } as any);

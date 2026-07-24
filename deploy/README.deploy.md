@@ -417,3 +417,18 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
 - 查询接口：`GET /api/v1/metrics/risk-alerts`（需 `dashboard:view`，返回越阈项目列表，
   含 `is_new` 上升沿标记）；
 - 手动触发预警通知（仅超管）：`POST /api/v1/metrics/risk-alerts/notify`。
+
+### 13.2 前端趋势可视化（智能核心 v2 · #78）
+
+不引入图表库（前端仅 ElementPlus），趋势线用轻量内联 SVG 组件 `web/src/components/TrendLine.vue`
+（面积+折线+可选阈值虚线+末点标记+逐点悬浮）渲染，纯 viewBox 自适应宽度。
+
+- **对比大屏**（`/projects/compare`）：每行「风险趋势(30天)」列，加载后并行拉取各项目
+  `GET /metrics/risk-trend` 画 sparkline（带 60 阈值虚线，颜色随风险分档）；
+- **设备健康**（`/devices/health`）：表格行可展开，展开时懒加载该设备
+  `GET /metrics/health-trend` 近 30 天健康分 sparkline；
+- **监控大屏**（`/`）：右栏新增「项目风险预警」卡，消费 `GET /metrics/risk-alerts`
+  （含 `is_new` 角标 + 各越阈项目 sparkline + 阈值虚线），预警接口独立加载，
+  失败不影响主面板。
+- 阈值常量 `web/src/api/metrics.ts::RISK_ALERT_THRESHOLD`（默认 60）需与后端
+  `app/config.py::risk_alert_threshold` 保持一致。
