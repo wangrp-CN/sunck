@@ -309,10 +309,11 @@ def print_sweep():
             line += f"{name}={idx:>3} "
         print(line)
 
-    print("\n[2] 扫描 严重告警权重（ALARM_SEVERITY_WEIGHT['严重']）")
-    for w in (2.0, 3.0, 4.0, 5.0):
-        import app.core.scoring as sc
+    print("\n[2] 扫描 严重告警权重（ALARM_SEVERITY_WEIGHT['严重']，固定 K=默认20）")
+    import app.core.scoring as sc
 
+    sc.RISK_NORMALIZE_K = 20.0  # 复位，使本段与 [1] 的 K=20 行可比（[1] 结束时 K 留在 50）
+    for w in (2.0, 3.0, 4.0, 5.0):
         sc.ALARM_SEVERITY_WEIGHT = {"严重": w, "警告": 2.0, "提示": 1.0}
         line = f"  严重权重={w:<4}: "
         for name, ubl in scenarios:
