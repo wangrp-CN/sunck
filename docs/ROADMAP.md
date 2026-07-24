@@ -1,7 +1,7 @@
 # 涉铁工程智能监控平台 · 功能开发 Roadmap
 
 > 维护对象：`rail_monitor`（FastAPI + Vue3 + PostgreSQL + Redis + MQTT）
-> 最后更新：2026-07-23
+> 最后更新：2026-07-24
 > 说明：本文档汇总平台「核心闭环之外」的功能模块规划与现状，作为后续迭代的排期基线。
 
 ---
@@ -12,6 +12,7 @@
 - **基础设施**：三套 DB 连接池（API / 上行落库 / 看板只读）、ingestion 批处理落库、WebSocket 实时通道（含裸 HTTP 兜底 426）、千台压测调优（端到端落库率 **100%**，`INGEST_WORKERS=8` + `INGEST_DB_POOL_SIZE=12` + Mosquitto `max_queued_messages=100000`）。
 - **规模**：15 个后端路由 + 16 个前端页面，覆盖项目 / 设备 / 人员 / 机械 / 围栏 / 作业计划 / 告警 / 隐患 / 通知 / 大屏等域。
 - **合规**：RBAC + 部门数据隔离（`app.core.data_scope`）已应用于全部业务查询。
+- **部署闭环（✅ 2026-07-24）**：`deploy/` 已补齐 `nginx.conf`（反代 `/api`、WebSocket `/ws`、静态托管、`/health`/`/metrics` 透传、公网拦截 Swagger）+ `README.deploy.md`（前置依赖 / 后端迁移 / `.env` 模板 / systemd 启用 / 前端构建 / 验证 / 安全建议）。支持 Nginx 反代 + 前端静态托管的一键上线；`nginx -t` 语法校验通过，生产 uvicorn 启动冒烟（OpenAPI 就绪、5 个 P3 新路由全部注册）。
 
 ---
 
