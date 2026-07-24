@@ -212,9 +212,28 @@ def test_device_health(client, admin_token):
     assert r.status_code == 200, r.text
     assert "total" in r.json()["data"]
     assert "online" in r.json()["data"]
+    # 新增强化字段
+    items = r.json()["data"]["items"]
+    assert isinstance(items, list)
+    if items:
+        it = items[0]
+        assert "health_score" in it and "health_level" in it
+        assert it["health_level"] in ("优", "良", "中", "差")
+        assert 0 <= it["health_score"] <= 100
 
 
 def test_project_compare(client, admin_token):
     r = client.get(f"{API_DASH}/project-compare", params={"days": 7}, headers=_auth(admin_token))
     assert r.status_code == 200, r.text
     assert "items" in r.json()["data"]
+    items = r.json()["data"]["items"]
+    assert isinstance(items, list)
+    if items:
+        it = items[0]
+        # 新增强化字段：原始风险分 + 归一化风险指数 + 分档
+        assert "risk_score" in it and "risk_index" in it and "risk_level" in it
+        assert it["risk_level"] in ("高", "中", "低")
+        assert 0 <= it["risk_index"] <= 100
+    # 风险指数降序（高风险在前）
+    idxs = [i["risk_index"] for i in items]
+    assert idxs == sorted(idxs, reverse=True)

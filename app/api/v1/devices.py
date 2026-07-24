@@ -20,6 +20,7 @@ from app.core.database import get_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.exceptions import BusinessError
 from app.core.responses import ApiResponse
+from app.core.scoring import device_health_level, device_health_score
 from app.model.device import (
     AntiIntrusionDevice,
     LocateDevice,
@@ -296,13 +297,15 @@ def device_health(
     ).all()
     last_seen = {r[0]: r[1] for r in last_rows}
 
-    # 窗口内告警数
+    # 窗口内告警，按设备 + 告警级别分组（用于按严重度施加惩罚）
     alarm_rows = db.execute(
-        select(Alarm.device_no, func.count(Alarm.id))
+        select(Alarm.device_no, Alarm.alarm_level, func.count(Alarm.id))
         .where(Alarm.device_no.in_(device_nos), Alarm.alarm_time >= since)
-        .group_by(Alarm.device_no)
+        .group_by(Alarm.device_no, Alarm.alarm_level)
     ).all()
-    alarm_stats = {r[0]: r[1] for r in alarm_rows}
+    alarm_sev_stats: dict[str, dict[str, int]] = {}
+    for no, lvl, cnt in alarm_rows:
+        alarm_sev_stats.setdefault(no, {}).setdefault(lvl or "提示", cnt)
 
     items: list[dict] = []
     online_n = 0
@@ -314,14 +317,28 @@ def device_health(
             last = last.replace(tzinfo=_tz.utc)
         age = (now_utc - last).total_seconds() if last is not None else None
         online = age is not None and age <= threshold
-        alarms = alarm_stats.get(no, 0)
-        score = (60 if online else 0) + (20 if rpt_count > 0 else 0) + (20 if alarms == 0 else 0)
+        # 在线状态细分：fresh=新鲜 / stale=陈旧 / offline=离线或无上报
+        if age is None:
+            state = "offline"
+        elif age <= threshold:
+            state = "fresh"
+        elif age <= 2 * threshold:
+            state = "stale"
+        else:
+            state = "offline"
+        sev = alarm_sev_stats.get(no, {})
+        alarms = sum(sev.values())
+        score = device_health_score(
+            online_state=state, reported=rpt_count > 0, alarm_severity_counts=sev
+        )
+        level = device_health_level(score)
         if online:
             online_n += 1
         items.append(
             {
                 **d,
                 "online": online,
+                "online_state": state,
                 "last_report_time": (
                     last.astimezone().replace(tzinfo=None).strftime("%Y-%m-%d %H:%M:%S")
                     if last is not None
@@ -331,6 +348,7 @@ def device_health(
                 "report_count": rpt_count,
                 "alarm_count": alarms,
                 "health_score": score,
+                "health_level": level,
             }
         )
     # 健康分升序（最差在前，运维视角优先关注）

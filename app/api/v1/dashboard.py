@@ -21,6 +21,7 @@ from app.core.database import get_read_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.exceptions import BusinessError
 from app.core.responses import ApiResponse
+from app.core.scoring import project_risk_score
 from app.model.alarm import Alarm
 from app.model.device import (
     AntiIntrusionDevice,
@@ -468,16 +469,37 @@ def project_compare(
         .group_by(Alarm.project_id)
     ).all()
     alarm_counts = dict(alarm_rows)
+
+    # 未处理告警按「项目 + 告警级别」分组（修复旧实现 handle_status=='未处理' 与模型
+    # 实际值 待处理/已处理/已忽略/已确认 不符导致恒为 0 的 bug；并按级别加权风险）
     unhandled_rows = db.execute(
-        select(Alarm.project_id, func.count(Alarm.id))
+        select(Alarm.project_id, Alarm.alarm_level, func.count(Alarm.id))
         .where(
             Alarm.project_id.in_(pids),
             Alarm.alarm_time >= since,
-            Alarm.handle_status == "未处理",
+            Alarm.handle_status == "待处理",
         )
-        .group_by(Alarm.project_id)
+        .group_by(Alarm.project_id, Alarm.alarm_level)
     ).all()
-    unhandled_counts = dict(unhandled_rows)
+    unhandled_by_level: dict[int, dict[str, int]] = {}
+    for pid, lvl, cnt in unhandled_rows:
+        unhandled_by_level.setdefault(pid, {}).setdefault(lvl or "提示", cnt)
+
+    # 超期隐患按「项目 + 隐患等级」分组（用于按等级加权）
+    overdue_rows = db.execute(
+        select(Hazard.project_id, Hazard.level, func.count(Hazard.id))
+        .where(
+            Hazard.project_id.in_(pids),
+            Hazard.is_deleted.is_(False),
+            Hazard.status.notin_(["已销号", "已驳回"]),
+            Hazard.due_at.is_not(None),
+            Hazard.due_at < now_utc,
+        )
+        .group_by(Hazard.project_id, Hazard.level)
+    ).all()
+    overdue_by_level: dict[int, dict[str, int]] = {}
+    for pid, lvl, cnt in overdue_rows:
+        overdue_by_level.setdefault(pid, {}).setdefault(lvl or "一般", cnt)
 
     # 隐患：未销号存量 + 超期
     open_hazard_counts = _count_by_project(Hazard, (Hazard.status.notin_(["已销号", "已驳回"]),))
@@ -497,11 +519,16 @@ def project_compare(
     items = []
     for p in projects:
         alarms = alarm_counts.get(p.id, 0)
-        unhandled = unhandled_counts.get(p.id, 0)
+        unhandled = sum(unhandled_by_level.get(p.id, {}).values())
         open_hazards = open_hazard_counts.get(p.id, 0)
         overdue = overdue_counts.get(p.id, 0)
-        # 简单风险分：未处理告警*2 + 超期隐患*3 + 存量隐患
-        risk_score = unhandled * 2 + overdue * 3 + open_hazards
+        # 风险分：未处理告警按级别加权 + 超期隐患按等级加权 + 存量隐患，
+        # 并归一化为 0-100 风险指数（跨项目公平对比）
+        raw_risk, risk_index, risk_level = project_risk_score(
+            unhandled_by_level=unhandled_by_level.get(p.id, {}),
+            overdue_by_level=overdue_by_level.get(p.id, {}),
+            open_hazards=open_hazards,
+        )
         items.append(
             {
                 "project_id": p.id,
@@ -515,9 +542,11 @@ def project_compare(
                 "unhandled_alarm_count": unhandled,
                 "open_hazard_count": open_hazards,
                 "overdue_hazard_count": overdue,
-                "risk_score": risk_score,
+                "risk_score": raw_risk,
+                "risk_index": risk_index,
+                "risk_level": risk_level,
             }
         )
-    # 风险分降序（高风险项目在前）
-    items.sort(key=lambda x: x["risk_score"], reverse=True)
+    # 风险指数降序（高风险项目在前），风险分相同再按原始风险分降序
+    items.sort(key=lambda x: (x["risk_index"], x["risk_score"]), reverse=True)
     return ApiResponse.success(data={"window_days": days, "items": items})
