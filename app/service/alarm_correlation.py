@@ -19,6 +19,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -26,11 +27,14 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.data_scope import DataScope, apply_data_scope
 from app.model.alarm import Alarm
 from app.model.correlation import CorrelatedEventGroup
 from app.model.project import Project
 from app.model.realtime import DeviceLocation
+
+logger = logging.getLogger("rail_monitor.correlation")
 
 # 地理网格边长（度）：0.01° ≈ 1.1km @ 赤道，足够把「同一区域施工/侵限」聚到一起
 GRID_SIZE_DEG = 0.01
@@ -220,6 +224,16 @@ def compute_correlations(
     db.execute(delete(CorrelatedEventGroup))
     db.add_all(rows)
     db.commit()
+
+    # 实时推送：把新增的跨设备共因事件组经 Redis 桥发往 WebSocket（指纹去重）。
+    # 无论本次计算运行在 snapshot_job 还是 API 进程，前端都能经订阅线程收到。
+    if settings.ws_correlation_enabled:
+        try:
+            from app.ws.correlation_pubsub import publish_new_cross_device_groups
+
+            publish_new_cross_device_groups(rows)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("关联事件 WS 发布失败(已忽略): %s", exc)
 
     cross = sum(1 for r in rows if r.is_cross_device)
     return {

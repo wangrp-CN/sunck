@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useAuthStore } from "@/stores/auth";
 import {
   getCorrelations,
@@ -10,6 +10,7 @@ import {
   type CorrelationMember,
   type CorrelationTrendPoint,
 } from "@/api/metrics";
+import { createCorrelationSocket } from "@/utils/correlationWs";
 import TrendLine from "@/components/TrendLine.vue";
 
 const auth = useAuthStore();
@@ -120,7 +121,43 @@ function levelTag(level: string | null): "" | "danger" | "warning" | "info" {
   }
 }
 
-onMounted(load);
+// 实时推送：新增跨设备共因时弹通知并刷新列表/趋势（合并短时多次推送，避免刷新风暴）
+let stopWs: (() => void) | null = null;
+let refreshTimer: number | undefined;
+function scheduleRefresh() {
+  if (refreshTimer) return;
+  refreshTimer = window.setTimeout(() => {
+    refreshTimer = undefined;
+    load();
+  }, 1200);
+}
+
+function levelToNotify(level: string | null | undefined): "error" | "warning" | "info" {
+  if (level === "严重") return "error";
+  if (level === "警告") return "warning";
+  return "info";
+}
+
+onMounted(() => {
+  load();
+  stopWs = createCorrelationSocket({
+    onNew: (item) => {
+      ElNotification({
+        title: "新增跨设备共因",
+        message: item.root_cause_hint || "发现新的跨设备共因事件组",
+        type: levelToNotify(item.max_level),
+        duration: 6000,
+      });
+      scheduleRefresh();
+    },
+  });
+});
+
+onUnmounted(() => {
+  stopWs?.();
+  stopWs = null;
+  if (refreshTimer) window.clearTimeout(refreshTimer);
+});
 </script>
 
 <template>

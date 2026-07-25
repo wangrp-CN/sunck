@@ -117,6 +117,17 @@ def ws_channel_for_project(project_id: int | None) -> str:
     return "global"
 
 
+def ws_channel_for_correlation(project_id: int | None) -> str:
+    """WebSocket 跨设备共因事件组推送频道（与告警频道命名空间隔离）。
+
+    订阅端 ``/ws/correlation`` 据此接入；发布端（API 进程订阅线程）向 ``corr:global``
+    与 ``corr:project:N`` 双频道广播，保证全局大屏与单项目视图均能收到。
+    """
+    if project_id:
+        return f"corr:project:{project_id}"
+    return "corr:global"
+
+
 def parse_up_topic(topic: str) -> str | None:
     """从上行主题解析设备类型；非法返回 None。"""
     parts = topic.split("/")

@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     correlation_window_hours: int = 24
     # 时间窗聚类间隔（分钟）：相邻告警间隔超过该值即拆分为新的事件组。
     correlation_gap_minutes: int = 30
+    # 跨设备共因事件的 WebSocket 实时推送开关（Redis Pub/Sub 桥接，见 app/ws/correlation_pubsub）。
+    ws_correlation_enabled: bool = True
 
     # ---------- PostgreSQL ----------
     postgres_host: str = "127.0.0.1"

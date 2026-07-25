@@ -58,6 +58,17 @@ async def lifespan(app: FastAPI):
 
     # 启动：绑定事件循环到 WS 桥接（供 MQTT 线程跨线程推送）
     bridge.set_event_loop(asyncio.get_running_loop())
+    # 启动：跨设备共因事件组实时推送订阅线程（Redis Pub/Sub → WS 转发）
+    corr_sub_stop = None
+    if settings.ws_correlation_enabled:
+        try:
+            from app.ws.correlation_pubsub import start_correlation_subscriber
+
+            corr_sub_stop = start_correlation_subscriber()
+        except Exception as exc:  # noqa: BLE001
+            import logging
+
+            logging.getLogger("rail_monitor").warning("关联事件 WS 订阅启动失败: %s", exc)
     # 启动：尝试连接 MQTT（失败仅告警，不阻断应用）
     try:
         mqtt_client.connect()
@@ -72,6 +83,8 @@ async def lifespan(app: FastAPI):
         logging.getLogger("rail_monitor").warning("ingest 工作池启动失败: %s", exc)
     yield
     # 关闭
+    if corr_sub_stop is not None:
+        corr_sub_stop.set()
     try:
         ingest_stop()
     except Exception:  # noqa: BLE001

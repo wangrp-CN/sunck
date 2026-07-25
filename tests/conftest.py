@@ -20,6 +20,10 @@ settings.audit_enabled = False
 # 关闭 API 限流中间件：避免并发/重试用例被限流干扰；限流逻辑由专项测试覆盖。
 settings.rate_limit_enabled = False
 
+# 关闭跨设备共因 WS 订阅线程：避免测试起额外 Redis 常驻线程；
+# 发布/转发逻辑由专项用例直接调用函数验证，不依赖 lifespan 中的订阅线程。
+settings.ws_correlation_enabled = False
+
 
 @pytest.fixture
 def client():

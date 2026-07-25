@@ -458,3 +458,18 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
   + 「仅看跨设备」筛选 + 超管「重新计算」按钮；监控大屏右栏新增「今日新增跨设备共因」卡片
   （大数字 + 近 30 天跨设备趋势 sparkline）。
 - 关联参数 `app/config.py::correlation_window_hours` / `correlation_gap_minutes`。
+
+### 13.4 跨设备共因实时 WebSocket 推送
+
+关联计算可能运行在**独立 systemd 进程**（`scripts/snapshot_job.py` 每日定时）或 **API 进程**
+（手动触发 `POST /api/v1/metrics/correlations/run`）。由于 WebSocket 客户端只连在 API 进程，
+采用 **Redis Pub/Sub** 作为跨进程桥：计算进程把"新增跨设备共因"发布到 Redis 频道 `ws:correlation`
+（按「项目+空间范围+起始时间」指纹 7 天内去重，避免每日重算重复轰炸），API 进程常驻订阅线程
+（`app/ws/correlation_pubsub.py`，随应用启动）收到后转发至内存 WebSocket 频道
+`corr:global` / `corr:project:N`。
+
+- 端点：`/ws/correlation`（`?token=<JWT>` 鉴权，`?project_id=N` 可选订阅单项目频道；`/ws/{path}` 仍提供 426 兜底）。
+- 消息体：`{"type":"correlation","action":"new_cross_device","data":<CorrelatedEventGroup>}`。
+- 前端：`web/src/utils/correlationWs.ts`（`createCorrelationSocket`，心跳+断线重连，镜像 `ws.ts`）；
+  **跨设备根因关联**视图（新增 toast + 列表/趋势刷新）、**监控大屏**（实时刷新「今日新增跨设备共因」卡）。
+- 开关：`app/config.py::ws_correlation_enabled`（默认开；依赖 Redis，Redis 不可用时发布侧自动跳过，不阻断关联计算）。

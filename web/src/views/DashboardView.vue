@@ -12,6 +12,7 @@ import {
   type CorrelationSummaryResp,
   type CorrelationTrendPoint,
 } from "@/api/metrics";
+import { createCorrelationSocket } from "@/utils/correlationWs";
 import {
   fetchDevices,
   fetchLocations,
@@ -98,6 +99,16 @@ function onFenceClick(f: { id: number; name: string }) {
   planPopup.visible = true;
 }
 let timer: number | undefined;
+// 实时推送：新增跨设备共因时刷新「今日新增跨设备共因」卡（合并短时多次推送）
+let stopCorrWs: (() => void) | null = null;
+let corrRefreshTimer: number | undefined;
+function scheduleCorrRefresh() {
+  if (corrRefreshTimer) return;
+  corrRefreshTimer = window.setTimeout(() => {
+    corrRefreshTimer = undefined;
+    loadCorrelation();
+  }, 1200);
+}
 
 // 点击告警项：在地图上聚焦/高亮对应设备
 function focusAlarm(a: RecentAlarm) {
@@ -493,9 +504,16 @@ onMounted(() => {
     load();
     loadMap();
   }, 15000);
+  // 跨设备共因实时推送（即便已有 15s 轮询，推送可让大屏瞬间刷新）
+  stopCorrWs = createCorrelationSocket({
+    onNew: () => scheduleCorrRefresh(),
+  });
 });
 onUnmounted(() => {
   if (timer) clearInterval(timer);
+  stopCorrWs?.();
+  stopCorrWs = null;
+  if (corrRefreshTimer) window.clearTimeout(corrRefreshTimer);
 });
 </script>
 
