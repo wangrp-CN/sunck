@@ -11,6 +11,8 @@
   前端据此渲染上升/下降箭头与好坏着色（抑制率↑好、MTTR↑坏、异常占比中性）。
 - **按项目下钻**：端点支持 ``project_id``，返回 ``by_project`` 各项目指标排名明细，
   点击即可把头部 5 指标切换为该项目的下钻视图。
+- **时间序列 sparkline**（#83）：返回 ``series``（5 指标逐时间桶的值序列，桶步长随
+  窗口长度自适应 ~30 点），供前端迷你趋势线渲染，直观看到指标随时间的走势。
 
 所有查询经 ``apply_data_scope`` 数据范围隔离，只读（由调用方传 read 会话）。
 软删除模型（dispatch_order / hazard）额外过滤 ``is_deleted``；alarm 无软删列。
@@ -18,9 +20,10 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import Integer, func, select
 
 from app.core.clock import day_end_local, day_start_local
 from app.core.data_scope import DataScope, apply_data_scope
@@ -235,6 +238,189 @@ def _collect(db, scope: DataScope, start, end) -> dict[int, dict]:
     return raw
 
 
+def _bucket_index(col, start: datetime, bucket_days: int):
+    """把时间列映射到桶序号：floor((col - start) 秒数 / bucket_days 天秒数)。"""
+    return func.floor(func.extract("epoch", col - start) / (bucket_days * 86400.0)).cast(Integer)
+
+
+def _collect_time_series(
+    db, scope: DataScope, start, end, bucket_days: int, project_id: int | None = None
+) -> dict:
+    """按时间桶聚合原始计数，逐桶派生 5 项指标，供前端 sparkline（时间序列）渲染。
+
+    - 桶网格以 ``start`` 为锚、步长 ``bucket_days`` 天，覆盖 [start, end)。
+    - 4 个模型各一次 ``GROUP BY 桶序号`` 查询（共 4 次，与窗口长度无关），
+      比「每桶调一次 _collect」轻量得多（后者对 30 桶要多 100+ 次查询）。
+    - 返回 ``{storm,mttr,dispatch_sla,hazard,anomaly: [{t, v}]}``，v 为各桶指标值。
+    """
+    secs = max(1, int((end - start).total_seconds()))
+    n_buckets = max(1, math.ceil(secs / (bucket_days * 86400.0)))
+    raws = [dict(_ZERO) for _ in range(n_buckets)]
+
+    # 1) 告警（抑制/处置/MTTR/趋势异常）—— 时间列 alarm_time
+    stmt = (
+        select(
+            _bucket_index(Alarm.alarm_time, start, bucket_days),
+            func.count(),
+            func.coalesce(func.sum(Alarm.suppressed_count), 0),
+            func.count().filter(Alarm.handle_status.in_(_RESOLVED_STATUSES)),
+            func.coalesce(
+                func.sum(func.extract("epoch", Alarm.updated_at - Alarm.alarm_time)).filter(
+                    Alarm.handle_status.in_(_RESOLVED_STATUSES)
+                    & Alarm.updated_at.isnot(None)
+                    & Alarm.alarm_time.isnot(None)
+                    & (Alarm.updated_at >= Alarm.alarm_time)
+                ),
+                0,
+            ),
+            func.count().filter(Alarm.alarm_type == "trend_anomaly"),
+        )
+        .select_from(Alarm)
+        .where(Alarm.alarm_time >= start, Alarm.alarm_time < end)
+        .group_by(_bucket_index(Alarm.alarm_time, start, bucket_days))
+    )
+    if project_id:
+        stmt = stmt.where(Alarm.project_id == project_id)
+    stmt = apply_data_scope(stmt, Alarm, scope)
+    for idx, cnt, supp, resolved, mttr_sec, anomaly in db.execute(stmt).all():
+        if 0 <= idx < n_buckets:
+            raws[idx].update(
+                {
+                    "alarms": int(cnt),
+                    "suppressed": int(supp),
+                    "resolved": int(resolved),
+                    "mttr_sum_seconds": float(mttr_sec or 0),
+                    "anomaly_alarms": int(anomaly),
+                }
+            )
+
+    # 2) 已闭环派单（SLA/周期）—— 时间列 closed_at
+    stmt = (
+        select(
+            _bucket_index(DispatchOrder.closed_at, start, bucket_days),
+            func.count().filter(DispatchOrder.status == _DISPATCH_CLOSED),
+            func.count().filter(
+                (DispatchOrder.status == _DISPATCH_CLOSED)
+                & (DispatchOrder.closed_at <= DispatchOrder.deadline)
+                & DispatchOrder.deadline.isnot(None)
+            ),
+            func.count().filter(
+                (DispatchOrder.status == _DISPATCH_CLOSED) & DispatchOrder.deadline.isnot(None)
+            ),
+            func.coalesce(
+                func.sum(
+                    func.extract("epoch", DispatchOrder.closed_at - DispatchOrder.created_at)
+                    / 3600.0
+                ).filter(DispatchOrder.status == _DISPATCH_CLOSED),
+                0,
+            ),
+        )
+        .select_from(DispatchOrder)
+        .where(
+            DispatchOrder.is_deleted.is_(False),
+            DispatchOrder.closed_at >= start,
+            DispatchOrder.closed_at < end,
+        )
+        .group_by(_bucket_index(DispatchOrder.closed_at, start, bucket_days))
+    )
+    if project_id:
+        stmt = stmt.where(DispatchOrder.project_id == project_id)
+    stmt = apply_data_scope(stmt, DispatchOrder, scope)
+    for idx, closed, on_time, with_deadline, cycle_h in db.execute(stmt).all():
+        if 0 <= idx < n_buckets:
+            raws[idx].update(
+                {
+                    "d_closed": int(closed),
+                    "d_on_time": int(on_time),
+                    "d_with_deadline": int(with_deadline),
+                    "d_cycle_sum_hours": float(cycle_h or 0),
+                }
+            )
+
+    # 3) 共因派单（异常引擎贡献）—— 时间列 created_at
+    stmt = (
+        select(
+            _bucket_index(DispatchOrder.created_at, start, bucket_days),
+            func.count(),
+        )
+        .select_from(DispatchOrder)
+        .where(
+            DispatchOrder.is_deleted.is_(False),
+            DispatchOrder.created_at >= start,
+            DispatchOrder.created_at < end,
+            DispatchOrder.source_type == "correlation",
+        )
+        .group_by(_bucket_index(DispatchOrder.created_at, start, bucket_days))
+    )
+    if project_id:
+        stmt = stmt.where(DispatchOrder.project_id == project_id)
+    stmt = apply_data_scope(stmt, DispatchOrder, scope)
+    for idx, cnt in db.execute(stmt).all():
+        if 0 <= idx < n_buckets:
+            raws[idx]["corr_dispatch"] = int(cnt)
+
+    # 4) 隐患（闭环率）—— 时间列 created_at
+    stmt = (
+        select(
+            _bucket_index(Hazard.created_at, start, bucket_days),
+            func.count(),
+            func.count().filter(Hazard.status == _HAZARD_CLOSED),
+            func.count().filter(
+                (Hazard.status == _HAZARD_CLOSED)
+                & (Hazard.closed_at <= Hazard.due_at)
+                & Hazard.due_at.isnot(None)
+            ),
+            func.count().filter((Hazard.status == _HAZARD_CLOSED) & Hazard.due_at.isnot(None)),
+        )
+        .select_from(Hazard)
+        .where(Hazard.is_deleted.is_(False), Hazard.created_at >= start, Hazard.created_at < end)
+        .group_by(_bucket_index(Hazard.created_at, start, bucket_days))
+    )
+    if project_id:
+        stmt = stmt.where(Hazard.project_id == project_id)
+    stmt = apply_data_scope(stmt, Hazard, scope)
+    for idx, total, closed, ontime, with_due in db.execute(stmt).all():
+        if 0 <= idx < n_buckets:
+            raws[idx].update(
+                {
+                    "h_total": int(total),
+                    "h_closed": int(closed),
+                    "h_ontime": int(ontime),
+                    "h_with_due": int(with_due),
+                }
+            )
+
+    # 逐桶派生 5 指标值 + 桶起点时间戳
+    series: dict[str, list[dict]] = {
+        "storm": [],
+        "mttr": [],
+        "dispatch_sla": [],
+        "hazard": [],
+        "anomaly": [],
+    }
+    cur = start
+    for i in range(n_buckets):
+        raw = raws[i]
+        b_start = cur
+        cur = cur + timedelta(days=bucket_days)
+        denom = raw["alarms"] + raw["suppressed"]
+        storm = round(raw["suppressed"] / denom * 100, 1) if denom else 0.0
+        resolved = raw["resolved"]
+        mttr = round(raw["mttr_sum_seconds"] / 3600.0 / resolved, 1) if resolved else 0.0
+        with_deadline = raw["d_with_deadline"]
+        sla = round(raw["d_on_time"] / with_deadline * 100, 1) if with_deadline else 0.0
+        h_total = raw["h_total"]
+        closure = round(raw["h_closed"] / h_total * 100, 1) if h_total else 0.0
+        anomaly = round(raw["anomaly_alarms"] / raw["alarms"] * 100, 1) if raw["alarms"] else 0.0
+        t = b_start.isoformat()
+        series["storm"].append({"t": t, "v": storm})
+        series["mttr"].append({"t": t, "v": mttr})
+        series["dispatch_sla"].append({"t": t, "v": sla})
+        series["hazard"].append({"t": t, "v": closure})
+        series["anomaly"].append({"t": t, "v": anomaly})
+    return series
+
+
 def _sum(raw: dict[int, dict]) -> dict:
     s = dict(_ZERO)
     for r in raw.values():
@@ -404,6 +590,11 @@ def compute_effectiveness(
     # 风险分降序（最需关注的项目在前）
     by_project.sort(key=lambda x: x["risk_index"], reverse=True)
 
+    # 时间序列 sparkline：窗口按桶聚合（桶步长随窗口长度自适应，~30 点），
+    # 聚焦项目时序列仅含该项目，否则为全量聚合。
+    bucket_days = max(1, round(days / 30))
+    series = _collect_time_series(db, scope, start, end, bucket_days, focus_pid)
+
     return {
         "days": days,
         "range_start": start.isoformat(),
@@ -417,5 +608,6 @@ def compute_effectiveness(
         "hazard": metrics["hazard"],
         "anomaly": metrics["anomaly"],
         "by_project": by_project,
+        "series": series,
         "computed_at": datetime.now(timezone.utc).isoformat(),
     }

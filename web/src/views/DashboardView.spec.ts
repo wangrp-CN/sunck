@@ -36,6 +36,7 @@ vi.mock("@/api/dashboard", () => ({
   getDashboardStats: vi.fn(),
   getRecentAlarms: vi.fn(),
   getEffectiveness: vi.fn(),
+  exportEffectivenessReport: vi.fn(),
 }));
 vi.mock("@/api/metrics", () => ({
   getRiskAlerts: vi.fn(),
@@ -59,7 +60,7 @@ vi.mock("@/components/MapPanel.vue", () => ({ default: { name: "M", template: "<
 vi.mock("@/components/WorkPlanPopup.vue", () => ({ default: { name: "WPP", template: "<div/>" } }));
 vi.mock("@/components/DailyTrendChart.vue", () => ({ default: { name: "DTC", template: "<div/>" } }));
 
-import { getDashboardStats, getRecentAlarms, getEffectiveness } from "@/api/dashboard";
+import { getDashboardStats, getRecentAlarms, getEffectiveness, exportEffectivenessReport } from "@/api/dashboard";
 import { getRiskAlerts, getRiskTrend, getCorrelationSummary, getCorrelationTrend } from "@/api/metrics";
 import { fetchDevices, fetchLocations } from "@/api/realtime";
 import { fetchFences } from "@/api/fence";
@@ -158,8 +159,32 @@ beforeEach(() => {
       },
     ],
     computed_at: "2026-07-27T13:00:00+00:00",
+    // 时间序列 sparkline：5 指标逐桶序列（每桶一值，末桶非零）
+    series: {
+      storm: [
+        { t: "2026-06-28T00:00:00+08:00", v: 10.0 },
+        { t: "2026-07-27T00:00:00+08:00", v: 23.1 },
+      ],
+      mttr: [
+        { t: "2026-06-28T00:00:00+08:00", v: 6.0 },
+        { t: "2026-07-27T00:00:00+08:00", v: 5.5 },
+      ],
+      dispatch_sla: [
+        { t: "2026-06-28T00:00:00+08:00", v: 80.0 },
+        { t: "2026-07-27T00:00:00+08:00", v: 87.5 },
+      ],
+      hazard: [
+        { t: "2026-06-28T00:00:00+08:00", v: 55.0 },
+        { t: "2026-07-27T00:00:00+08:00", v: 60.0 },
+      ],
+      anomaly: [
+        { t: "2026-06-28T00:00:00+08:00", v: 8.0 },
+        { t: "2026-07-27T00:00:00+08:00", v: 10.0 },
+      ],
+    },
   } as any);
   vi.mocked(exportAlarmReport).mockResolvedValue(new Blob(["x"]));
+  vi.mocked(exportEffectivenessReport).mockResolvedValue(new Blob(["eff"]));
   vi.mocked(fetchSnapshotPreview).mockResolvedValue({
     meta: { filters_desc: "全部", generated_at: "2026-07-21T10:00:00" },
     period_keys: ["2026-07-21"],
@@ -343,5 +368,34 @@ describe("views/DashboardView.vue", () => {
     vm.drillProject(vm.eff.by_project[1]);
     await flushPromises();
     expect(vm.effProject).toBeNull();
+  });
+
+  it("闭环效能：每项指标渲染时间序列 sparkline", async () => {
+    wrapper = baseMount();
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    expect(vm.eff.series).toBeTruthy();
+    // 5 个指标各一条 sparkline（TrendLine 渲染 svg.trend-line）
+    const sparklines = wrapper.findAll(".eff-item .trend-line");
+    expect(sparklines.length).toBe(5);
+    // 末桶值非零（storm 末桶 23.1），证明数据已接入
+    expect(vm.eff.series.storm.at(-1).v).toBe(23.1);
+  });
+
+  it("闭环效能：导出运营报告（Excel/PDF）调用 exportEffectivenessReport", async () => {
+    wrapper = baseMount();
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    // 默认窗口 30 天、全量（project=null）
+    await vm.doExportEff("excel");
+    expect(vi.mocked(exportEffectivenessReport)).toHaveBeenCalledWith(
+      "excel",
+      expect.objectContaining({ days: 30, projectId: null }),
+    );
+    await vm.doExportEff("pdf");
+    expect(vi.mocked(exportEffectivenessReport)).toHaveBeenCalledWith(
+      "pdf",
+      expect.objectContaining({ days: 30, projectId: null }),
+    );
   });
 });

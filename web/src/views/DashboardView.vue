@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Location } from "@element-plus/icons-vue";
-import { getDashboardStats, getRecentAlarms, getEffectiveness } from "@/api/dashboard";
+import { getDashboardStats, getRecentAlarms, getEffectiveness, exportEffectivenessReport } from "@/api/dashboard";
 import {
   getRiskAlerts,
   getRiskTrend,
@@ -52,6 +52,7 @@ const eff = ref<Effectiveness | null>(null);
 const effDays = ref(30);
 const effProject = ref<number | null>(null); // null=全量；选定项目=下钻视图
 const effProjects = ref<{ id: number; name: string }[]>([]); // 项目下钻选择器选项
+const effExporting = ref<"" | "excel" | "pdf">(""); // 运营报告导出中状态
 // 智能核心 v2：项目风险预警（阈值越阈，受数据范围约束）
 const riskAlerts = ref<RiskAlertItem[]>([]);
 const alertTrendMap = ref<Record<number, { t: string; v: number }[]>>({});
@@ -205,6 +206,45 @@ function trendText(t: EffTrend | undefined): string {
 // 下钻：点击项目行切换头部指标视图
 function drillProject(row: ByProjectRow) {
   effProject.value = effProject.value === row.project_id ? null : row.project_id;
+}
+
+// 时间序列 sparkline：取某指标的时间桶序列（series 由后端按窗口自适应步长聚合）
+const effSparkColors: Record<string, string> = {
+  storm: "#409eff",
+  mttr: "#e6a23c",
+  dispatch_sla: "#67c23a",
+  hazard: "#13c2c2",
+  anomaly: "#9254de",
+};
+function effSeriesPoints(key: string): { t: string; v: number }[] {
+  return eff.value?.series?.[key] ?? [];
+}
+// 比率型指标(0-100)固定 Y 轴范围，便于横向比较走势；MTTR(小时) 随数据自适应
+function effSeriesMax(key: string): number | undefined {
+  return key === "mttr" ? undefined : 100;
+}
+
+// 导出闭环效能运营报告（按项目维度，Excel / PDF）
+async function doExportEff(fmt: "excel" | "pdf") {
+  if (!eff.value) {
+    ElMessage.warning("请等待效能数据加载完成");
+    return;
+  }
+  effExporting.value = fmt;
+  try {
+    const blob = await exportEffectivenessReport(fmt, {
+      days: effDays.value,
+      projectId: effProject.value,
+    });
+    const ext = fmt === "excel" ? "xlsx" : "pdf";
+    const focusTag = effProject.value ? `_p${effProject.value}` : "";
+    triggerDownload(blob, `效能运营报告_${effDays.value}d${focusTag}.${ext}`);
+    ElMessage.success(`已导出闭环效能运营报告 (${ext.toUpperCase()})`);
+  } catch (e: unknown) {
+    ElMessage.error(e instanceof Error ? e.message : "导出失败");
+  } finally {
+    effExporting.value = "";
+  }
 }
 
 // 四类序列分别计算，命中位置用于高亮
@@ -927,6 +967,18 @@ onUnmounted(() => {
                   <el-option :value="30" label="近 30 天" />
                   <el-option :value="90" label="近 90 天" />
                 </el-select>
+                <el-button-group class="eff-export">
+                  <el-button
+                    size="small"
+                    :loading="effExporting === 'excel'"
+                    @click="doExportEff('excel')"
+                  >导出Excel</el-button>
+                  <el-button
+                    size="small"
+                    :loading="effExporting === 'pdf'"
+                    @click="doExportEff('pdf')"
+                  >PDF</el-button>
+                </el-button-group>
               </div>
             </div>
           </template>
@@ -934,6 +986,15 @@ onUnmounted(() => {
             <div class="eff-item">
               <div class="eff-num">{{ eff.storm.rate_pct }}<span class="eff-unit">%</span></div>
               <div class="eff-label">告警风暴抑制率</div>
+              <TrendLine
+                :points="effSeriesPoints('storm')"
+                :color="effSparkColors.storm"
+                :height="24"
+                :width="118"
+                :min="0"
+                :max="effSeriesMax('storm')"
+                :value-digits="1"
+              />
               <div class="eff-sub">压掉 {{ eff.storm.suppressed }} 条同源重复</div>
               <div :class="trendCls(eff.storm.trend)" class="eff-trend">
                 {{ trendArrow(eff.storm.trend) }} {{ trendText(eff.storm.trend) }}
@@ -942,6 +1003,14 @@ onUnmounted(() => {
             <div class="eff-item">
               <div class="eff-num">{{ eff.mttr.avg_hours }}<span class="eff-unit">h</span></div>
               <div class="eff-label">告警平均处置时长</div>
+              <TrendLine
+                :points="effSeriesPoints('mttr')"
+                :color="effSparkColors.mttr"
+                :height="24"
+                :width="118"
+                :min="0"
+                :value-digits="1"
+              />
               <div class="eff-sub">处置率 {{ eff.mttr.resolution_rate_pct }}%</div>
               <div :class="trendCls(eff.mttr.trend)" class="eff-trend">
                 {{ trendArrow(eff.mttr.trend) }} {{ trendText(eff.mttr.trend) }}
@@ -950,6 +1019,15 @@ onUnmounted(() => {
             <div class="eff-item">
               <div class="eff-num">{{ eff.dispatch_sla.sla_rate_pct }}<span class="eff-unit">%</span></div>
               <div class="eff-label">派单 SLA 达成率</div>
+              <TrendLine
+                :points="effSeriesPoints('dispatch_sla')"
+                :color="effSparkColors.dispatch_sla"
+                :height="24"
+                :width="118"
+                :min="0"
+                :max="effSeriesMax('dispatch_sla')"
+                :value-digits="1"
+              />
               <div class="eff-sub">闭环均 {{ eff.dispatch_sla.avg_cycle_hours }}h</div>
               <div :class="trendCls(eff.dispatch_sla.trend)" class="eff-trend">
                 {{ trendArrow(eff.dispatch_sla.trend) }} {{ trendText(eff.dispatch_sla.trend) }}
@@ -958,6 +1036,15 @@ onUnmounted(() => {
             <div class="eff-item">
               <div class="eff-num">{{ eff.hazard.closure_rate_pct }}<span class="eff-unit">%</span></div>
               <div class="eff-label">隐患治理闭环率</div>
+              <TrendLine
+                :points="effSeriesPoints('hazard')"
+                :color="effSparkColors.hazard"
+                :height="24"
+                :width="118"
+                :min="0"
+                :max="effSeriesMax('hazard')"
+                :value-digits="1"
+              />
               <div class="eff-sub">按期销号 {{ eff.hazard.on_time_rate_pct }}%</div>
               <div :class="trendCls(eff.hazard.trend)" class="eff-trend">
                 {{ trendArrow(eff.hazard.trend) }} {{ trendText(eff.hazard.trend) }}
@@ -966,6 +1053,15 @@ onUnmounted(() => {
             <div class="eff-item">
               <div class="eff-num">{{ eff.anomaly.share_pct }}<span class="eff-unit">%</span></div>
               <div class="eff-label">异常引擎告警占比</div>
+              <TrendLine
+                :points="effSeriesPoints('anomaly')"
+                :color="effSparkColors.anomaly"
+                :height="24"
+                :width="118"
+                :min="0"
+                :max="effSeriesMax('anomaly')"
+                :value-digits="1"
+              />
               <div class="eff-sub">共因派单 {{ eff.anomaly.correlation_dispatches }}</div>
               <div :class="trendCls(eff.anomaly.trend)" class="eff-trend">
                 {{ trendArrow(eff.anomaly.trend) }} {{ trendText(eff.anomaly.trend) }}
@@ -1830,11 +1926,20 @@ onUnmounted(() => {
 .eff-trend--neutral {
   color: #909399;
 }
-/* 头部工具区：项目下拉 + 窗口下拉 */
+/* 头部工具区：项目下拉 + 窗口下拉 + 导出 */
 .eff-head-tools {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+.eff-export {
+  margin-left: 2px;
+}
+/* 迷你趋势 sparkline：每项指标下的时间序列走势（不抢视觉重心） */
+.eff-item :deep(.trend-line) {
+  margin: 4px 0 2px;
+  width: 100% !important;
+  height: 24px !important;
 }
 /* 按项目下钻表 */
 .eff-drill {

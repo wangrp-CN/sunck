@@ -1,4 +1,4 @@
-import { http } from "@/utils/request";
+import request, { http } from "@/utils/request";
 import type {
   DashboardStats,
   RecentAlarm,
@@ -50,4 +50,21 @@ export function getEffectiveness(
     method: "GET",
     params: projectId ? { days, project_id: projectId } : { days },
   });
+}
+
+// 导出闭环效能运营报告（按项目维度，excel|pdf）——返回二进制 Blob，不走 http<T> 解包
+export function exportEffectivenessReport(
+  fmt: "excel" | "pdf",
+  params: { days?: number; projectId?: number | null },
+): Promise<Blob> {
+  return request
+    .get("/v1/dashboard/effectiveness/export", {
+      params: {
+        fmt,
+        days: params.days ?? 30,
+        ...(params.projectId != null ? { project_id: params.projectId } : {}),
+      },
+      responseType: "blob",
+    })
+    .then((r) => r.data as Blob);
 }

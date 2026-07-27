@@ -148,6 +148,19 @@ def test_compute_effectiveness_deltas(env):
         assert isinstance(after["by_project"], list)
         assert after["project_focus"] is None
 
+        # 时间序列 sparkline：5 指标逐桶序列存在且结构合法
+        series = after["series"]
+        assert isinstance(series, dict)
+        for key in ("storm", "mttr", "dispatch_sla", "hazard", "anomaly"):
+            assert key in series
+            pts = series[key]
+            assert isinstance(pts, list) and len(pts) >= 1
+            for p in pts:
+                assert "t" in p and "v" in p
+                assert isinstance(p["v"], (int, float))
+            # fixture 数据已插入（近 2 天），末桶至少有一项指标非零
+            assert any(p["v"] != 0 for p in pts)
+
         # 下钻：指定 fixture 项目 → 头部指标切换为该项目的下钻视图
         focused = svc.compute_effectiveness(db, scope, days=30, project_id=env["pid"])
         assert focused["project_focus"] == env["pid"]
@@ -206,3 +219,39 @@ def test_effectiveness_empty_scope_is_all():
                     assert isinstance(val, (int, float)), f"{grp}.{key} 应为数值"
     finally:
         db.close()
+
+
+def test_effectiveness_export(env):
+    """按项目维度导出运营报告：excel 返回 xlsx、pdf 返回 pdf，且含按项目明细。"""
+    c: TestClient = env["client"]
+    h = _h(env["admin_token"])
+
+    r_xlsx = c.get(
+        "/api/v1/dashboard/effectiveness/export",
+        headers=h,
+        params={"days": 30, "fmt": "excel"},
+    )
+    assert r_xlsx.status_code == 200, r_xlsx.text
+    assert r_xlsx.headers["content-type"] == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert "attachment" in r_xlsx.headers["content-disposition"]
+    assert len(r_xlsx.content) > 0
+
+    r_pdf = c.get(
+        "/api/v1/dashboard/effectiveness/export",
+        headers=h,
+        params={"days": 30, "fmt": "pdf"},
+    )
+    assert r_pdf.status_code == 200, r_pdf.text
+    assert r_pdf.headers["content-type"] == "application/pdf"
+    assert r_pdf.content[:4] == b"%PDF"
+
+    # 非法格式被拒
+    r_bad = c.get(
+        "/api/v1/dashboard/effectiveness/export",
+        headers=h,
+        params={"days": 30, "fmt": "doc"},
+    )
+    assert r_bad.status_code == 200
+    assert r_bad.json()["code"] != 0

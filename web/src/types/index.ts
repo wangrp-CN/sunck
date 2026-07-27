@@ -847,6 +847,8 @@ export interface Effectiveness {
   hazard: EffHazard;
   anomaly: EffAnomaly;
   by_project: ByProjectRow[] | null;
+  // 时间序列 sparkline：5 指标逐时间桶的值序列（桶步长随窗口自适应 ~30 点）
+  series: Record<string, { t: string; v: number }[]> | null;
   computed_at: string;
 }
 
