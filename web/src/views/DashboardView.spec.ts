@@ -382,6 +382,30 @@ describe("views/DashboardView.vue", () => {
     expect(vm.eff.series.storm.at(-1).v).toBe(23.1);
   });
 
+  it("闭环效能：sparkline hover 触发自定义 tooltip（桶日期 + 数值）", async () => {
+    wrapper = baseMount();
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    // 触发 storm 指标 hover（取 series 第 5 个点，约 mid-bucket）
+    vm.onEffSparkHover("storm", "告警风暴抑制率", "%", 1, {
+      point: { t: "2026-07-20T00:00:00", v: 42.5 },
+      index: 4,
+      x: 60,
+    });
+    await flushPromises();
+    expect(vm.effSparkHover).toBeTruthy();
+    expect(vm.effSparkHover.key).toBe("storm");
+    expect(vm.effSparkHover.point.v).toBe(42.5);
+    // 模板中仅 storm 包装下渲染 tooltip
+    expect(wrapper.findAll(".eff-spark-tip").length).toBe(1);
+    expect(wrapper.find(".eff-spark-tip-val").text()).toContain("42.5%");
+    // 离开 hover 应清空
+    vm.onEffSparkHover("storm", "告警风暴抑制率", "%", 1, null);
+    await flushPromises();
+    expect(vm.effSparkHover).toBeNull();
+    expect(wrapper.findAll(".eff-spark-tip").length).toBe(0);
+  });
+
   it("闭环效能：导出运营报告（Excel/PDF）调用 exportEffectivenessReport", async () => {
     wrapper = baseMount();
     await flushPromises();

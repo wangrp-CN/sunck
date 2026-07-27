@@ -611,3 +611,28 @@ def compute_effectiveness(
         "series": series,
         "computed_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def collect_project_series(
+    db,
+    scope: DataScope,
+    days: int,
+    project_ids: list[int],
+) -> dict[int, dict[str, list[float]]]:
+    """按项目聚合时间序列（导出运营报告生成项目级迷你趋势图用）。
+
+    返回 ``{project_id: {metric: [v, v, ...]}}``，每项目 5 指标各一个
+    时间桶值列表（无 ``t`` 字段，前端 PNG 渲染不需要时间锚）。
+
+    每个项目调用一次 ``_collect_time_series``（4 次查询）。项目数量一般
+    < 20，单次导出 80 次以内查询可接受；如未来项目数膨胀，可改为
+    ``GROUP BY (project_id, bucket_index)`` 单查询聚合。
+    """
+    end = datetime.now(timezone.utc)
+    start = end - timedelta(days=days)
+    bucket_days = max(1, round(days / 30))
+    out: dict[int, dict[str, list[float]]] = {}
+    for pid in project_ids:
+        s = _collect_time_series(db, scope, start, end, bucket_days, pid)
+        out[pid] = {k: [pt["v"] for pt in pts] for k, pts in s.items()}
+    return out

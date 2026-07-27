@@ -255,3 +255,54 @@ def test_effectiveness_export(env):
     )
     assert r_bad.status_code == 200
     assert r_bad.json()["code"] != 0
+
+
+def test_effectiveness_export_with_project_trend(env):
+    """运营报告按项目维度导出：明细列含每项目「历史趋势」复合迷你图（PNG 嵌入）。
+
+    验证：
+    - Excel xlsx 含 openpyxl Image 嵌入（zip 内可发现 media 目录与 png 文件）
+    - PDF 字节流含 ``/Image`` 子对象标记（reportlab 生成的 PDF 资源）
+    - 后端 service 层 ``collect_project_series`` 返回 per-project 5 指标序列
+    """
+    from app.service.effectiveness_service import collect_project_series
+
+    db = SessionLocal()
+    try:
+        scope = DataScope(is_all=True)
+        ps = collect_project_series(db, scope, days=30, project_ids=[env["pid"]])
+        assert env["pid"] in ps
+        for metric in ("storm", "mttr", "dispatch_sla", "hazard", "anomaly"):
+            assert metric in ps[env["pid"]]
+            assert isinstance(ps[env["pid"]][metric], list)
+    finally:
+        db.close()
+
+    c: TestClient = env["client"]
+    h = _h(env["admin_token"])
+
+    # 导出 xlsx，检查 zip 内含 png 媒体
+    import io
+    import zipfile
+
+    r_xlsx = c.get(
+        "/api/v1/dashboard/effectiveness/export",
+        headers=h,
+        params={"days": 30, "fmt": "excel"},
+    )
+    assert r_xlsx.status_code == 200
+    z = zipfile.ZipFile(io.BytesIO(r_xlsx.content))
+    media = [n for n in z.namelist() if n.startswith("xl/media/")]
+    assert len(media) >= 1, f"xlsx 应含至少一张图片（项目趋势），实际 {z.namelist()}"
+    # 取第一张图验证是合法 PNG
+    head = z.read(media[0])[:8]
+    assert head == b"\x89PNG\r\n\x1a\n", "嵌入的不是 PNG 字节流"
+
+    # 导出 pdf，检查 PDF 流含 /Image 子对象
+    r_pdf = c.get(
+        "/api/v1/dashboard/effectiveness/export",
+        headers=h,
+        params={"days": 30, "fmt": "pdf"},
+    )
+    assert r_pdf.status_code == 200
+    assert b"/Image" in r_pdf.content, "PDF 应含至少一个 /Image 子对象"

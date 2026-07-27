@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref } from "vue";
 
 // 轻量趋势线（sparkline）：不引图表库，纯内联 SVG（viewBox 自适应宽度）。
 // 用于项目风险指数 / 设备健康分的时间序列迷你可视化。
@@ -20,9 +20,13 @@ const props = withDefaults(
     showArea?: boolean;
     valueDigits?: number;
     anomalies?: boolean[]; // 与 points 对齐；命中位置绘制红色异常点
+    enableHover?: boolean; // 启用自定义 hover（垂直指引线 + 父组件 tooltip）
   }>(),
-  { height: 40, width: 140, color: "#409eff", showArea: true, valueDigits: 0 },
+  { height: 40, width: 140, color: "#409eff", showArea: true, valueDigits: 0, enableHover: true },
 );
+const emit = defineEmits<{
+  "point-hover": [{ point: Point; index: number; x: number } | null];
+}>();
 
 const PAD = { top: 6, right: 6, bottom: 6, left: 6 };
 
@@ -103,6 +107,19 @@ const ariaLabel = computed(() =>
     ? `趋势：${props.points.length} 个数据点，最新值 ${fmtVal(last.value!.p.v)}`
     : "暂无趋势数据",
 );
+
+// ===== 自定义 hover：垂直指引线 + emit 事件给父组件渲染 tooltip =====
+const hovered = ref<number | null>(null);
+function onPointEnter(i: number) {
+  if (!props.enableHover) return;
+  hovered.value = i;
+  emit("point-hover", { point: props.points[i], index: i, x: xAt(i) });
+}
+function onPointLeave() {
+  if (!props.enableHover) return;
+  hovered.value = null;
+  emit("point-hover", null);
+}
 </script>
 
 <template>
@@ -163,9 +180,39 @@ const ariaLabel = computed(() =>
       class="last-dot"
     />
 
-    <!-- 逐点悬浮提示 -->
+    <!-- 自定义 hover 垂直指引线 + 高亮点 -->
+    <g v-if="enableHover && hovered !== null" class="hover-guide">
+      <line
+        :x1="xAt(hovered)"
+        :x2="xAt(hovered)"
+        :y1="PAD.top"
+        :y2="H - PAD.bottom"
+        :stroke="color"
+        stroke-width="1"
+        stroke-dasharray="2 2"
+        opacity="0.55"
+      />
+      <circle
+        :cx="xAt(hovered)"
+        :cy="yAt(points[hovered].v)"
+        r="3.2"
+        :fill="color"
+        stroke="#fff"
+        stroke-width="1.5"
+      />
+    </g>
+
+    <!-- 逐点悬浮提示（透明命中圆，承接 hover 事件；保留 <title> 兜底） -->
     <g v-for="(p, i) in points" :key="i">
-      <circle :cx="xAt(i)" :cy="yAt(p.v)" r="6" fill="transparent" class="hit">
+      <circle
+        :cx="xAt(i)"
+        :cy="yAt(p.v)"
+        r="6"
+        fill="transparent"
+        class="hit"
+        @mouseenter="onPointEnter(i)"
+        @mouseleave="onPointLeave"
+      >
         <title>
           {{ fmtDate(p.t) }} · {{ fmtVal(p.v) }}{{ anomalies && anomalies[i] ? " · 异常" : "" }}
         </title>

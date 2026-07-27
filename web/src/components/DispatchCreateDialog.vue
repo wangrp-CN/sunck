@@ -4,6 +4,7 @@ import { ElMessage } from "element-plus";
 import { listUsers } from "@/api/user";
 import { createDispatch, type DispatchOptions, type DispatchPreset } from "@/api/dispatch";
 import { getDispatchOptions } from "@/api/dispatch";
+import { fetchProjects } from "@/api/project";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -32,6 +33,11 @@ const form = ref({
 });
 const options = ref<DispatchOptions>({ statuses: [], sources: [], levels: [] });
 const users = ref<{ id: number; name: string }[]>([]);
+// 归属项目下拉选项：调用 /v1/projects，受数据范围约束（仅当前用户可见项目可被派单）。
+// 旧版用 el-input-number 接受任意数字 → project_id=1 等不存在 ID 直接 FK 违反 500，
+// 见截图：根因派单→新建派单→创建 → 网络错误 500。
+const projects = ref<{ id: number; name: string }[]>([]);
+const projectsLoading = ref(false);
 const submitting = ref(false);
 
 watch(
@@ -67,6 +73,16 @@ async function loadMeta() {
   } catch {
     users.value = [];
   }
+  // 项目下拉：仅拉首屏（size=200），受数据范围约束；为空提示用户联系管理员建项目。
+  projectsLoading.value = true;
+  try {
+    const pr = await fetchProjects({ page: 1, size: 200 });
+    projects.value = (pr.items || []).map((p: any) => ({ id: p.id, name: p.name }));
+  } catch {
+    projects.value = [];
+  } finally {
+    projectsLoading.value = false;
+  }
 }
 
 async function submit() {
@@ -76,6 +92,18 @@ async function submit() {
   }
   if (form.value.source_type === "manual" && !form.value.project_id) {
     ElMessage.warning("人工建单需选择归属项目");
+    return;
+  }
+  // 前端二次校验：项目必须在当前用户可见项目列表中（防御性兜底，避免依赖后端）
+  if (
+    form.value.source_type === "manual" &&
+    form.value.project_id &&
+    !projects.value.some((p) => p.id === form.value.project_id)
+  ) {
+    ElMessage.warning(
+      "当前选择的归属项目不在可见项目列表中，请重新选择",
+    );
+    form.value.project_id = null;
     return;
   }
   submitting.value = true;
@@ -114,7 +142,24 @@ async function submit() {
         <el-input v-model.number="form.source_id as any" placeholder="事件组/告警 ID" />
       </el-form-item>
       <el-form-item label="归属项目">
-        <el-input-number v-model="form.project_id as any" :min="1" placeholder="项目ID" />
+        <el-select
+          v-model="form.project_id"
+          filterable
+          clearable
+          :loading="projectsLoading"
+          placeholder="选择归属项目（仅显示您可见的项目）"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="p in projects"
+            :key="p.id"
+            :value="p.id"
+            :label="p.name"
+          />
+          <template v-if="!projectsLoading && projects.length === 0" #empty>
+            <span style="color: #909399">暂无可归属项目</span>
+          </template>
+        </el-select>
       </el-form-item>
       <el-form-item label="标题">
         <el-input v-model="form.title" placeholder="派单标题" />

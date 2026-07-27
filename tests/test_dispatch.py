@@ -206,3 +206,32 @@ def test_dispatch_requires_auth(env):
         json={"title": "t", "source_type": "manual", "project_id": env["pid"]},
     )
     assert r.status_code in (401, 403)
+
+
+def test_dispatch_invalid_project_id_rejected(env):
+    """截图问题修复：人工建单传不存在的 project_id → 优雅 BusinessError(400)，不再 500。
+
+    旧版缺少存在性校验，PG ``fk_dispatch_order_project_id_project`` 外键违反 → 500。
+    修复后：service 在 INSERT 前显式 ``select Project by id``，不存在/已删除则抛
+    ``BusinessError(code=400)``，前端展示可读提示。
+    """
+    c = env["client"]
+    h = _h(env["admin_token"])
+    # project_id=1 不存在（项目 ID 实际从 68 起步）
+    r = c.post(
+        "/api/v1/dispatch/",
+        headers=h,
+        json={
+            "title": "测试派单",
+            "source_type": "manual",
+            "project_id": 1,
+            "level": "提示",
+            "root_cause_hint": "测试根因",
+            "deadline": "2026-07-28T23:59:59",
+            "description": "测试要求",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["code"] == 400, f"应抛 code=400 BusinessError，实际 {body}"
+    assert "归属项目不存在" in body.get("message", "")

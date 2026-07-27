@@ -36,11 +36,12 @@ from app.model.person import Machine, Person
 from app.model.project import Project
 from app.model.realtime import DeviceLocation
 from app.model.system import User
+from app.service import report_common
 from app.service.alarm_service import (
     _period_key,
     aggregate_alarms_sql,
 )
-from app.service.effectiveness_service import compute_effectiveness
+from app.service.effectiveness_service import collect_project_series, compute_effectiveness
 from app.service.location_service import latest_locations
 from app.service.report_common import build_simple_excel, build_simple_pdf
 
@@ -665,11 +666,18 @@ def effectiveness_export(
 
     data = compute_effectiveness(db, scope, days=days, project_id=project_id)
 
+    # 各项目历史时间序列（导出报告生成复合迷你趋势图用）
+    project_ids = [p["project_id"] for p in data["by_project"]]
+    project_series = (
+        collect_project_series(db, scope, days=days, project_ids=project_ids) if project_ids else {}
+    )
+
     # 明细行：各项目同构指标（by_project 已按风险分降序）
     rows: list[dict] = []
     for p in data["by_project"]:
         rows.append(
             {
+                "project_id": p["project_id"],
                 "project_name": p["project_name"],
                 "risk_level": p["risk_level"],
                 "risk_index": p["risk_index"],
@@ -694,6 +702,7 @@ def effectiveness_export(
         ("project_name", "项目", 22, 40),
         ("risk_level", "风险等级", 10, 18),
         ("risk_index", "风险分", 10, 18),
+        ("trend", "历史趋势", 28, 80),  # 复合迷你图（5 指标一条龙）
         ("storm_rate", "风暴抑制率%", 13, 20),
         ("suppressed", "压掉同源重复", 14, 18),
         ("mttr_hours", "平均处置(h)", 13, 18),
@@ -709,6 +718,16 @@ def effectiveness_export(
         ("h_total", "隐患总数", 11, 16),
         ("corr_dispatch", "共因派单", 11, 16),
     ]
+
+    # 历史趋势列：每行调用 PNG 生成器（per-project 5 指标复合迷你图）
+    def _trend_png(row: dict) -> bytes:
+        pid = row.get("project_id")
+        ser = project_series.get(pid) if pid is not None else None
+        if not ser:
+            return b""
+        return report_common.render_composite_sparkline_png(ser)
+
+    image_columns = [("trend", "历史趋势", _trend_png)]
 
     def _delta(m: dict) -> str:
         d = m.get("trend", {}).get("delta_pct")
@@ -752,11 +771,13 @@ def effectiveness_export(
     }
 
     if fmt == "pdf":
-        content = build_simple_pdf(columns, rows, meta, summary_blocks)
+        content = build_simple_pdf(columns, rows, meta, summary_blocks, image_columns=image_columns)
         media_type = "application/pdf"
         filename = f"效能运营报告_{days}d.pdf"
     else:
-        content = build_simple_excel(columns, rows, meta, summary_blocks)
+        content = build_simple_excel(
+            columns, rows, meta, summary_blocks, image_columns=image_columns
+        )
         media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         filename = f"效能运营报告_{days}d.xlsx"
     # filename= 仅接受 ASCII（Starlette 以 latin-1 编码头，含中文会抛 UnicodeEncodeError），

@@ -224,6 +224,45 @@ function effSeriesMax(key: string): number | undefined {
   return key === "mttr" ? undefined : 100;
 }
 
+// hover 提示（自渲染）：来自 sparkline 的 point-hover 事件
+interface SparkHover {
+  key: string; // storm/mttr/dispatch_sla/hazard/anomaly
+  label: string;
+  point: { t: string; v: number };
+  x: number; // SVG 内坐标（=实际 px，因 preserveAspectRatio="none"）
+  unit: string; // % / h
+  digit: number;
+}
+const effSparkHover = ref<SparkHover | null>(null);
+function onEffSparkHover(
+  key: string,
+  label: string,
+  unit: string,
+  digit: number,
+  payload: { point: { t: string; v: number }; x: number } | null,
+) {
+  if (!payload) {
+    if (effSparkHover.value?.key === key) effSparkHover.value = null;
+    return;
+  }
+  effSparkHover.value = { key, label, point: payload.point, x: payload.x, unit, digit };
+}
+// 格式化桶标签（"2026-07-24T..." → "07-24 ~ 07-26" 之类）—— 单点区间内
+function fmtBucketRange(t: string, bucketDays: number): string {
+  if (!t) return "—";
+  const d = new Date(t);
+  if (Number.isNaN(d.getTime())) return t.slice(5, 10);
+  const end = new Date(d);
+  end.setDate(end.getDate() + bucketDays - 1);
+  const f = (x: Date) => `${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+  return `${f(d)} ~ ${f(end)}`;
+}
+// 当前窗口桶长（与后端 bucket_days 对齐：max(1, round(days/30))）
+const sparkBucketDays = computed(() => {
+  const d = effDays.value ?? 30;
+  return Math.max(1, Math.round(d / 30));
+});
+
 // 导出闭环效能运营报告（按项目维度，Excel / PDF）
 async function doExportEff(fmt: "excel" | "pdf") {
   if (!eff.value) {
@@ -986,15 +1025,30 @@ onUnmounted(() => {
             <div class="eff-item">
               <div class="eff-num">{{ eff.storm.rate_pct }}<span class="eff-unit">%</span></div>
               <div class="eff-label">告警风暴抑制率</div>
-              <TrendLine
-                :points="effSeriesPoints('storm')"
-                :color="effSparkColors.storm"
-                :height="24"
-                :width="118"
-                :min="0"
-                :max="effSeriesMax('storm')"
-                :value-digits="1"
-              />
+              <div class="eff-spark-wrap">
+                <TrendLine
+                  :points="effSeriesPoints('storm')"
+                  :color="effSparkColors.storm"
+                  :height="24"
+                  :width="118"
+                  :min="0"
+                  :max="effSeriesMax('storm')"
+                  :value-digits="1"
+                  @point-hover="onEffSparkHover('storm', '告警风暴抑制率', '%', 1, $event)"
+                />
+                <div
+                  v-if="effSparkHover && effSparkHover.key === 'storm'"
+                  class="eff-spark-tip"
+                  :style="{ left: effSparkHover.x + 'px' }"
+                >
+                  <div class="eff-spark-tip-date">
+                    {{ fmtBucketRange(effSparkHover.point.t, sparkBucketDays) }}
+                  </div>
+                  <div class="eff-spark-tip-val">
+                    {{ effSparkHover.point.v.toFixed(1) }}%
+                  </div>
+                </div>
+              </div>
               <div class="eff-sub">压掉 {{ eff.storm.suppressed }} 条同源重复</div>
               <div :class="trendCls(eff.storm.trend)" class="eff-trend">
                 {{ trendArrow(eff.storm.trend) }} {{ trendText(eff.storm.trend) }}
@@ -1003,14 +1057,29 @@ onUnmounted(() => {
             <div class="eff-item">
               <div class="eff-num">{{ eff.mttr.avg_hours }}<span class="eff-unit">h</span></div>
               <div class="eff-label">告警平均处置时长</div>
-              <TrendLine
-                :points="effSeriesPoints('mttr')"
-                :color="effSparkColors.mttr"
-                :height="24"
-                :width="118"
-                :min="0"
-                :value-digits="1"
-              />
+              <div class="eff-spark-wrap">
+                <TrendLine
+                  :points="effSeriesPoints('mttr')"
+                  :color="effSparkColors.mttr"
+                  :height="24"
+                  :width="118"
+                  :min="0"
+                  :value-digits="1"
+                  @point-hover="onEffSparkHover('mttr', '告警平均处置时长', 'h', 1, $event)"
+                />
+                <div
+                  v-if="effSparkHover && effSparkHover.key === 'mttr'"
+                  class="eff-spark-tip"
+                  :style="{ left: effSparkHover.x + 'px' }"
+                >
+                  <div class="eff-spark-tip-date">
+                    {{ fmtBucketRange(effSparkHover.point.t, sparkBucketDays) }}
+                  </div>
+                  <div class="eff-spark-tip-val">
+                    {{ effSparkHover.point.v.toFixed(1) }}h
+                  </div>
+                </div>
+              </div>
               <div class="eff-sub">处置率 {{ eff.mttr.resolution_rate_pct }}%</div>
               <div :class="trendCls(eff.mttr.trend)" class="eff-trend">
                 {{ trendArrow(eff.mttr.trend) }} {{ trendText(eff.mttr.trend) }}
@@ -1019,15 +1088,30 @@ onUnmounted(() => {
             <div class="eff-item">
               <div class="eff-num">{{ eff.dispatch_sla.sla_rate_pct }}<span class="eff-unit">%</span></div>
               <div class="eff-label">派单 SLA 达成率</div>
-              <TrendLine
-                :points="effSeriesPoints('dispatch_sla')"
-                :color="effSparkColors.dispatch_sla"
-                :height="24"
-                :width="118"
-                :min="0"
-                :max="effSeriesMax('dispatch_sla')"
-                :value-digits="1"
-              />
+              <div class="eff-spark-wrap">
+                <TrendLine
+                  :points="effSeriesPoints('dispatch_sla')"
+                  :color="effSparkColors.dispatch_sla"
+                  :height="24"
+                  :width="118"
+                  :min="0"
+                  :max="effSeriesMax('dispatch_sla')"
+                  :value-digits="1"
+                  @point-hover="onEffSparkHover('dispatch_sla', '派单 SLA 达成率', '%', 1, $event)"
+                />
+                <div
+                  v-if="effSparkHover && effSparkHover.key === 'dispatch_sla'"
+                  class="eff-spark-tip"
+                  :style="{ left: effSparkHover.x + 'px' }"
+                >
+                  <div class="eff-spark-tip-date">
+                    {{ fmtBucketRange(effSparkHover.point.t, sparkBucketDays) }}
+                  </div>
+                  <div class="eff-spark-tip-val">
+                    {{ effSparkHover.point.v.toFixed(1) }}%
+                  </div>
+                </div>
+              </div>
               <div class="eff-sub">闭环均 {{ eff.dispatch_sla.avg_cycle_hours }}h</div>
               <div :class="trendCls(eff.dispatch_sla.trend)" class="eff-trend">
                 {{ trendArrow(eff.dispatch_sla.trend) }} {{ trendText(eff.dispatch_sla.trend) }}
@@ -1036,15 +1120,30 @@ onUnmounted(() => {
             <div class="eff-item">
               <div class="eff-num">{{ eff.hazard.closure_rate_pct }}<span class="eff-unit">%</span></div>
               <div class="eff-label">隐患治理闭环率</div>
-              <TrendLine
-                :points="effSeriesPoints('hazard')"
-                :color="effSparkColors.hazard"
-                :height="24"
-                :width="118"
-                :min="0"
-                :max="effSeriesMax('hazard')"
-                :value-digits="1"
-              />
+              <div class="eff-spark-wrap">
+                <TrendLine
+                  :points="effSeriesPoints('hazard')"
+                  :color="effSparkColors.hazard"
+                  :height="24"
+                  :width="118"
+                  :min="0"
+                  :max="effSeriesMax('hazard')"
+                  :value-digits="1"
+                  @point-hover="onEffSparkHover('hazard', '隐患治理闭环率', '%', 1, $event)"
+                />
+                <div
+                  v-if="effSparkHover && effSparkHover.key === 'hazard'"
+                  class="eff-spark-tip"
+                  :style="{ left: effSparkHover.x + 'px' }"
+                >
+                  <div class="eff-spark-tip-date">
+                    {{ fmtBucketRange(effSparkHover.point.t, sparkBucketDays) }}
+                  </div>
+                  <div class="eff-spark-tip-val">
+                    {{ effSparkHover.point.v.toFixed(1) }}%
+                  </div>
+                </div>
+              </div>
               <div class="eff-sub">按期销号 {{ eff.hazard.on_time_rate_pct }}%</div>
               <div :class="trendCls(eff.hazard.trend)" class="eff-trend">
                 {{ trendArrow(eff.hazard.trend) }} {{ trendText(eff.hazard.trend) }}
@@ -1053,15 +1152,30 @@ onUnmounted(() => {
             <div class="eff-item">
               <div class="eff-num">{{ eff.anomaly.share_pct }}<span class="eff-unit">%</span></div>
               <div class="eff-label">异常引擎告警占比</div>
-              <TrendLine
-                :points="effSeriesPoints('anomaly')"
-                :color="effSparkColors.anomaly"
-                :height="24"
-                :width="118"
-                :min="0"
-                :max="effSeriesMax('anomaly')"
-                :value-digits="1"
-              />
+              <div class="eff-spark-wrap">
+                <TrendLine
+                  :points="effSeriesPoints('anomaly')"
+                  :color="effSparkColors.anomaly"
+                  :height="24"
+                  :width="118"
+                  :min="0"
+                  :max="effSeriesMax('anomaly')"
+                  :value-digits="1"
+                  @point-hover="onEffSparkHover('anomaly', '异常引擎告警占比', '%', 1, $event)"
+                />
+                <div
+                  v-if="effSparkHover && effSparkHover.key === 'anomaly'"
+                  class="eff-spark-tip"
+                  :style="{ left: effSparkHover.x + 'px' }"
+                >
+                  <div class="eff-spark-tip-date">
+                    {{ fmtBucketRange(effSparkHover.point.t, sparkBucketDays) }}
+                  </div>
+                  <div class="eff-spark-tip-val">
+                    {{ effSparkHover.point.v.toFixed(1) }}%
+                  </div>
+                </div>
+              </div>
               <div class="eff-sub">共因派单 {{ eff.anomaly.correlation_dispatches }}</div>
               <div :class="trendCls(eff.anomaly.trend)" class="eff-trend">
                 {{ trendArrow(eff.anomaly.trend) }} {{ trendText(eff.anomaly.trend) }}
@@ -1940,6 +2054,47 @@ onUnmounted(() => {
   margin: 4px 0 2px;
   width: 100% !important;
   height: 24px !important;
+}
+/* sparkline 容器：作为 hover tooltip 的定位锚点（相对定位） */
+.eff-spark-wrap {
+  position: relative;
+  width: 100%;
+  height: 24px;
+}
+/* 自定义 hover tooltip：浮在 sparkline 上方，靠近当前数据点 */
+.eff-spark-tip {
+  position: absolute;
+  bottom: 100%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #1f2d3d;
+  color: #fff;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+  z-index: 5;
+}
+.eff-spark-tip::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: #1f2d3d;
+  border-bottom: 0;
+}
+.eff-spark-tip-date {
+  color: #c0c4cc;
+  font-size: 10px;
+}
+.eff-spark-tip-val {
+  font-weight: 600;
+  font-size: 12px;
 }
 /* 按项目下钻表 */
 .eff-drill {

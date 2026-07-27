@@ -16,10 +16,12 @@ from app.core.constants import (
     DISPATCH_TRANSITIONS,
 )
 from app.core.data_scope import DataScope, apply_data_scope
+from app.core.exceptions import BusinessError
 from app.core.notify import notify
 from app.model.alarm import Alarm
 from app.model.correlation import CorrelatedEventGroup
 from app.model.dispatch import DispatchOrder
+from app.model.project import Project
 from app.model.system import User
 
 logger = logging.getLogger("rail_monitor.dispatch")
@@ -64,9 +66,18 @@ def create_order(db: Session, scope: DataScope, creator_id: int | None, data) ->
         # 来源解析不到项目时退回 manual 处理；manual 必须有 project_id
         pass
     if project_id is None:
-        from app.core.exceptions import BusinessError
-
         raise BusinessError("派单必须归属项目（manual 来源请填写 project_id）")
+
+    # 归属项目存在性校验：避免不存在的 project_id 触发外键违反（500）。
+    # 兼容 data_scope：超管可访问任意项目；受限用户须满足部门/创建人隔离。
+    proj = db.scalar(
+        select(Project.id).where(Project.id == project_id, Project.is_deleted.is_(False))
+    )
+    if proj is None:
+        raise BusinessError(
+            f"归属项目不存在或已被删除（project_id={project_id}），请重新选择",
+            code=400,
+        )
 
     assignee_name = _user_name(db, data.assignee_id)
     order = DispatchOrder(
