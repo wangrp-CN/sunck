@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.data_scope import DataScope, apply_data_scope
 from app.core.database import get_db, get_read_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
@@ -19,6 +20,7 @@ from app.core.responses import ApiResponse
 from app.model.project import Project
 from app.model.system import User
 from app.service import alarm_correlation as corr_svc
+from app.service import anomaly_service as anomaly_svc
 from app.service import metrics_snapshot as svc
 from app.service import risk_alert as alert_svc
 from app.service.alarm_service import ALARM_DEDUP_TTL, storm_suppressed_today
@@ -250,6 +252,36 @@ def alarm_storm() -> ApiResponse:
         data={
             "window_seconds": ALARM_DEDUP_TTL,
             "suppressed_today": storm_suppressed_today(),
+        }
+    )
+
+
+@router.get("/anomalies", dependencies=[Depends(require_permissions("dashboard:view"))])
+def anomalies(
+    db: Session = Depends(get_read_db),
+    scope: DataScope = Depends(get_data_scope),
+    lookback_days: int = Query(
+        30, ge=7, le=365, description="检测回看窗口(天)，须 > anomaly_window+min_points"
+    ),
+):
+    """预览当前数据范围内的趋势异常（不落库）。
+
+    与 ``GET /dashboard/stats`` 的 ``anomaly_params`` 同源算法（统计基线法），
+    返回四类序列（告警量/风险指数/跨设备共因/设备活跃）的异常周期明细，供大屏
+    「趋势异常检测」卡或调试使用。落库告警由 ``scripts/snapshot_job.py`` 每日定时触发。
+    """
+    items = anomaly_svc.get_anomaly_detections(db, scope, lookback_days=lookback_days)
+    return ApiResponse.success(
+        data={
+            "lookback_days": lookback_days,
+            "params": {
+                "k": settings.anomaly_k,
+                "window": settings.anomaly_window,
+                "min_trailing": settings.anomaly_min_trailing,
+                "min_points": settings.anomaly_min_points,
+            },
+            "total": len(items),
+            "items": items,
         }
     )
 

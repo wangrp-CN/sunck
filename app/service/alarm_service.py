@@ -403,6 +403,7 @@ ALARM_TYPE_LABELS: dict[str, str] = {
     "distance_too_close": "间距过近",
     "device_alarm": "设备自报",
     "train_approach": "列车接近预警",
+    "trend_anomaly": "趋势异常",
 }
 
 

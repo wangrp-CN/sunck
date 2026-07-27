@@ -85,6 +85,8 @@ class Settings(BaseSettings):
     anomaly_min_trailing: int = 3
     # 序列最短长度，低于此整条不判异常（防 2~3 点的误报）。
     anomaly_min_points: int = 5
+    # 定时检测回看窗口（天）：每日定时对近 N 天的日序列做异常检测（须 > window+min_points）。
+    anomaly_lookback_days: int = 30
 
     # ---------- PostgreSQL ----------
     postgres_host: str = "127.0.0.1"

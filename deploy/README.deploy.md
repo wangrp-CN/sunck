@@ -523,3 +523,14 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
 - **阈值可调**：卡内 `el-select`(k=1.5/2.0/2.5/3.0) 实时调整 z 阈值，与后端默认值（`anomaly_params.k`）首次加载同步（`watch`）；四类序列的高亮与列表随 `anomalyK` 联动。`formatZ` 处理基线恒定导致的 `z=±Infinity` 显示为 `∞`。
 - **类型**：`types/index.ts` 新增 `AnomalyParams` 接口与 `DashboardStats.anomaly_params`；`anomaly.ts` 新增 `AnomalySeriesInput` / `AnomalyItem` / `collectAnomalies`。
 - **测试**：`test_dashboard_scope.py` 增补 `anomaly_params` 字段与取值合法性断言；`DashboardView.spec.ts` 补「聚合四类序列异常点、k 阈值可调」用例（变量基线，验证 k 升档吸收异常）。
+
+### 13.9 异常进告警流 + 派单闭环
+
+在 §13.8 基础上，把检测到的趋势异常升级为**分级业务告警**，接入既有告警流与根因派单闭环。
+
+- **后端检测服务**：`app/service/anomaly_service.py` —— 前端 `anomaly.ts` 统计基线算法的 Python 同口径实现（`detect_series`），四类日粒度序列（告警量/风险指数/跨设备共因/设备活跃，逐项目、UTC 日界零填充；风险序列仅取有快照日，缺失≠归零避免误报 drop）。
+- **告警落库**：新告警类型 `trend_anomaly`（常量 `ALARM_TYPE_ANOMALY`，中文标签「趋势异常」）。每（项目, 序列）仅对**最近一个异常周期**落 1 条告警；`device_no` 编码 `anomaly:{序列}:{项目}:{周期}` 保证跨日幂等。级别按 |z| 映射：≥3 或 ∞ → 严重，≥2 → 警告，其余 → 提示。落库复用 `create_alarm`（站内信通知 + 风暴抑制）。
+- **定时触发**：`scripts/snapshot_job.py` 在快照/关联计算后调用 `run_anomaly_detection`（回看窗口 `anomaly_lookback_days`，默认 30 天），与每日 02:30 timer 同节拍。
+- **预览端点**：`GET /api/v1/metrics/anomalies?lookback_days=30`（`dashboard:view`，数据范围隔离，不落库）返回全部异常明细 + 当前阈值参数；`z=±Infinity` 序列化为哨兵 `±9999`（starlette JSON 不接受 Infinity）。
+- **前端派单入口**：`AlarmView.vue` 操作列新增「派单」按钮（权限 `dispatch:create`），预填 `source_type="alarm"` / `source_id` / 级别 / 根因提示（告警信息），打开 `DispatchCreateDialog` 进入「待派→处理中→已闭环」闭环；类型筛选与标签映射补充 `trend_anomaly`（趋势异常）与 `train_approach`（列车接近预警）。
+- **测试**：`tests/test_anomaly_service.py`（检测口径 spike/drop/常量基线/过短、级别映射、落库幂等二次运行 0 新增、预览端点不落库）；`AlarmView.spec.ts` 补「canDispatch 权限、openDispatch 预填、趋势异常中文标签」用例。

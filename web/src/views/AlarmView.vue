@@ -41,6 +41,8 @@ import MapPanel from "@/components/MapPanel.vue";
 import DailyTrendChart from "@/components/DailyTrendChart.vue";
 import WorkPlanPopup from "@/components/WorkPlanPopup.vue";
 import MediaUpload from "@/components/MediaUpload.vue";
+import DispatchCreateDialog from "@/components/DispatchCreateDialog.vue";
+import type { DispatchPreset } from "@/api/dispatch";
 import type { Alarm, AlarmConfig, MapDevice, MapFence, Project } from "@/types";
 import { useAuthStore } from "@/stores/auth";
 
@@ -49,6 +51,23 @@ const router = useRouter();
 const canHandle = computed(() => auth.user?.permission_codes.includes("alarm:handle") ?? false);
 const canConfig = computed(() => auth.user?.permission_codes.includes("alarm:config") ?? false);
 const canReport = computed(() => auth.user?.permission_codes.includes("alarm:list") ?? false);
+const canDispatch = computed(() => auth.user?.permission_codes.includes("dispatch:create") ?? false);
+
+// ----- 告警一键派单（接入根因派单闭环，含趋势异常告警） -----
+const dispatchVisible = ref(false);
+const dispatchPreset = ref<DispatchPreset | null>(null);
+function openDispatch(row: any) {
+  const typeLabelText = ALARM_TYPE_LABELS[row.alarm_type] || row.alarm_type || "告警";
+  dispatchPreset.value = {
+    source_type: "alarm",
+    source_id: row.id,
+    project_id: row.project_id ?? null,
+    title: `告警派单：${typeLabelText} / ${row.device_name || row.device_no || "未知设备"}`,
+    root_cause_hint: row.alarm_info || null,
+    level: row.alarm_level || null,
+  };
+  dispatchVisible.value = true;
+}
 
 // 告警风暴抑制统计（v2）：当日被合并抑制的同源重复告警数 + 抑制窗口
 const stormSuppressed = ref(0);
@@ -85,6 +104,8 @@ const ALARM_TYPE_LABELS: Record<string, string> = {
   fence_intrusion: "围栏侵入",
   distance_too_close: "间距过近",
   device_alarm: "设备告警",
+  train_approach: "列车接近预警",
+  trend_anomaly: "趋势异常",
 };
 const HANDLE_OPTIONS = ["待处理", "已处理", "已忽略", "已确认", "已消警"];
 const STATUS_OPTIONS = ["告警开始", "告警结束", "已消警"];
@@ -752,6 +773,8 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
             <el-option label="围栏侵入" value="fence_intrusion" />
             <el-option label="间距过近" value="distance_too_close" />
             <el-option label="设备告警" value="device_alarm" />
+            <el-option label="列车接近预警" value="train_approach" />
+            <el-option label="趋势异常" value="trend_anomaly" />
           </el-select>
         </el-form-item>
         <el-form-item label="处理状态">
@@ -935,7 +958,7 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
           <span v-else class="sub">—</span>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="230" fixed="right">
         <template #default="{ row }">
           <el-button
             v-if="canHandle"
@@ -952,6 +975,14 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
             @click="openConvert(row)"
           >
             转隐患
+          </el-button>
+          <el-button
+            v-if="canDispatch"
+            type="danger"
+            link
+            @click.stop="openDispatch(row)"
+          >
+            派单
           </el-button>
           <el-tag v-if="row.hazard_id" type="success" size="small">已转隐患</el-tag>
           <el-button
@@ -1559,6 +1590,9 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
       :fence-id="planPopup.fenceId"
       :fence-name="planPopup.fenceName"
     />
+
+    <!-- 告警一键派单（source_type=alarm，接入根因派单闭环） -->
+    <DispatchCreateDialog v-model="dispatchVisible" :preset="dispatchPreset" />
   </div>
 </template>
 

@@ -30,6 +30,7 @@ from app.core.database import SessionLocal
 from app.service import metrics_snapshot as svc
 from app.service import risk_alert as alert_svc
 from app.service import alarm_correlation as corr_svc
+from app.service import anomaly_service as anomaly_svc
 from app.config import settings
 
 
@@ -72,6 +73,12 @@ def main() -> None:
             f"cross_device={corr['cross_device_groups']}",
             flush=True,
         )
+
+        # 趋势异常检测（#81 扩展）：检测四类序列异常 → 落 trend_anomaly 告警
+        # （进既有告警流 + 可在告警管理页「一键派单」接入根因派单闭环）。
+        anoms = anomaly_svc.run_anomaly_detection(db)
+        print(f"[snapshot] anomaly alarms created={anoms['created']}", flush=True)
+        db.commit()
     finally:
         db.close()
 

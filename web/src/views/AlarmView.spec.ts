@@ -16,7 +16,7 @@ vi.mock("element-plus", async (importOriginal) => {
 
 vi.mock("@/stores/auth", () => ({
   useAuthStore: vi.fn(() => ({
-    user: { permission_codes: ["alarm:handle", "alarm:config", "alarm:list"] },
+    user: { permission_codes: ["alarm:handle", "alarm:config", "alarm:list", "dispatch:create"] },
     loadProfile: vi.fn(),
   })),
 }));
@@ -97,6 +97,9 @@ vi.mock("@/components/MapPanel.vue", () => ({ default: { name: "M", template: "<
 vi.mock("@/components/DailyTrendChart.vue", () => ({ default: { name: "DTC", template: "<div/>" } }));
 vi.mock("@/components/WorkPlanPopup.vue", () => ({ default: { name: "WPP", template: "<div/>" } }));
 vi.mock("@/components/MediaUpload.vue", () => ({ default: { name: "MU", template: "<div/>" } }));
+vi.mock("@/components/DispatchCreateDialog.vue", () => ({
+  default: { name: "DCD", template: "<div/>", props: ["modelValue", "preset"] },
+}));
 
 import { fetchAlarms } from "@/api/realtime";
 import { handleAlarm } from "@/api/alarm";
@@ -170,5 +173,37 @@ describe("views/AlarmView.vue", () => {
     wrapper = mount(AlarmView);
     await flushPromises();
     expect((wrapper.vm as any).canHandle).toBe(true);
+  });
+
+  it("权限：dispatch:create 命中时 canDispatch 为 true", async () => {
+    wrapper = mount(AlarmView);
+    await flushPromises();
+    expect((wrapper.vm as any).canDispatch).toBe(true);
+  });
+
+  it("一键派单：openDispatch 预填 source_type=alarm 与告警上下文", async () => {
+    wrapper = mount(AlarmView);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    vm.openDispatch(vm.list[1]); // id=2 严重 device_alarm
+    expect(vm.dispatchVisible).toBe(true);
+    expect(vm.dispatchPreset).toEqual(
+      expect.objectContaining({
+        source_type: "alarm",
+        source_id: 2,
+        project_id: 1,
+        level: "严重",
+        root_cause_hint: "越限",
+      }),
+    );
+    expect(vm.dispatchPreset.title).toContain("设备告警");
+  });
+
+  it("趋势异常类型显示中文标签", async () => {
+    wrapper = mount(AlarmView);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    expect(vm.typeLabel("trend_anomaly")).toBe("趋势异常");
+    expect(vm.typeLabel("train_approach")).toBe("列车接近预警");
   });
 });
