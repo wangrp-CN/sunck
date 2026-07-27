@@ -21,6 +21,7 @@ from app.model.system import User
 from app.service import alarm_correlation as corr_svc
 from app.service import metrics_snapshot as svc
 from app.service import risk_alert as alert_svc
+from app.service.alarm_service import ALARM_DEDUP_TTL, storm_suppressed_today
 
 router = APIRouter()
 
@@ -233,6 +234,22 @@ def correlations_heatmap(
             "only_cross_device": only_cross_device,
             "project_id": project_id,
             "points": points,
+        }
+    )
+
+
+@router.get("/alarm-storm", dependencies=[Depends(require_permissions("dashboard:view"))])
+def alarm_storm() -> ApiResponse:
+    """告警风暴抑制统计：合并窗口 + 当日被合并掉的重复告警数。
+
+    与 ``app.service.alarm_service`` 的抑制计数同源：同一 (设备,类型,围栏,状态)
+    在 `alarm_suppress_window_seconds` 窗口内只产生 1 条告警，重复计入 anchor 的
+    ``suppressed_count`` 并累计到当日抑制总量。
+    """
+    return ApiResponse.success(
+        data={
+            "window_seconds": ALARM_DEDUP_TTL,
+            "suppressed_today": storm_suppressed_today(),
         }
     )
 

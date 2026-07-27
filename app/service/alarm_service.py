@@ -9,9 +9,10 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.constants import (
     ALARM_STATUS_CLEARED,
     ALARM_STATUS_END,
@@ -36,7 +37,11 @@ _LEVEL_BY_TYPE: dict[str, str] = {
     ALARM_TYPE_DEVICE: "提示",
 }
 
-ALARM_DEDUP_TTL = 300  # 秒：同一告警的合并窗口
+#: 同一告警的合并窗口（秒），来自配置 alarm_suppress_window_seconds（默认 300）。
+ALARM_DEDUP_TTL = settings.alarm_suppress_window_seconds
+
+#: 风暴抑制日计数 Redis 键前缀（按 UTC 日期分桶，便于跨时区统计当天抑制量）。
+_STORM_KEY_PREFIX = "alarm:storm:suppressed:"
 
 
 def _dedup_key(
@@ -84,6 +89,9 @@ def create_alarm(db: Session, **fields) -> Alarm | None:
             r.expire(key, ALARM_DEDUP_TTL)
         except Exception:  # noqa: BLE001
             logger.warning("告警去重键续期失败（不影响落库）")
+        # 风暴抑制 v2：把被合并的重复告警计数累加到 anchor 告警，并累计当日抑制总量，
+        # 便于值班人员感知「本窗已压制多少重复噪声」而非彻底无感丢弃。
+        _count_suppressed(r, key, db)
         logger.debug("告警去重命中，跳过并续期：%s", key)
         return None
 
@@ -122,6 +130,54 @@ def create_alarm(db: Session, **fields) -> Alarm | None:
     except Exception:  # noqa: BLE001
         logger.warning("告警站内信通知失败（不影响告警落库）")
     return alarm
+
+
+def _count_suppressed(r, key: str, db: Session) -> None:
+    """去重命中时累加 anchor 的 suppressed_count，并累计当日抑制总量（风暴抑制 v2）。
+
+    - anchor id 由 create_alarm 在占位成功后以 ``xx=True`` 写入 Redis 值；
+      此处读取后对 anchor 行做服务端自增（无需先 SELECT，避免高频风暴下的额外读）。
+    - 当日抑制量写入 ``alarm:storm:suppressed:{UTC日期}``（INCR，2 天 TTL），
+      供 ``/metrics/alarm-storm`` 直接读取，无需扫表。
+    - 任何 Redis/DB 异常均降级忽略（宁可产生重复计数，也不阻塞主告警落库）。
+    """
+    now = datetime.now(timezone.utc)
+    try:
+        raw = r.get(key)
+        if raw:
+            try:
+                anchor_id = int(raw)
+            except (TypeError, ValueError):
+                anchor_id = None
+            if anchor_id:
+                db.execute(
+                    update(Alarm)
+                    .where(Alarm.id == anchor_id)
+                    .values(
+                        suppressed_count=Alarm.suppressed_count + 1,
+                        last_suppressed_at=now,
+                    )
+                )
+    except Exception:  # noqa: BLE001
+        logger.warning("anchor 抑制计数自增失败（不影响告警落库）")
+    try:
+        day_key = f"{_STORM_KEY_PREFIX}{now.strftime('%Y-%m-%d')}"
+        r.incr(day_key)
+        r.expire(day_key, 86400 * 2)
+    except Exception:  # noqa: BLE001
+        logger.warning("当日抑制计数累加失败（不影响告警落库）")
+
+
+def storm_suppressed_today() -> int:
+    """返回当日（UTC 日期）被风暴抑制合并掉的重复告警总数。"""
+    r = get_redis_client()
+    try:
+        day_key = f"{_STORM_KEY_PREFIX}{datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
+        val = r.get(day_key)
+        return int(val) if val else 0
+    except Exception:  # noqa: BLE001
+        logger.warning("读取当日抑制计数失败")
+        return 0
 
 
 def end_alarm_by_id(db: Session, alarm_id: int) -> bool:
@@ -215,6 +271,7 @@ def to_alarm_out(alarm: Alarm) -> dict[str, Any]:
         "media_urls": _parse_media(alarm.media_urls),
         "work_plan_id": alarm.work_plan_id,
         "hazard_id": alarm.hazard_id,
+        "suppressed_count": alarm.suppressed_count or 0,
         "alarm_time": alarm.alarm_time.isoformat() if alarm.alarm_time else None,
     }
 

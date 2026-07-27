@@ -26,6 +26,7 @@ import {
   type SnapshotPreviewResult,
 } from "@/api/alarm";
 import { type HazardLevel } from "@/api/hazard";
+import { getAlarmStorm } from "@/api/metrics";
 import { formatPeriodLabel, granularityLabel } from "@/utils/period";
 import { fetchProjects } from "@/api/project";
 import { fetchFences } from "@/api/fence";
@@ -48,6 +49,19 @@ const router = useRouter();
 const canHandle = computed(() => auth.user?.permission_codes.includes("alarm:handle") ?? false);
 const canConfig = computed(() => auth.user?.permission_codes.includes("alarm:config") ?? false);
 const canReport = computed(() => auth.user?.permission_codes.includes("alarm:list") ?? false);
+
+// 告警风暴抑制统计（v2）：当日被合并抑制的同源重复告警数 + 抑制窗口
+const stormSuppressed = ref(0);
+const stormWindow = ref(0);
+async function loadStorm() {
+  try {
+    const r = await getAlarmStorm();
+    stormSuppressed.value = r.suppressed_today || 0;
+    stormWindow.value = r.window_seconds || 0;
+  } catch {
+    /* 抑制统计失败不阻塞主表格 */
+  }
+}
 
 // 地图与告警联动
 const mapRef = ref<InstanceType<typeof MapPanel> | null>(null);
@@ -707,6 +721,7 @@ onMounted(async () => {
   await loadAlarms();
   await loadMapData();
   await loadTrend();
+  void loadStorm();
 });
 
 // 筛选条件 / 时间范围 / 聚合粒度变化 → 趋势联动刷新（防抖）
@@ -766,6 +781,15 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
         </el-form-item>
       </el-form>
       <div class="bar-actions">
+        <el-tooltip
+          v-if="stormSuppressed > 0"
+          :content="`近 ${stormWindow} 秒内同源重复告警已自动合并抑制`"
+          placement="bottom"
+        >
+          <el-tag type="info" effect="plain" class="storm-tag">
+            今日合并抑制 {{ stormSuppressed }} 条
+          </el-tag>
+        </el-tooltip>
         <el-button v-if="canReport" type="success" plain @click="openReport">
           报表 / 导出
         </el-button>
@@ -869,6 +893,14 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
           <el-tag :type="row.handle_status === '待处理' ? 'danger' : 'success'" size="small">
             {{ row.handle_status }}
           </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="合并抑制" width="100" align="center">
+        <template #default="{ row }">
+          <el-tag v-if="row.suppressed_count" type="warning" size="small" effect="light">
+            抑制 {{ row.suppressed_count }}
+          </el-tag>
+          <span v-else class="sub">—</span>
         </template>
       </el-table-column>
       <el-table-column label="媒体" width="90">
@@ -1579,7 +1611,8 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
 :deep(.alarm-row-active:hover) > td {
   background: #e3efff !important;
 }
-.bar-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.bar-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
+.storm-tag { font-weight: 600; }
 .batch-bar {
   display: flex;
   align-items: center;

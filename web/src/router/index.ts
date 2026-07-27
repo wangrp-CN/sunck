@@ -115,6 +115,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "告警管理" },
       },
       {
+        path: "dispatch",
+        name: "dispatch",
+        component: () => import("@/views/DispatchView.vue"),
+        meta: { title: "根因派单" },
+      },
+      {
         path: "hazards",
         name: "hazards",
         component: () => import("@/views/HazardView.vue"),

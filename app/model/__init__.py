@@ -13,6 +13,7 @@ from app.model import (  # noqa: F401
     audit,
     correlation,
     device,
+    dispatch,
     fence,
     hazard,
     inspection,

@@ -20,6 +20,7 @@ _MODULES = [
     ("job", "作业计划", "/job", "plan"),
     ("alarm", "告警管理", "/alarm", "alert"),
     ("dashboard", "监控大屏", "/dashboard", "dashboard"),
+    ("dispatch", "根因派单", "/dispatch", "dispatch"),
 ]
 
 # 各模块下的按钮/接口权限（type=3）
@@ -48,6 +49,7 @@ _CHILDREN = {
     "job": ["job:list", "job:add", "job:edit", "job:delete"],
     "alarm": ["alarm:list", "alarm:view", "alarm:handle", "alarm:config"],
     "dashboard": ["dashboard:view"],
+    "dispatch": ["dispatch:list", "dispatch:create", "dispatch:handle"],
 }
 
 # 角色 -> 权限编码集合
@@ -92,6 +94,9 @@ _ROLES = {
             "machine:edit",
             "machine:delete",
             "dashboard:view",
+            "dispatch:list",
+            "dispatch:create",
+            "dispatch:handle",
         },
         # 自定义数据范围（data_scope=2）绑定的部门编码；空表示不限定（看不到数据）
         "dept_codes": ["SECTION"],
@@ -112,13 +117,23 @@ _ROLES = {
             "device:command",
             "job:list",
             "dashboard:view",
+            "dispatch:list",
+            "dispatch:create",
+            "dispatch:handle",
         },
     },
     "operator": {
         "name": "作业员",
         "is_system": False,
         "data_scope": 4,
-        "codes": {"job:list", "job:add", "job:edit", "device:list", "dashboard:view"},
+        "codes": {
+            "job:list",
+            "job:add",
+            "job:edit",
+            "device:list",
+            "dashboard:view",
+            "dispatch:list",
+        },
     },
     "guest": {
         "name": "访客",

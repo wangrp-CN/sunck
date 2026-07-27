@@ -16,6 +16,7 @@ import {
   Compass,
   VideoCamera,
   TrendCharts,
+  Promotion,
 } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
@@ -232,6 +233,10 @@ onUnmounted(() => {
         <el-menu-item index="/alarms">
           <el-icon><Warning /></el-icon>
           <span>告警管理</span>
+        </el-menu-item>
+        <el-menu-item index="/dispatch">
+          <el-icon><Promotion /></el-icon>
+          <span>根因派单</span>
         </el-menu-item>
         <el-menu-item index="/hazards">
           <el-icon><Bell /></el-icon>

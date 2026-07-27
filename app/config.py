@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     correlation_gap_minutes: int = 30
     # 跨设备共因事件的 WebSocket 实时推送开关（Redis Pub/Sub 桥接，见 app/ws/correlation_pubsub）。
     ws_correlation_enabled: bool = True
+    # 告警风暴抑制窗口（秒）：同一 (设备, 类型, 围栏, 状态) 在该窗口内只产生 1 条告警，
+    # 后续重复被合并并计入 anchor 的 suppressed_count（见 app/service/alarm_service）。
+    alarm_suppress_window_seconds: int = 300
 
     # ---------- PostgreSQL ----------
     postgres_host: str = "127.0.0.1"

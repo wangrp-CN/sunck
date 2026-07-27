@@ -15,8 +15,28 @@ import {
 import { createCorrelationSocket } from "@/utils/correlationWs";
 import TrendLine from "@/components/TrendLine.vue";
 import CorrelationHeatmap from "@/components/CorrelationHeatmap.vue";
+import DispatchCreateDialog from "@/components/DispatchCreateDialog.vue";
+import type { DispatchPreset } from "@/api/dispatch";
 
 const auth = useAuthStore();
+
+const canCreate = computed(() => auth.hasPermission("dispatch:create"));
+
+const dispatchVisible = ref(false);
+const dispatchPreset = ref<DispatchPreset | null>(null);
+function openDispatch(row: CorrelationItem) {
+  dispatchPreset.value = {
+    source_type: "correlation",
+    source_id: row.id,
+    project_id: row.project_id,
+    title:
+      (row.root_cause_hint ? row.root_cause_hint.slice(0, 40) : "") ||
+      `共因派单：事件组 #${row.id}`,
+    root_cause_hint: row.root_cause_hint,
+    level: row.max_level,
+  };
+  dispatchVisible.value = true;
+}
 
 const loading = ref(false);
 const onlyCross = ref(false);
@@ -324,9 +344,23 @@ onUnmounted(() => {
           </template>
         </el-table-column>
         <el-table-column prop="root_cause_hint" label="根因提示" min-width="320" show-overflow-tooltip />
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="{ row }">
+            <el-button
+              v-if="canCreate"
+              type="primary"
+              link
+              @click="openDispatch(row)"
+            >
+              派单
+            </el-button>
+          </template>
+        </el-table-column>
         <template #empty>暂无关联事件组（近期无集中告警）</template>
       </el-table>
     </el-card>
+
+    <DispatchCreateDialog v-model="dispatchVisible" :preset="dispatchPreset" />
   </div>
 </template>
 

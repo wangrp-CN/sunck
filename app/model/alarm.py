@@ -61,6 +61,13 @@ class Alarm(Base, TimestampMixin, CreatorMixin):
         index=True,
         comment="关联隐患ID(告警转隐患)",
     )
+    # 风暴抑制（v2）：被合并掉的重复告警计数 + 最近一次抑制时间，供前端展示「已抑制 N 条」
+    suppressed_count: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, comment="被抑制(合并)的重复告警数"
+    )
+    last_suppressed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="最近一次抑制时间"
+    )
 
     # 查询索引（与手写迁移 k5l6m7n8o9p0 一致）：alarm_time 驱动趋势/近期/分页的
     # range + order_by；handle_status+alarm_time 支撑看板「待处理计数」复合过滤。

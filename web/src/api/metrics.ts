@@ -237,3 +237,12 @@ export function getCorrelationHeatmap(
     params: { only_cross_device: onlyCrossDevice, limit, project_id: projectId ?? undefined },
   });
 }
+
+// 告警风暴抑制统计：抑制窗口（秒）+ 当日被合并抑制的重复告警数
+export interface AlarmStormResp {
+  window_seconds: number;
+  suppressed_today: number;
+}
+export function getAlarmStorm(): Promise<AlarmStormResp> {
+  return http<AlarmStormResp>({ url: "/v1/metrics/alarm-storm", method: "GET" });
+}

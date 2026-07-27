@@ -14,6 +14,7 @@ from app.api.v1 import (
     departments,
     devices,
     dicts,
+    dispatch,
     fences,
     hazards,
     inspections,
@@ -42,6 +43,7 @@ api_router.include_router(hazards.router, prefix="/v1/hazards", tags=["隐患治
 api_router.include_router(notifications.router, prefix="/v1/notifications", tags=["通知中心"])
 api_router.include_router(realtime.router, prefix="/v1/realtime", tags=["实时链路"])
 api_router.include_router(dashboard.router, prefix="/v1/dashboard", tags=["大屏"])
+api_router.include_router(dispatch.router, prefix="/v1/dispatch", tags=["根因派单"])
 api_router.include_router(media.router, prefix="/v1/media", tags=["媒体管理"])
 api_router.include_router(attachments.router, prefix="/v1/attachments", tags=["附件"])
 api_router.include_router(audit_logs.router, prefix="/v1/audit-logs", tags=["操作审计"])

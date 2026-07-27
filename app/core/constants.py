@@ -94,6 +94,35 @@ HAZARD_TRANSITIONS: dict[str, tuple[str, str]] = {
 # 终态（不可再流转）
 HAZARD_TERMINAL_STATUSES = {HAZARD_STATUS_CLOSED}
 
+# ---------------------------------------------------------------------------
+# 根因派单闭环（#80）：派单状态机 + 来源
+# ---------------------------------------------------------------------------
+DISPATCH_STATUS_PENDING = "待派"  # 已建单未指派/未开始处理
+DISPATCH_STATUS_PROCESSING = "处理中"  # 已指派处理人，处置中
+DISPATCH_STATUS_CLOSED = "已闭环"  # 处置完成、共因闭环
+DISPATCH_STATUSES: tuple[str, ...] = (
+    DISPATCH_STATUS_PENDING,
+    DISPATCH_STATUS_PROCESSING,
+    DISPATCH_STATUS_CLOSED,
+)
+# 状态机合法流转：动作 -> (当前允许状态, 目标状态)
+DISPATCH_TRANSITIONS: dict[str, tuple[str, str]] = {
+    "start": (DISPATCH_STATUS_PENDING, DISPATCH_STATUS_PROCESSING),
+    "close": (DISPATCH_STATUS_PROCESSING, DISPATCH_STATUS_CLOSED),
+    "reopen": (DISPATCH_STATUS_CLOSED, DISPATCH_STATUS_PROCESSING),
+}
+DISPATCH_TERMINAL_STATUSES = {DISPATCH_STATUS_CLOSED}
+# 派单来源：跨设备共因事件组 / 单条告警 / 人工
+DISPATCH_SOURCE_CORRELATION = "correlation"
+DISPATCH_SOURCE_ALARM = "alarm"
+DISPATCH_SOURCE_MANUAL = "manual"
+DISPATCH_SOURCES: tuple[str, ...] = (
+    DISPATCH_SOURCE_CORRELATION,
+    DISPATCH_SOURCE_ALARM,
+    DISPATCH_SOURCE_MANUAL,
+)
+DISPATCH_LEVELS: tuple[str, ...] = ("严重", "警告", "提示")
+
 
 def up_topic(device_type: str) -> str:
     """设备上行主题。"""

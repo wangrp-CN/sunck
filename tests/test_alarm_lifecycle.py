@@ -137,9 +137,11 @@ def test_create_alarm_dedup_refresh(monkeypatch, db_session):
     assert out is None, "去重命中应跳过创建"
     # 判定必须用原子 set(nx=True) 抢占，而非 exists→set 竞态
     assert fake.set.call_args_list[0].kwargs.get("nx") is True, "去重判定须用原子 set(nx=True)"
-    fake.expire.assert_called_once()
-    args = fake.expire.call_args.args
-    assert args[1] == ALARM_DEDUP_TTL, "续期窗口应为 ALARM_DEDUP_TTL"
+    # 续期：去重键按 ALARM_DEDUP_TTL 续期（风暴抑制 v2 另对当日计数键设 TTL，故用 any_call 校验）
+    expire_calls = [c.args for c in fake.expire.call_args_list]
+    assert any(
+        len(a) >= 2 and a[1] == ALARM_DEDUP_TTL for a in expire_calls
+    ), "续期窗口应为 ALARM_DEDUP_TTL"
 
 
 def test_create_alarm_first_creates(monkeypatch, db_session):

@@ -483,3 +483,23 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
 - 前端：`web/src/utils/correlationWs.ts`（`createCorrelationSocket`，心跳+断线重连，镜像 `ws.ts`）；
   **跨设备根因关联**视图（新增 toast + 列表/趋势刷新）、**监控大屏**（实时刷新「今日新增跨设备共因」卡）。
 - 开关：`app/config.py::ws_correlation_enabled`（默认开；依赖 Redis，Redis 不可用时发布侧自动跳过，不阻断关联计算）。
+
+### 13.5 根因派单闭环（dispatch）
+
+将「跨设备共因事件组 / 单条告警 / 人工」转为**可跟踪处置工单**，形成「发现共因 → 派单 → 处理 → 闭环」的处置闭环。
+
+- **模型**：`app/model/dispatch.py::DispatchOrder`（`dispatch_order` 表，迁移 `alembic/versions/t4u5v6w7x8y9`）。字段：`project_id`（FK，VIA_PROJECT 数据范围）、`source_type`（`correlation`/`alarm`/`manual`）、`source_id`、`title`、`root_cause_hint`、`level`、`status`、`assignee_id`/`assignee_name`、`deadline`、`description`、`last_action_note`、`closed_at`。
+- **状态机**：`待派 →(start)→ 处理中 →(close)→ 已闭环`，`(reopen)→ 处理中`；终态 `已闭环`（`app/core/constants.py::DISPATCH_TRANSITIONS`）。非法迁移返回 `BusinessError`。
+- **来源解析**：`correlation` 取事件组的 `project_id`/`root_cause_hint`/`max_level`；`alarm` 取 `project_id`/`level`；建单/改派/动作**自动通知处理人**（站内信 InApp，同既有 notify 通道）。
+- **RBAC**：`dispatch:list` / `dispatch:create` / `dispatch:handle`；超管恒有；`project_manager`/`monitor`/`operator` 已授予（operator 仅 `dispatch:list`）。
+- **接口**：`GET /v1/dispatch/options|stats`、`GET|POST /v1/dispatch/`、`GET /v1/dispatch/{id}`、`PATCH /v1/dispatch/{id}`（动作）、`POST /v1/dispatch/{id}/reassign`（改派）。服务内不提交事务，由端点 `db.commit()`（项目 SOP）。
+- **前端**：路由 `/dispatch`（菜单「根因派单」）、`DispatchView.vue`（列表 + 统计 + 状态动作 + 改派）、`DispatchCreateDialog.vue`（建单）；**跨设备根因关联视图**每行「派单」按钮带 preset（source_type=correlation、source_id、project_id、root_cause_hint、level）。
+
+### 13.6 告警风暴抑制 v2（alarm-storm）
+
+对实时落库管线中**同源重复告警**做合并抑制，并暴露抑制统计。
+
+- **机制**：在既有 `create_alarm` 去重（`alarm:dedup` 占位）基础上增量——同一 `(设备,类型,围栏,状态)` 在窗口内（`app/config.py::alarm_suppress_window_seconds`，默认 `300`s）只产生 1 条告警，重复项合并并**累加 anchor 的 `suppressed_count`**，同时累计当日 Redis 计数器 `alarm:storm:suppressed:{UTC日期}`（2 天 TTL）。
+- **接口**：`GET /v1/metrics/alarm-storm` 暴露 `{ window_seconds, suppressed_today }`。
+- **前端**：告警管理页头部「今日合并抑制 N 条」标签 + 列表行「合并抑制」徽标（`suppressed_count`）。
+- **零回归**：不改动管线主路径，仅在去重命中分支追加计数；`to_alarm_out` 对外携带 `suppressed_count`。
