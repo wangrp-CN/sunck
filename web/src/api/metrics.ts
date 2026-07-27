@@ -220,17 +220,20 @@ export interface CorrelationHeatPoint {
 export interface CorrelationHeatmapResp {
   total: number;
   only_cross_device: boolean;
+  project_id: number | null;
   points: CorrelationHeatPoint[];
 }
 
 // 跨设备共因空间热力点（受数据范围约束）
+// projectId 可选：限定单个项目（须落在数据范围内），对比大屏下钻用
 export function getCorrelationHeatmap(
   onlyCrossDevice = true,
   limit = 500,
+  projectId?: number | null,
 ): Promise<CorrelationHeatmapResp> {
   return http<CorrelationHeatmapResp>({
     url: "/v1/metrics/correlations/heatmap",
     method: "GET",
-    params: { only_cross_device: onlyCrossDevice, limit },
+    params: { only_cross_device: onlyCrossDevice, limit, project_id: projectId ?? undefined },
   });
 }

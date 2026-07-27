@@ -414,6 +414,21 @@ def test_correlation_heatmap_endpoint(client: TestClient, admin_token: str, wipe
     pts2 = r2.json()["data"]["points"]
     assert any(p["spatial_type"] == "device" for p in pts2)
 
+    # project_id 下钻：限定到该项目（测试库仅一个项目），跨设备点数与默认一致
+    r3 = client.get(f"/api/v1/metrics/correlations/heatmap?project_id={pid}", headers=h)
+    assert r3.status_code == 200, r3.text
+    d3 = r3.json()["data"]
+    assert d3["project_id"] == pid
+    assert d3["total"] == len(pts)
+
+    # project_id 越权/不存在：返回空且回显 project_id
+    r4 = client.get("/api/v1/metrics/correlations/heatmap?project_id=999999", headers=h)
+    assert r4.status_code == 200, r4.text
+    d4 = r4.json()["data"]
+    assert d4["total"] == 0
+    assert d4["points"] == []
+    assert d4["project_id"] == 999999
+
     # 清理定位数据（wipe 只清关联组与告警）
     db = SessionLocal()
     try:

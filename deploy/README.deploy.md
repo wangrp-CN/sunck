@@ -457,13 +457,16 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
   + `is_cross_device` + `alarm_count` desc 取 `limit` 条 `CorrelatedEventGroup`，反解代表坐标——
   geo 组由 `grid_cell`（`row,col` → 网格中心 WGS-84）反解，fence/device 组取成员设备最新定位均值，
   统一转 GCJ-02 随包返回 `gcj02`；每条点含 `weight`（=告警数）、`device_count`、`max_level`、
-  `root_cause_hint`；用于空间热力可视化）。
+  `root_cause_hint`；用于空间热力可视化。可选 `project_id` 与数据范围求交实现单项目下钻，
+  越权项目返回空）。
 - 前端：**智能分析 → 跨设备根因关联**（`/intelligence/correlation`，菜单项「跨设备根因关联」），
   汇总卡 + 近 30 天趋势 sparkline（随「仅看跨设备」切换全部/跨设备）+ **空间共因热力图**
   （自包含 SVG 投影组件 `CorrelationHeatmap.vue`，零图表库依赖、可按项目/时间范围联动、含强度图例，
   随「仅看跨设备」切换）+ 事件组表格 + 可展开成员明细 + 「仅看跨设备」筛选
   + 超管「重新计算」按钮；监控大屏右栏新增「今日新增跨设备共因」卡片
-  （大数字 + 近 30 天跨设备趋势 sparkline）。
+  （大数字 + 近 30 天跨设备趋势 sparkline）。**多项目横向对比**（`/compare`）表格上方新增「空间共因热力」卡，
+  复用 `CorrelationHeatmap.vue`，支持按对比项中的项目下钻（`project_id`）与「仅跨设备」切换，
+  点选热力点可下钻到所属项目。
 - 关联参数 `app/config.py::correlation_window_hours` / `correlation_gap_minutes`。
 
 ### 13.4 跨设备共因实时 WebSocket 推送

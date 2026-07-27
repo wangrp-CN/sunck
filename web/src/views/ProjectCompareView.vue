@@ -1,16 +1,31 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useAuthStore } from "@/stores/auth";
 import { getProjectCompare } from "@/api/dashboard";
-import { getRiskTrend, RISK_ALERT_THRESHOLD } from "@/api/metrics";
+import { getRiskTrend, getCorrelationHeatmap, RISK_ALERT_THRESHOLD } from "@/api/metrics";
 import TrendLine from "@/components/TrendLine.vue";
+import CorrelationHeatmap from "@/components/CorrelationHeatmap.vue";
 import type { ProjectCompareResp } from "@/types";
+import type { CorrelationHeatPoint } from "@/api/metrics";
 
 const auth = useAuthStore();
 
 const days = ref(7);
 const resp = ref<ProjectCompareResp | null>(null);
 const loading = ref(false);
+
+// 空间共因热力：随对比数据联动，支持按对比项中的项目下钻 + 仅跨设备切换
+const heatPoints = ref<CorrelationHeatPoint[]>([]);
+const heatLoading = ref(false);
+const heatOnlyCross = ref(true);
+const heatProjectId = ref<number | null>(null); // null = 全部项目
+const heatProjectOptions = computed(() => [
+  { value: null as number | null, label: "全部项目" },
+  ...(resp.value?.items || []).map((it) => ({
+    value: it.project_id,
+    label: it.project_name,
+  })),
+]);
 
 // 风险趋势 sparkline：load 后并行拉取各项目近 30 天风险指数序列
 const trendMap = ref<Record<number, { t: string; v: number }[]>>({});
@@ -44,11 +59,31 @@ async function loadTrends() {
   }
 }
 
+async function loadHeatmap() {
+  heatLoading.value = true;
+  try {
+    const r = await getCorrelationHeatmap(heatOnlyCross.value, 500, heatProjectId.value);
+    heatPoints.value = r.points || [];
+  } catch {
+    /* 静默，避免阻塞对比主表 */
+  } finally {
+    heatLoading.value = false;
+  }
+}
+
+// 点选热力点 → 下钻到该点所属项目的空间热力
+function onHeatSelect(p: CorrelationHeatPoint) {
+  if (p.project_id != null) {
+    heatProjectId.value = p.project_id;
+    loadHeatmap();
+  }
+}
+
 async function load() {
   loading.value = true;
   try {
     resp.value = await getProjectCompare(days.value);
-    await loadTrends();
+    await Promise.all([loadTrends(), loadHeatmap()]);
   } catch (e: any) {
     ElMessage.error(e?.message || "加载对比数据失败");
   } finally {
@@ -104,6 +139,38 @@ onMounted(async () => {
         <el-radio-button :value="90">近 90 天</el-radio-button>
       </el-radio-group>
     </div>
+
+    <el-card shadow="never" class="heat-card" v-loading="heatLoading">
+      <template #header>
+        <div class="heat-head">
+          <span class="heat-title">空间共因热力</span>
+          <div class="heat-ctrl">
+            <el-select
+              v-model="heatProjectId"
+              placeholder="项目"
+              size="small"
+              style="width: 170px"
+              @change="loadHeatmap"
+            >
+              <el-option
+                v-for="o in heatProjectOptions"
+                :key="o.value ?? -1"
+                :label="o.label"
+                :value="o.value"
+              />
+            </el-select>
+            <el-switch
+              v-model="heatOnlyCross"
+              active-text="仅跨设备"
+              inactive-text="全部"
+              size="small"
+              @change="loadHeatmap"
+            />
+          </div>
+        </div>
+      </template>
+      <CorrelationHeatmap :points="heatPoints" @select="onHeatSelect" />
+    </el-card>
 
     <el-table :data="resp?.items || []" v-loading="loading" border stripe style="width: 100%">
       <el-table-column prop="project_name" label="项目" min-width="150" />
@@ -164,6 +231,10 @@ onMounted(async () => {
 .page { padding: 16px; }
 .bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .title { font-size: 15px; font-weight: 600; color: #303133; }
+.heat-card { margin-bottom: 12px; }
+.heat-head { display: flex; align-items: center; justify-content: space-between; }
+.heat-title { font-size: 14px; font-weight: 600; color: #303133; }
+.heat-ctrl { display: flex; align-items: center; gap: 12px; }
 .cnt { margin-right: 6px; font-size: 12px; color: #606266; }
 .danger { color: #f56c6c; font-weight: 600; }
 .risk-bar-wrap { display: flex; align-items: center; gap: 8px; }

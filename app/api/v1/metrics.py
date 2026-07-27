@@ -200,6 +200,9 @@ def correlations_heatmap(
     db: Session = Depends(get_read_db),
     scope: DataScope = Depends(get_data_scope),
     only_cross_device: bool = Query(True, description="仅统计跨设备共因（热力默认聚焦共因）"),
+    project_id: int | None = Query(
+        None, description="可选：限定单个项目（须落在数据范围内，对比大屏下钻用）"
+    ),
     limit: int = Query(500, ge=1, le=2000, description="返回热力点上限"),
 ):
     """跨设备共因事件组的空间热力点（受数据范围约束）。
@@ -213,6 +216,11 @@ def correlations_heatmap(
     allowed = {row[0] for row in db.execute(proj_stmt).all()}
     if not allowed:
         return ApiResponse.success(data={"total": 0, "points": []})
+    # 单项目下钻：与数据范围求交，越权项目返回空
+    if project_id is not None:
+        if project_id not in allowed:
+            return ApiResponse.success(data={"total": 0, "points": [], "project_id": project_id})
+        allowed = {project_id}
     points = corr_svc.get_correlation_heatmap(
         db, allowed, only_cross_device=only_cross_device, limit=limit
     )
@@ -220,7 +228,12 @@ def correlations_heatmap(
         glng, glat = wgs84_to_gcj02(p["lng"], p["lat"])
         p["gcj02"] = {"lng": glng, "lat": glat}
     return ApiResponse.success(
-        data={"total": len(points), "only_cross_device": only_cross_device, "points": points}
+        data={
+            "total": len(points),
+            "only_cross_device": only_cross_device,
+            "project_id": project_id,
+            "points": points,
+        }
     )
 
 
