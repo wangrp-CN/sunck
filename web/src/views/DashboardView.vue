@@ -587,6 +587,18 @@ onUnmounted(() => {
           <span class="stat-sub" v-if="currentPeriodHint">{{ currentPeriodHint }}</span>
         </div>
       </div>
+      <div
+        class="stat-card storm-stat clickable"
+        v-if="storm.suppressed_today > 0"
+        title="今日合并抑制的同源重复告警，点击查看明细"
+        @click="goAlarms"
+      >
+        <div class="stat-num">{{ storm.suppressed_today }}</div>
+        <div class="stat-label">
+          风暴抑制
+          <span class="stat-sub">今日合并抑制</span>
+        </div>
+      </div>
     </div>
 
     <el-row :gutter="16" class="main-row">
@@ -1037,6 +1049,16 @@ onUnmounted(() => {
 }
 .stat-card.danger {
   border-top-color: #f56c6c;
+}
+.stat-card.storm-stat {
+  border-top-color: #e6a23c;
+}
+.stat-card.clickable {
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+.stat-card.clickable:hover {
+  box-shadow: 0 4px 14px rgba(230, 162, 60, 0.28);
 }
 .stat-num {
   font-size: 28px;
