@@ -86,6 +86,54 @@ def _scope_project_ids(db: Session, scope: DataScope) -> set[int] | None:
     return set(ids)
 
 
+def _periods_in_range(s: datetime, e: datetime, gran: str) -> list[str]:
+    """生成 [s,e] 内按 granularity 去重排序的周期 key 列表（含空桶，供零填充）。
+
+    逐日步进并对每个日期用 ``_period_key`` 映射周期 key，天然兼容 day/week/month
+    （多天落在同一周/月时去重保留首次出现，即时间上最早的桶）。
+    """
+    keys: list[str] = []
+    seen: set[str] = set()
+    cur = s
+    guard = 0
+    while cur <= e and guard < 4000:
+        k = _period_key(cur.isoformat(), gran)
+        if k not in seen:
+            seen.add(k)
+            keys.append(k)
+        cur += timedelta(days=1)
+        guard += 1
+    return keys
+
+
+def _compute_device_trend(
+    db: Session, scope: DataScope, s: datetime, e: datetime, gran: str
+) -> list[dict]:
+    """设备活跃数逐周期趋势（窗口内按周期分桶的活跃设备数，零填充）。
+
+    - 活跃设备：该周期内至少上报一次定位的设备（DISTINCT device_no）。
+    - 零填充：保证窗口内每个周期都有桶，使「活跃数突降（大批设备掉线）」可被异常
+      检测识别（缺失桶会被误判为断点，故显式补 0）。
+    - 用于「趋势预测异常检测」的 设备在线/活跃 序列。
+    """
+    allowed = _scope_project_ids(db, scope)
+    bucket_ts = func.date_trunc(gran, DeviceLocation.report_time)
+    stmt = select(
+        bucket_ts.label("bucket"),
+        func.count(func.distinct(DeviceLocation.device_no)).label("active"),
+    ).where(DeviceLocation.report_time >= s, DeviceLocation.report_time <= e)
+    if allowed is not None:
+        stmt = stmt.where(DeviceLocation.project_id.in_(allowed))
+    stmt = stmt.group_by(bucket_ts).order_by(bucket_ts.asc())
+    rows = db.execute(stmt).all()
+    counts: dict[str, int] = {}
+    for bucket, active in rows:
+        if bucket is None:
+            continue
+        counts[_period_key(bucket.isoformat(), gran)] = active
+    return [{"period": p, "active": counts.get(p, 0)} for p in _periods_in_range(s, e, gran)]
+
+
 def _compute_device_stats(db: Session, scope: DataScope, s: datetime, e: datetime) -> dict:
     """设备在线率（实时心跳）+ 区间活跃设备数（按所选窗口周期联动）。
 
@@ -282,6 +330,8 @@ def stats(
     # 设备在线率 / 围栏统计：与趋势图同一窗口 [s,e] 周期联动，部门隔离一致
     device_stats = _compute_device_stats(db, scope, s, e)
     fence_stats = _compute_fence_stats(db, scope, s, e)
+    # 设备活跃数逐周期趋势（零填充），供「趋势异常检测」的设备在线/活跃序列
+    device_trend_period = _compute_device_trend(db, scope, s, e, gran)
 
     # 近 7 天每日告警趋势
     trend: list[dict] = []
@@ -326,6 +376,7 @@ def stats(
             "trend_end": trend_end,
             "current_period": current_period,
             "device_stats": device_stats,
+            "device_trend_period": device_trend_period,
             "fence_stats": fence_stats,
         },
         message="查询成功",

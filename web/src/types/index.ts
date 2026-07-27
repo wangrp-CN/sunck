@@ -760,6 +760,8 @@ export interface DashboardStats {
   current_period?: string;
   // 设备在线率（实时心跳）：总/在线/在线率%/区间活跃设备数（随窗口周期联动）
   device_stats?: DeviceStats;
+  // 设备活跃数逐周期趋势（零填充），供「趋势异常检测」的设备在线/活跃序列
+  device_trend_period?: { period: string; active: number }[];
   // 围栏统计：总/启用/窗口内监控围栏数/按类型（随窗口周期联动）
   fence_stats?: FenceStats;
 }

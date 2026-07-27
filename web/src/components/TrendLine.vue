@@ -19,6 +19,7 @@ const props = withDefaults(
     threshold?: number; // 可选阈值虚线（如风险预警 60）
     showArea?: boolean;
     valueDigits?: number;
+    anomalies?: boolean[]; // 与 points 对齐；命中位置绘制红色异常点
   }>(),
   { height: 40, width: 140, color: "#409eff", showArea: true, valueDigits: 0 },
 );
@@ -138,6 +139,20 @@ const ariaLabel = computed(() =>
     <!-- 折线 -->
     <path :d="linePath" fill="none" :stroke="color" stroke-width="1.6" class="line" />
 
+    <!-- 异常点：红点标记（趋势异常检测命中） -->
+    <circle
+      v-for="(p, i) in points"
+      v-show="anomalies && anomalies[i]"
+      :key="'anom-' + i"
+      :cx="xAt(i)"
+      :cy="yAt(p.v)"
+      r="3"
+      fill="#f56c6c"
+      stroke="#fff"
+      stroke-width="1"
+      class="anomaly-dot"
+    />
+
     <!-- 末点标记 -->
     <circle
       v-if="last"
@@ -151,7 +166,9 @@ const ariaLabel = computed(() =>
     <!-- 逐点悬浮提示 -->
     <g v-for="(p, i) in points" :key="i">
       <circle :cx="xAt(i)" :cy="yAt(p.v)" r="6" fill="transparent" class="hit">
-        <title>{{ fmtDate(p.t) }} · {{ fmtVal(p.v) }}</title>
+        <title>
+          {{ fmtDate(p.t) }} · {{ fmtVal(p.v) }}{{ anomalies && anomalies[i] ? " · 异常" : "" }}
+        </title>
       </circle>
     </g>
   </svg>
@@ -175,6 +192,9 @@ const ariaLabel = computed(() =>
 .last-dot {
   stroke: #fff;
   stroke-width: 1;
+}
+.anomaly-dot {
+  pointer-events: none;
 }
 .hit {
   pointer-events: all;

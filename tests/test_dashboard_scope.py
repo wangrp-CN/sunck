@@ -386,6 +386,13 @@ def test_dashboard_stats_device_fence(client, admin_token):
         assert ds["online"] <= ds["total"], ds
         assert ds["window_active"] >= 0 and fs["monitored_in_window"] >= 0
 
+        # 设备活跃趋势序列：随窗口返回零填充的逐周期桶，字段自洽
+        dtp = d["device_trend_period"]
+        assert isinstance(dtp, list), dtp
+        for item in dtp:
+            assert set(item.keys()) >= {"period", "active"}, item
+            assert isinstance(item["active"], int) and item["active"] >= 0, item
+
         # 远过去窗口（2020）：无设备上报 → window_active 必须为 0（窗口过滤生效）
         r2020 = client.get(
             "/api/v1/dashboard/stats",
@@ -397,6 +404,10 @@ def test_dashboard_stats_device_fence(client, admin_token):
             },
         ).json()["data"]
         assert r2020["device_stats"]["window_active"] == 0, r2020["device_stats"]
+        # 2020 设备活跃趋势应全为 0（无上报 → 零填充桶）
+        assert all(x["active"] == 0 for x in r2020["device_trend_period"]), r2020[
+            "device_trend_period"
+        ]
 
         # 宽窗口基准（含种子计划 2026~2027 与未来计划 2030），插入前计数
         WIDE = {

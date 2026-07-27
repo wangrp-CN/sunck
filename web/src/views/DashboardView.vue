@@ -31,6 +31,7 @@ import {
   type SnapshotPreviewResult,
 } from "@/api/alarm";
 import { formatPeriodLabel, granularityLabel } from "@/utils/period";
+import { detectAnomalies } from "@/utils/anomaly";
 import { wgs84ToGcj02 } from "@/utils/geo";
 import { pct, tc, previewToTSV, snapTrendMaxOf } from "@/utils/snapshot";
 import MapPanel from "@/components/MapPanel.vue";
@@ -150,6 +151,30 @@ const maxHandle = computed(() => maxOf(stats.value?.alarm_by_handle ?? []));
 const maxDevice = computed(() => maxOf(stats.value?.device_by_type ?? []));
 const trendPeriod = computed(() => stats.value?.alarm_trend_period ?? []);
 const trendMax = computed(() => maxOf(trendPeriod.value));
+
+// 趋势异常检测（统计基线法）：对四类序列分别计算，命中位置用于高亮
+const alarmAnomalies = computed<boolean[]>(() =>
+  detectAnomalies(trendPeriod.value.map((x) => x.count)).map((a) => a.isAnomaly),
+);
+const corrAnomalies = computed<boolean[]>(() =>
+  detectAnomalies(corrTrendPoints.value.map((x) => x.v)).map((a) => a.isAnomaly),
+);
+const riskAnomaliesMap = computed<Record<number, boolean[]>>(() => {
+  const m: Record<number, boolean[]> = {};
+  for (const it of riskAlerts.value) {
+    const pts = alertTrendMap.value[it.project_id] || [];
+    m[it.project_id] = detectAnomalies(pts.map((p) => p.v)).map((a) => a.isAnomaly);
+  }
+  return m;
+});
+// 设备活跃趋势（设备在线/活跃序列）：零填充序列 + 异常检测
+const deviceTrend = computed(() => stats.value?.device_trend_period ?? []);
+const deviceTrendPoints = computed(() =>
+  deviceTrend.value.map((d) => ({ t: d.period, v: d.active })),
+);
+const deviceAnomalies = computed<boolean[]>(() =>
+  detectAnomalies(deviceTrendPoints.value.map((x) => x.v)).map((a) => a.isAnomaly),
+);
 
 const counts = computed(() => stats.value?.counts);
 
@@ -677,6 +702,7 @@ onUnmounted(() => {
               <TrendLine
                 v-if="(alertTrendMap[a.project_id] || []).length"
                 :points="alertTrendMap[a.project_id]"
+                :anomalies="riskAnomaliesMap[a.project_id]"
                 :threshold="RISK_ALERT_THRESHOLD"
                 :color="alertRiskColor(a.risk_level)"
                 :height="34"
@@ -704,6 +730,7 @@ onUnmounted(() => {
           <TrendLine
             v-if="corrTrendPoints.length"
             :points="corrTrendPoints"
+            :anomalies="corrAnomalies"
             :height="40"
             :width="248"
             color="#f56c6c"
@@ -779,6 +806,26 @@ onUnmounted(() => {
           </div>
         </el-card>
 
+        <!-- 趋势异常检测：设备在线/活跃序列（活跃设备数逐周期，异常红点标注） -->
+        <el-card shadow="never" class="bar-card devtrend-card">
+          <template #header>
+            <div class="card-head">
+              <span class="card-title">设备活跃趋势</span>
+              <span class="card-sub">异常周期红点标注</span>
+            </div>
+          </template>
+          <TrendLine
+            v-if="deviceTrendPoints.length"
+            :points="deviceTrendPoints"
+            :anomalies="deviceAnomalies"
+            :height="40"
+            :width="248"
+            color="#67c23a"
+            :value-digits="0"
+          />
+          <span v-else class="muted">暂无数据</span>
+        </el-card>
+
         <el-card shadow="never" class="bar-card trend-card">
           <template #header>
             <div class="card-head">
@@ -821,12 +868,14 @@ onUnmounted(() => {
           </template>
           <div class="trend-range-hint">
             粒度：{{ granularityLabel(trendGranularity) }} · 窗口 {{ stats?.trend_start }} ~ {{ stats?.trend_end }} · 共 {{ trendPeriod.length }} 个周期
+            <span v-if="alarmAnomalies.some((a) => a)" class="anomaly-hint">● 红=异常周期</span>
           </div>
-          <div v-for="x in trendPeriod" :key="x.period" class="bar-row">
+          <div v-for="(x, i) in trendPeriod" :key="x.period" class="bar-row">
             <span class="bar-label">{{ formatPeriodLabel(x.period, trendGranularity) }}</span>
             <div class="bar-track">
               <div
                 class="bar-fill"
+                :class="{ anomaly: alarmAnomalies[i] }"
                 :style="{ width: (x.count / trendMax * 100) + '%', background: '#e6a23c' }"
               />
             </div>
@@ -1235,6 +1284,14 @@ onUnmounted(() => {
   height: 100%;
   border-radius: 7px;
   transition: width 0.4s ease;
+}
+.bar-fill.anomaly {
+  background: #f56c6c !important;
+}
+.anomaly-hint {
+  color: #f56c6c;
+  font-weight: 600;
+  margin-left: 8px;
 }
 .bar-val {
   width: 32px;

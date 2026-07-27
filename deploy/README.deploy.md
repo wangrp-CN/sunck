@@ -503,3 +503,13 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
 - **接口**：`GET /v1/metrics/alarm-storm` 暴露 `{ window_seconds, suppressed_today }`。
 - **前端**：告警管理页头部「今日合并抑制 N 条」标签 + 列表行「合并抑制」徽标（`suppressed_count`）；**监控大屏**右侧新增「告警风暴抑制」卡（含今日合并抑制量 + 抑制窗口秒数，随 15s 轮询刷新）。
 - **零回归**：不改动管线主路径，仅在去重命中分支追加计数；`to_alarm_out` 对外携带 `suppressed_count`。
+
+### 13.7 趋势预测异常检测（anomaly detection）
+
+对大屏四类时间序列做**统计基线法**异常检测，命中周期在趋势图上红点/红柱标注，便于一眼识别突变。
+
+- **算法**（`web/src/utils/anomaly.ts`，纯函数、零依赖）：对每点用其**之前**的滚动窗口（默认 7 个周期，不含当前点）估计基线均值/标准差，计算 z-score；`|z| > k`（默认 2.0）判异常，方向分 `spike`（突增）/ `drop`（突降）。历史样本不足 `minTrailing`(3) 不判；基线恒定（std≈0）时任何偏离常量即判异常（避免平稳后突跳漏检）；序列过短（`< minPoints`(5)）整条不判。
+- **监控 4 条序列**：① 告警量趋势（大屏趋势柱状图，异常柱变红 + 头部「● 红=异常周期」提示）；② 项目风险指数（各项目 `TrendLine` 红点）；③ 跨设备关联数（`TrendLine` 红点）；④ 设备在线/活跃（新增后端 `device_trend_period` 逐周期零填充活跃设备数，大屏新增「设备活跃趋势」卡 + `TrendLine` 红点）。
+- **后端**：`app/api/v1/dashboard.py` 新增 `_compute_device_trend`（按周期 `date_trunc` 聚合 DISTINCT device_no，零填充至窗口全周期）+ `_periods_in_range`，`/stats` 响应新增 `device_trend_period`。其余三类序列前端直接复用既有数据（告警 `alarm_trend_period`、风险 `getRiskTrend`、关联 `getCorrelationTrend`）本地计算，无新增后端接口、无额外开销。
+- **前端**：`TrendLine.vue` 新增 `anomalies?: boolean[]` prop 渲染红点 + 悬浮标注「异常」；`DashboardView.vue` 四序列计算 `detectAnomalies` 并透传；新增「设备活跃趋势」卡。
+- **测试**：`web/src/utils/anomaly.spec.ts`（6 例：过短/平稳/突增/突降/样本不足/k 可调）；`test_dashboard_scope.py` 增补 `device_trend_period` 字段与零填充断言。
