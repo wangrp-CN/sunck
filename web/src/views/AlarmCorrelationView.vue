@@ -5,13 +5,16 @@ import {
   getCorrelations,
   getCorrelationMembers,
   getCorrelationTrend,
+  getCorrelationHeatmap,
   runCorrelations,
   type CorrelationItem,
   type CorrelationMember,
   type CorrelationTrendPoint,
+  type CorrelationHeatPoint,
 } from "@/api/metrics";
 import { createCorrelationSocket } from "@/utils/correlationWs";
 import TrendLine from "@/components/TrendLine.vue";
+import CorrelationHeatmap from "@/components/CorrelationHeatmap.vue";
 
 const auth = useAuthStore();
 
@@ -19,6 +22,7 @@ const loading = ref(false);
 const onlyCross = ref(false);
 const items = ref<CorrelationItem[]>([]);
 const trend = ref<CorrelationTrendPoint[]>([]);
+const heatPoints = ref<CorrelationHeatPoint[]>([]);
 
 // 成员明细懒加载缓存：groupId -> {loading, items}
 const memberMap = reactive<Record<number, { loading: boolean; items: CorrelationMember[] }>>({});
@@ -37,12 +41,16 @@ const summary = computed(() => {
 async function load() {
   loading.value = true;
   try {
-    const [res, t] = await Promise.all([
+    const [res, t, hm] = await Promise.all([
       getCorrelations(onlyCross.value, 100),
       getCorrelationTrend(30, onlyCross.value).catch(() => ({ series: [] as CorrelationTrendPoint[] })),
+      getCorrelationHeatmap(onlyCross.value, 500).catch(() => ({
+        points: [] as CorrelationHeatPoint[],
+      })),
     ]);
     items.value = res.items;
     trend.value = t.series;
+    heatPoints.value = hm.points;
   } catch (e: any) {
     ElMessage.error(e?.message || "加载关联事件组失败");
   } finally {
@@ -51,6 +59,15 @@ async function load() {
 }
 
 const trendPoints = computed(() => trend.value.map((p) => ({ t: p.date, v: p.count })));
+
+// 点击热力点：提示该共因的根因摘要（便于从空间视图快速定位事件组）
+function onHeatSelect(p: CorrelationHeatPoint) {
+  ElMessage({
+    message: p.root_cause_hint || `${p.project_name || "项目"} · 告警 ${p.alarm_count} 条`,
+    type: "info",
+    duration: 4000,
+  });
+}
 
 async function onRecalc() {
   loading.value = true;
@@ -223,6 +240,16 @@ onUnmounted(() => {
       <el-empty v-else description="暂无趋势数据" :image-size="42" />
     </el-card>
 
+    <el-card shadow="never" class="heat-card">
+      <div class="trend-head">
+        <span class="card-title">跨设备共因空间热力</span>
+        <span class="trend-hint">
+          按事件组代表坐标投影 · 热度=告警数 · {{ onlyCross ? "仅跨设备共因" : "全部事件组" }}
+        </span>
+      </div>
+      <CorrelationHeatmap :points="heatPoints" :height="360" @select="onHeatSelect" />
+    </el-card>
+
     <el-card shadow="never">
       <el-table
         :data="items"
@@ -380,6 +407,9 @@ onUnmounted(() => {
   height: 80px;
 }
 .trend-card {
+  margin-bottom: 12px;
+}
+.heat-card {
   margin-bottom: 12px;
 }
 .trend-head {

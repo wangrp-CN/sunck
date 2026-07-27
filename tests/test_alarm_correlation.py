@@ -302,3 +302,122 @@ def _all_scope(db):
     from app.core.data_scope import DataScope
 
     return DataScope(is_all=True)
+
+
+def test_correlation_heatmap_endpoint(client: TestClient, admin_token: str, wipe):
+    """热力图：geo 组由 grid_cell 反解坐标；fence 组由成员设备最新定位均值解析；
+    每点带原始 WGS-84 与转换后 gcj02，weight=告警数；only_cross_device 生效。"""
+    import json
+
+    from app.model.realtime import DeviceLocation
+
+    h = {"Authorization": f"Bearer {admin_token}"}
+    db = SessionLocal()
+    dev_nos = ["HM-A-7001", "HM-B-7002"]
+    loc_rows: list[DeviceLocation] = []
+    try:
+        pid = db.scalar(select(Project.id).where(Project.is_deleted.is_(False)))
+        assert pid is not None
+        now = datetime.now(timezone.utc)
+
+        # 成员设备定位（WGS-84）：均值应为 (116.31, 39.81)
+        db.execute(delete(DeviceLocation).where(DeviceLocation.device_no.in_(dev_nos)))
+        for dno, (lng, lat) in zip(dev_nos, [(116.30, 39.80), (116.32, 39.82)]):
+            loc = DeviceLocation(
+                device_no=dno,
+                project_id=pid,
+                longitude=lng,
+                latitude=lat,
+                report_time=now,
+                status="在线",
+            )
+            db.add(loc)
+            loc_rows.append(loc)
+
+        # geo 组：lat=39.90, lng=116.40 → grid_cell = "3990,11640"（与 _scope_of 编码对称）
+        geo_cell = f"{round(39.90 / 0.01):.0f},{round(116.40 / 0.01):.0f}"
+        rows = [
+            CorrelatedEventGroup(
+                project_id=pid,
+                project_name="P",
+                spatial_type="geo",
+                scope_key=geo_cell,
+                grid_cell=geo_cell,
+                started_at=now,
+                alarm_count=5,
+                device_count=3,
+                is_cross_device=True,
+                max_level="严重",
+                computed_at=now,
+            ),
+            CorrelatedEventGroup(
+                project_id=pid,
+                project_name="P",
+                spatial_type="fence",
+                scope_key="围栏C77H",
+                fence_name="围栏C77H",
+                device_nos=json.dumps(dev_nos),
+                started_at=now,
+                alarm_count=3,
+                device_count=2,
+                is_cross_device=True,
+                max_level="警告",
+                computed_at=now,
+            ),
+            # 单机、非跨设备：only_cross_device=True 时不应出现
+            CorrelatedEventGroup(
+                project_id=pid,
+                project_name="P",
+                spatial_type="device",
+                scope_key="单机C77H",
+                device_nos=json.dumps(["HM-A-7001"]),
+                started_at=now,
+                alarm_count=1,
+                device_count=1,
+                is_cross_device=False,
+                max_level="提示",
+                computed_at=now,
+            ),
+        ]
+        db.add_all(rows)
+        db.commit()
+    finally:
+        db.close()
+
+    # 默认 only_cross_device=True：应返回 geo + fence 两个跨设备点
+    r = client.get("/api/v1/metrics/correlations/heatmap", headers=h)
+    assert r.status_code == 200, r.text
+    d = r.json()["data"]
+    assert d["only_cross_device"] is True
+    pts = d["points"]
+    assert d["total"] == len(pts)
+
+    geo_pt = next((p for p in pts if p["spatial_type"] == "geo"), None)
+    assert geo_pt is not None, "geo 组应解析坐标"
+    assert abs(geo_pt["lng"] - 116.40) < 1e-6
+    assert abs(geo_pt["lat"] - 39.90) < 1e-6
+    assert geo_pt["weight"] == 5
+    assert geo_pt["gcj02"]["lng"] != geo_pt["lng"], "gcj02 应与 WGS-84 有偏移"
+
+    fence_pt = next((p for p in pts if p["spatial_type"] == "fence"), None)
+    assert fence_pt is not None, "fence 组应由设备定位均值解析"
+    assert abs(fence_pt["lng"] - 116.31) < 1e-6
+    assert abs(fence_pt["lat"] - 39.81) < 1e-6
+    assert fence_pt["weight"] == 3
+
+    # 非跨设备的单机组不应出现在默认结果中
+    assert all(p["is_cross_device"] for p in pts)
+
+    # only_cross_device=false：单机组坐标可解析（成员设备有定位）→ 出现
+    r2 = client.get("/api/v1/metrics/correlations/heatmap?only_cross_device=false", headers=h)
+    assert r2.status_code == 200, r2.text
+    pts2 = r2.json()["data"]["points"]
+    assert any(p["spatial_type"] == "device" for p in pts2)
+
+    # 清理定位数据（wipe 只清关联组与告警）
+    db = SessionLocal()
+    try:
+        db.execute(delete(DeviceLocation).where(DeviceLocation.device_no.in_(dev_nos)))
+        db.commit()
+    finally:
+        db.close()

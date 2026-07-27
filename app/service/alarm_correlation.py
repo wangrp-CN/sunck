@@ -30,7 +30,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.core.data_scope import DataScope, apply_data_scope
 from app.model.alarm import Alarm
-from app.model.correlation import CorrelatedEventGroup
+from app.model.correlation import CorrelatedEventGroup, _json_list
 from app.model.project import Project
 from app.model.realtime import DeviceLocation
 
@@ -360,6 +360,110 @@ def get_correlation_summary(
         "today_projects": today_projects,
         "by_level": by_level,
     }
+
+
+def _decode_grid_cell(cell: str | None) -> tuple[float, float] | None:
+    """反解 geo 网格键 ``"row,col"`` → (lng, lat) 网格中心（WGS-84）。
+
+    与 :func:`_scope_of` 的编码 ``f"{round(lat/GRID):.0f},{round(lng/GRID):.0f}"`` 对称。
+    """
+    if not cell:
+        return None
+    try:
+        row_s, col_s = cell.split(",")
+        lat = int(round(float(row_s))) * GRID_SIZE_DEG
+        lng = int(round(float(col_s))) * GRID_SIZE_DEG
+        return lng, lat
+    except (ValueError, AttributeError):
+        return None
+
+
+def get_correlation_heatmap(
+    db: Session,
+    allowed_project_ids: set[int],
+    only_cross_device: bool = True,
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """跨设备共因事件组的空间热力点（WGS-84，受数据范围约束）。
+
+    为每个事件组解析一个代表经纬度：
+    - ``geo`` 组：由 ``grid_cell`` 反解网格中心；
+    - ``fence`` / ``device`` 组：取成员设备最新定位的均值（经 ``DeviceLocation``）。
+
+    仅返回可解析出坐标的点。``weight`` 取告警数（供前端映射热力强度）。
+    默认 ``only_cross_device=True``——热力图聚焦「跨设备共因」的空间聚集。
+    """
+    if not allowed_project_ids:
+        return []
+    stmt = select(CorrelatedEventGroup).where(
+        CorrelatedEventGroup.project_id.in_(allowed_project_ids)
+    )
+    if only_cross_device:
+        stmt = stmt.where(CorrelatedEventGroup.is_cross_device.is_(True))
+    stmt = stmt.order_by(CorrelatedEventGroup.alarm_count.desc())
+    if limit:
+        stmt = stmt.limit(limit)
+    groups = db.scalars(stmt).all()
+    if not groups:
+        return []
+
+    # 收集需按设备定位解析坐标的设备编号（fence / device 组）
+    need_devices: set[str] = set()
+    for g in groups:
+        if g.spatial_type != "geo":
+            for dno in _json_list(g.device_nos):
+                if dno:
+                    need_devices.add(dno)
+    dev_loc: dict[str, tuple[float, float]] = {}
+    if need_devices:
+        loc_rows = db.execute(
+            select(
+                DeviceLocation.device_no,
+                DeviceLocation.longitude,
+                DeviceLocation.latitude,
+            )
+            .where(DeviceLocation.device_no.in_(need_devices))
+            .distinct(DeviceLocation.device_no)
+            .order_by(DeviceLocation.device_no, DeviceLocation.report_time.desc())
+        ).all()
+        for dno, lng, lat in loc_rows:
+            if lng is not None and lat is not None:
+                dev_loc[dno] = (lng, lat)
+
+    points: list[dict[str, Any]] = []
+    for g in groups:
+        lng: float | None = None
+        lat: float | None = None
+        if g.spatial_type == "geo":
+            coord = _decode_grid_cell(g.grid_cell)
+            if coord:
+                lng, lat = coord
+        else:
+            dnos = [d for d in _json_list(g.device_nos) if d in dev_loc]
+            if dnos:
+                lng = sum(dev_loc[d][0] for d in dnos) / len(dnos)
+                lat = sum(dev_loc[d][1] for d in dnos) / len(dnos)
+        if lng is None or lat is None:
+            continue
+        points.append(
+            {
+                "id": g.id,
+                "project_id": g.project_id,
+                "project_name": g.project_name,
+                "spatial_type": g.spatial_type,
+                "fence_name": g.fence_name,
+                "grid_cell": g.grid_cell,
+                "lng": lng,
+                "lat": lat,
+                "weight": g.alarm_count,
+                "alarm_count": g.alarm_count,
+                "device_count": g.device_count,
+                "max_level": g.max_level,
+                "is_cross_device": g.is_cross_device,
+                "root_cause_hint": g.root_cause_hint,
+            }
+        )
+    return points
 
 
 def get_correlation_trend(

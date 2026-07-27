@@ -14,6 +14,7 @@ from app.core.data_scope import DataScope, apply_data_scope
 from app.core.database import get_db, get_read_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.exceptions import BusinessError
+from app.core.geo import wgs84_to_gcj02
 from app.core.responses import ApiResponse
 from app.model.project import Project
 from app.model.system import User
@@ -188,6 +189,38 @@ def correlations_trend(
     )
     return ApiResponse.success(
         data={"days": days, "only_cross_device": only_cross_device, "series": series}
+    )
+
+
+@router.get(
+    "/correlations/heatmap",
+    dependencies=[Depends(require_permissions("dashboard:view"))],
+)
+def correlations_heatmap(
+    db: Session = Depends(get_read_db),
+    scope: DataScope = Depends(get_data_scope),
+    only_cross_device: bool = Query(True, description="仅统计跨设备共因（热力默认聚焦共因）"),
+    limit: int = Query(500, ge=1, le=2000, description="返回热力点上限"),
+):
+    """跨设备共因事件组的空间热力点（受数据范围约束）。
+
+    每个点带原始 WGS-84 (``lng``/``lat``) 与转换后的 ``gcj02`` (高德展示用)，
+    ``weight`` 为告警数（前端映射热力强度）。用于对比大屏/关联视图的空间热力图。
+    """
+    proj_stmt = apply_data_scope(
+        select(Project.id).where(Project.is_deleted.is_(False)), Project, scope
+    )
+    allowed = {row[0] for row in db.execute(proj_stmt).all()}
+    if not allowed:
+        return ApiResponse.success(data={"total": 0, "points": []})
+    points = corr_svc.get_correlation_heatmap(
+        db, allowed, only_cross_device=only_cross_device, limit=limit
+    )
+    for p in points:
+        glng, glat = wgs84_to_gcj02(p["lng"], p["lat"])
+        p["gcj02"] = {"lng": glng, "lat": glat}
+    return ApiResponse.success(
+        data={"total": len(points), "only_cross_device": only_cross_device, "points": points}
     )
 
 

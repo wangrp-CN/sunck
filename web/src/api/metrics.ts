@@ -196,3 +196,41 @@ export function getCorrelationTrend(
     params: { days, only_cross_device: onlyCrossDevice },
   });
 }
+
+// 关联热力点：每个事件组的空间代表坐标（原始 WGS-84 + 转换后 gcj02），
+// weight=告警数（前端映射热力强度）。geo 组由网格反解，fence/device 组由设备定位均值。
+export interface CorrelationHeatPoint {
+  id: number;
+  project_id: number | null;
+  project_name: string | null;
+  spatial_type: "fence" | "geo" | "device";
+  fence_name: string | null;
+  grid_cell: string | null;
+  lng: number; // WGS-84
+  lat: number; // WGS-84
+  gcj02: { lng: number; lat: number };
+  weight: number;
+  alarm_count: number;
+  device_count: number;
+  max_level: string | null;
+  is_cross_device: boolean;
+  root_cause_hint: string | null;
+}
+
+export interface CorrelationHeatmapResp {
+  total: number;
+  only_cross_device: boolean;
+  points: CorrelationHeatPoint[];
+}
+
+// 跨设备共因空间热力点（受数据范围约束）
+export function getCorrelationHeatmap(
+  onlyCrossDevice = true,
+  limit = 500,
+): Promise<CorrelationHeatmapResp> {
+  return http<CorrelationHeatmapResp>({
+    url: "/v1/metrics/correlations/heatmap",
+    method: "GET",
+    params: { only_cross_device: onlyCrossDevice, limit },
+  });
+}
