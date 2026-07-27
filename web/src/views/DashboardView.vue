@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
 import { Location } from "@element-plus/icons-vue";
 import { getDashboardStats, getRecentAlarms } from "@/api/dashboard";
 import {
@@ -35,6 +36,11 @@ import { pct, tc, previewToTSV, snapTrendMaxOf } from "@/utils/snapshot";
 import MapPanel from "@/components/MapPanel.vue";
 import WorkPlanPopup from "@/components/WorkPlanPopup.vue";
 import type { DashboardStats, MapDevice, MapFence, RecentAlarm } from "@/types";
+
+const router = useRouter();
+function goAlarms() {
+  router.push("/alarms");
+}
 
 const stats = ref<DashboardStats | null>(null);
 const recent = ref<RecentAlarm[]>([]);
@@ -694,12 +700,12 @@ onUnmounted(() => {
           <span v-else class="muted">暂无趋势</span>
         </el-card>
 
-        <!-- 告警风暴抑制 v2：今日同源合并抑制量 + 抑制窗口 -->
-        <el-card shadow="never" class="bar-card storm-card">
+        <!-- 告警风暴抑制 v2：今日同源合并抑制量 + 抑制窗口（点击查看被抑制明细） -->
+        <el-card shadow="never" class="bar-card storm-card clickable-card" @click="goAlarms">
           <template #header>
             <div class="card-head">
               <span class="card-title">告警风暴抑制</span>
-              <span class="card-sub">同源自动合并</span>
+              <span class="card-sub">同源自动合并 · 点击看明细</span>
             </div>
           </template>
           <div class="storm-bignum">{{ storm.suppressed_today }}</div>
@@ -1353,6 +1359,13 @@ onUnmounted(() => {
 .storm-card {
   margin-bottom: 16px;
   border-top: 3px solid #e6a23c;
+}
+.clickable-card {
+  cursor: pointer;
+  transition: box-shadow 0.15s, transform 0.15s;
+}
+.clickable-card:hover {
+  box-shadow: 0 4px 14px rgba(230, 162, 60, 0.28);
 }
 .storm-bignum {
   font-size: 30px;
