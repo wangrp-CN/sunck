@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Location } from "@element-plus/icons-vue";
-import { getDashboardStats, getRecentAlarms, getEffectiveness, exportEffectivenessReport } from "@/api/dashboard";
+import { getDashboardStats, getRecentAlarms, getEffectiveness, exportEffectivenessReport, getProjectTrendImage } from "@/api/dashboard";
 import {
   getRiskAlerts,
   getRiskTrend,
@@ -206,6 +206,30 @@ function trendText(t: EffTrend | undefined): string {
 // 下钻：点击项目行切换头部指标视图
 function drillProject(row: ByProjectRow) {
   effProject.value = effProject.value === row.project_id ? null : row.project_id;
+}
+
+// 趋势大图弹窗：点击下钻表「大图」按钮，拉取单项目 5 指标复合趋势大图(PNG)
+const effBigVisible = ref(false);
+const effBigLoading = ref(false);
+const effBigImgUrl = ref<string | null>(null);
+const effBigName = ref("");
+async function openEffBigImage(row: ByProjectRow) {
+  effBigName.value = row.project_name;
+  effBigVisible.value = true;
+  effBigLoading.value = true;
+  effBigImgUrl.value = null;
+  try {
+    const blob = await getProjectTrendImage({
+      projectId: row.project_id,
+      days: effDays.value,
+      mode: "large",
+    });
+    effBigImgUrl.value = URL.createObjectURL(blob);
+  } catch (e) {
+    console.error("加载趋势大图失败", e);
+  } finally {
+    effBigLoading.value = false;
+  }
 }
 
 // 时间序列 sparkline：取某指标的时间桶序列（series 由后端按窗口自适应步长聚合）
@@ -1237,6 +1261,11 @@ onUnmounted(() => {
                   <div :class="trendCls(row.anomaly.trend)" class="drill-trend">{{ trendArrow(row.anomaly.trend) }} {{ trendText(row.anomaly.trend) }}</div>
                 </template>
               </el-table-column>
+              <el-table-column label="趋势" align="center" width="76">
+                <template #default="{ row }">
+                  <el-button size="small" @click.stop="openEffBigImage(row)">大图</el-button>
+                </template>
+              </el-table-column>
             </el-table>
           </div>
         </el-card>
@@ -1557,6 +1586,22 @@ onUnmounted(() => {
           :disabled="!snapPreview"
           @click="exportFromPreview('pdf')"
         >导出快照 PDF</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 趋势大图弹窗：单项目 5 指标复合趋势（PNG） -->
+    <el-dialog v-model="effBigVisible" :title="`趋势大图 · ${effBigName}`" width="820px" append-to-body>
+      <div v-loading="effBigLoading" class="eff-big-img">
+        <img
+          v-if="effBigImgUrl"
+          :src="effBigImgUrl"
+          alt="趋势大图"
+          style="width: 100%; border: 1px solid #ebeef5; border-radius: 8px"
+        />
+        <el-empty v-else description="暂无数据" />
+      </div>
+      <template #footer>
+        <el-button @click="effBigVisible = false">关闭</el-button>
       </template>
     </el-dialog>
   </div>

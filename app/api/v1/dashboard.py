@@ -789,3 +789,28 @@ def effectiveness_export(
         media_type=media_type,
         headers={"Content-Disposition": disposition},
     )
+
+
+@router.get(
+    "/effectiveness/project-trend-image",
+    summary="单项目趋势大图(PNG)",
+)
+def effectiveness_project_trend_image(
+    db: Session = Depends(get_read_db),
+    scope: DataScope = Depends(get_data_scope),
+    project_id: int = Query(..., ge=1, description="目标项目 ID"),
+    days: int = Query(30, ge=7, le=365, description="趋势统计窗口(天)"),
+    mode: str = Query("large", description="图像尺寸：large(720x220) | small(240x70)"),
+) -> StreamingResponse:
+    """单项目 5 指标复合趋势大图（PNG），供效能看板「趋势大图」弹窗与导出大图页复用。
+
+    数据范围同 /effectiveness（部门隔离）。项目不可见或无数据返回 404（BusinessError）。
+    """
+    from app.service.effectiveness_service import project_series_image
+
+    mode = (mode or "large").lower()
+    w, h = (240, 70) if mode == "small" else (720, 220)
+    png = project_series_image(db, scope, project_id, days=days, width=w, height=h)
+    if png is None:
+        raise BusinessError("该项目在所选窗口内无足够数据生成趋势图", code=404)
+    return StreamingResponse(iter([png]), media_type="image/png")

@@ -636,3 +636,29 @@ def collect_project_series(
         s = _collect_time_series(db, scope, start, end, bucket_days, pid)
         out[pid] = {k: [pt["v"] for pt in pts] for k, pts in s.items()}
     return out
+
+
+def project_series_image(
+    db,
+    scope: DataScope,
+    project_id: int,
+    days: int = 30,
+    width: int = 720,
+    height: int = 220,
+) -> bytes | None:
+    """生成单项目 5 指标复合趋势大图（PNG 字节）。
+
+    复用 compute_effectiveness 的窗口与桶聚合口径（_range + _collect_time_series），
+    与效能看板 sparkline / 导出迷你图同源，保证视觉与数值一致。
+    项目不可见或无数据时返回 None（端点据此返回 404，避免越权泄露）。
+    """
+    from app.service import report_common
+
+    start, end = _range(days)
+    bucket_days = max(1, round(days / 30))
+    s = _collect_time_series(db, scope, start, end, bucket_days, project_id)
+    ser = {k: [pt["v"] for pt in pts] for k, pts in s.items()}
+    # 全序列均为 0（窗口内该项目无告警/派单/隐患活动）→ 视为无数据，返回 None
+    if not ser or not any(any(x != 0 for x in v) for v in ser.values()):
+        return None
+    return report_common.render_composite_sparkline_png(ser, width=width, height=height)

@@ -306,3 +306,36 @@ def test_effectiveness_export_with_project_trend(env):
     )
     assert r_pdf.status_code == 200
     assert b"/Image" in r_pdf.content, "PDF 应含至少一个 /Image 子对象"
+
+
+def test_effectiveness_project_trend_image(env):
+    """单项目趋势大图端点：返回合法 PNG；不存在/无数据项目返回 BusinessError(404)。"""
+    c: TestClient = env["client"]
+    h = _h(env["admin_token"])
+
+    r = c.get(
+        "/api/v1/dashboard/effectiveness/project-trend-image",
+        headers=h,
+        params={"project_id": env["pid"], "days": 30, "mode": "large"},
+    )
+    assert r.status_code == 200, r.text
+    assert r.headers["content-type"] == "image/png"
+    assert r.content[:8] == b"\x89PNG\r\n\x1a\n", "返回的不是 PNG 字节流"
+
+    # small 模式同样返回 PNG
+    r_small = c.get(
+        "/api/v1/dashboard/effectiveness/project-trend-image",
+        headers=h,
+        params={"project_id": env["pid"], "days": 30, "mode": "small"},
+    )
+    assert r_small.status_code == 200
+    assert r_small.headers["content-type"] == "image/png"
+
+    # 不存在的项目（无数据/不可见）返回 BusinessError(code=404)，不泄露、不越权
+    r_none = c.get(
+        "/api/v1/dashboard/effectiveness/project-trend-image",
+        headers=h,
+        params={"project_id": 999999, "days": 30},
+    )
+    assert r_none.status_code == 200
+    assert r_none.json()["code"] == 404

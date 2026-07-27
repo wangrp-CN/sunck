@@ -68,3 +68,21 @@ export function exportEffectivenessReport(
     })
     .then((r) => r.data as Blob);
 }
+
+// 单项目 5 指标复合趋势大图（PNG Blob，供效能看板「趋势大图」弹窗）
+export function getProjectTrendImage(params: {
+  projectId: number;
+  days?: number;
+  mode?: "large" | "small";
+}): Promise<Blob> {
+  return request
+    .get("/v1/dashboard/effectiveness/project-trend-image", {
+      params: {
+        project_id: params.projectId,
+        days: params.days ?? 30,
+        mode: params.mode ?? "large",
+      },
+      responseType: "blob",
+    })
+    .then((r) => r.data as Blob);
+}
