@@ -7,10 +7,12 @@ import {
   getRiskTrend,
   getCorrelationSummary,
   getCorrelationTrend,
+  getAlarmStorm,
   RISK_ALERT_THRESHOLD,
   type RiskAlertItem,
   type CorrelationSummaryResp,
   type CorrelationTrendPoint,
+  type AlarmStormResp,
 } from "@/api/metrics";
 import { createCorrelationSocket } from "@/utils/correlationWs";
 import {
@@ -43,6 +45,8 @@ const alertTrendMap = ref<Record<number, { t: string; v: number }[]>>({});
 // 智能核心 v2：跨设备根因关联（今日新增共因卡片 + 近30天趋势）
 const corrSummary = ref<CorrelationSummaryResp | null>(null);
 const corrTrend = ref<CorrelationTrendPoint[]>([]);
+// 告警风暴抑制 v2：今日同源合并抑制量 + 抑制窗口（秒）
+const storm = ref<AlarmStormResp>({ window_seconds: 0, suppressed_today: 0 });
 const corrTrendPoints = computed(() =>
   corrTrend.value.map((p) => ({ t: p.date, v: p.count })),
 );
@@ -256,6 +260,16 @@ async function load() {
   void loadAlerts();
   // 跨设备关联汇总/趋势独立加载（同上，互不影响主面板）
   void loadCorrelation();
+  // 告警风暴抑制统计独立加载（同上）
+  void loadStorm();
+}
+
+async function loadStorm() {
+  try {
+    storm.value = (await getAlarmStorm()) || storm.value;
+  } catch {
+    /* 拦截器已提示 */
+  }
 }
 
 async function loadCorrelation() {
@@ -678,6 +692,21 @@ onUnmounted(() => {
             :value-digits="0"
           />
           <span v-else class="muted">暂无趋势</span>
+        </el-card>
+
+        <!-- 告警风暴抑制 v2：今日同源合并抑制量 + 抑制窗口 -->
+        <el-card shadow="never" class="bar-card storm-card">
+          <template #header>
+            <div class="card-head">
+              <span class="card-title">告警风暴抑制</span>
+              <span class="card-sub">同源自动合并</span>
+            </div>
+          </template>
+          <div class="storm-bignum">{{ storm.suppressed_today }}</div>
+          <div class="storm-sub">今日合并抑制的同源重复告警</div>
+          <div class="storm-foot">
+            抑制窗口 {{ storm.window_seconds }} 秒 · 窗口内同源仅保留首条，其余自动计入抑制数
+          </div>
         </el-card>
 
         <el-card shadow="never" class="bar-card">
@@ -1319,6 +1348,27 @@ onUnmounted(() => {
   font-size: 12px;
   color: #909399;
   margin: 4px 0 8px;
+}
+/* 告警风暴抑制卡 */
+.storm-card {
+  margin-bottom: 16px;
+  border-top: 3px solid #e6a23c;
+}
+.storm-bignum {
+  font-size: 30px;
+  font-weight: 700;
+  color: #e6a23c;
+  line-height: 1.1;
+}
+.storm-sub {
+  font-size: 12px;
+  color: #909399;
+  margin: 4px 0 8px;
+}
+.storm-foot {
+  font-size: 11px;
+  color: #c0c4cc;
+  margin-top: 4px;
 }
 .alert-row {
   padding: 8px 0;

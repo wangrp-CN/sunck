@@ -83,7 +83,6 @@ vi.mock("@/components/DispatchCreateDialog.vue", () => ({
 }));
 
 import {
-  createDispatch,
   dispatchAction,
   getDispatchOptions,
   getDispatchStats,

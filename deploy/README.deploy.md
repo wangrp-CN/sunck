@@ -501,5 +501,5 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
 
 - **机制**：在既有 `create_alarm` 去重（`alarm:dedup` 占位）基础上增量——同一 `(设备,类型,围栏,状态)` 在窗口内（`app/config.py::alarm_suppress_window_seconds`，默认 `300`s）只产生 1 条告警，重复项合并并**累加 anchor 的 `suppressed_count`**，同时累计当日 Redis 计数器 `alarm:storm:suppressed:{UTC日期}`（2 天 TTL）。
 - **接口**：`GET /v1/metrics/alarm-storm` 暴露 `{ window_seconds, suppressed_today }`。
-- **前端**：告警管理页头部「今日合并抑制 N 条」标签 + 列表行「合并抑制」徽标（`suppressed_count`）。
+- **前端**：告警管理页头部「今日合并抑制 N 条」标签 + 列表行「合并抑制」徽标（`suppressed_count`）；**监控大屏**右侧新增「告警风暴抑制」卡（含今日合并抑制量 + 抑制窗口秒数，随 15s 轮询刷新）。
 - **零回归**：不改动管线主路径，仅在去重命中分支追加计数；`to_alarm_out` 对外携带 `suppressed_count`。
