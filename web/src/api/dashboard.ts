@@ -1,5 +1,10 @@
 import { http } from "@/utils/request";
-import type { DashboardStats, RecentAlarm, ProjectCompareResp } from "@/types";
+import type {
+  DashboardStats,
+  RecentAlarm,
+  ProjectCompareResp,
+  Effectiveness,
+} from "@/types";
 import type { Granularity } from "@/api/alarm";
 
 // 监控大屏聚合统计（支持周期联动：传 granularity + 时间窗）
@@ -30,6 +35,15 @@ export function getRecentAlarms(
 export function getProjectCompare(days = 7): Promise<ProjectCompareResp> {
   return http<ProjectCompareResp>({
     url: "/v1/dashboard/project-compare",
+    method: "GET",
+    params: { days },
+  });
+}
+
+// 闭环效能度量（监测→异常→告警→派单→治理全链路有效性）
+export function getEffectiveness(days = 30): Promise<Effectiveness> {
+  return http<Effectiveness>({
+    url: "/v1/dashboard/effectiveness",
     method: "GET",
     params: { days },
   });

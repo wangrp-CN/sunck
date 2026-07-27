@@ -776,6 +776,29 @@ export interface AnomalyParams {
   min_points: number;
 }
 
+// 闭环效能度量（与后端 GET /v1/dashboard/effectiveness 对齐）
+export interface Effectiveness {
+  days: number;
+  range_start: string;
+  range_end: string;
+  storm: { suppressed: number; alarms: number; rate_pct: number };
+  mttr: { avg_hours: number; resolved: number; resolution_rate_pct: number };
+  dispatch_sla: {
+    closed: number;
+    on_time: number;
+    sla_rate_pct: number;
+    avg_cycle_hours: number;
+  };
+  hazard: {
+    total: number;
+    closed: number;
+    closure_rate_pct: number;
+    on_time_rate_pct: number;
+  };
+  anomaly: { alarms: number; share_pct: number; correlation_dispatches: number };
+  computed_at: string;
+}
+
 // 设备在线率（与后端 /v1/dashboard/stats 的 device_stats 对齐）
 export interface DeviceStats {
   total: number;

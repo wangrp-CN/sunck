@@ -534,3 +534,19 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
 - **预览端点**：`GET /api/v1/metrics/anomalies?lookback_days=30`（`dashboard:view`，数据范围隔离，不落库）返回全部异常明细 + 当前阈值参数；`z=±Infinity` 序列化为哨兵 `±9999`（starlette JSON 不接受 Infinity）。
 - **前端派单入口**：`AlarmView.vue` 操作列新增「派单」按钮（权限 `dispatch:create`），预填 `source_type="alarm"` / `source_id` / 级别 / 根因提示（告警信息），打开 `DispatchCreateDialog` 进入「待派→处理中→已闭环」闭环；类型筛选与标签映射补充 `trend_anomaly`（趋势异常）与 `train_approach`（列车接近预警）。
 - **测试**：`tests/test_anomaly_service.py`（检测口径 spike/drop/常量基线/过短、级别映射、落库幂等二次运行 0 新增、预览端点不落库）；`AlarmView.spec.ts` 补「canDispatch 权限、openDispatch 预填、趋势异常中文标签」用例。
+
+### 13.10 闭环效能度量（反哺调优）
+
+量化「监测 → 异常 → 告警 → 派单 → 治理」全链路有效性，并把指标搬上监控大屏，验证智能核心 v2 的真实成效、反哺阈值调优。
+
+- **服务**：`app/service/effectiveness_service.py` —— `compute_effectiveness(db, scope, days=30)`，所有查询经 `apply_data_scope` 数据范围隔离，只读。软删除模型（dispatch_order / hazard）额外 `is_deleted.is_(False)`；alarm 无软删列跳过。
+- **五项指标**：
+  1. **告警风暴抑制率** `storm.rate_pct` = 区间 `sum(suppressed_count)` / (实际告警 + 被抑制)。
+  2. **告警平均处置时长 MTTR** `mttr.avg_hours`（近似口径：以 `updated_at - alarm_time` 计，仅统计已处置类 `已处理/已忽略/已确认`，且 `updated_at >= alarm_time`；`updated_at` 由 UPDATE 触发，故仅真正经处置更新的告警参与，属保守近似，已在代码注释标注）。
+  3. **派单 SLA 达成率** `dispatch_sla.sla_rate_pct` = 已闭环且 `closed_at <= deadline` / 含时限的已闭环数；附 `avg_cycle_hours`。
+  4. **隐患治理闭环率** `hazard.closure_rate_pct` = 已销号 / 总数；附按期销号率。
+  5. **异常引擎告警占比** `anomaly.share_pct` = `trend_anomaly` 告警 / 告警总量；附共因发起派单数。
+- **端点**：`GET /api/v1/dashboard/effectiveness?days=30`（`dashboard:view`，复用 3s 响应缓存，与 `/stats` 同口径）。
+- **前端**：`DashboardView.vue` 新增「闭环效能度量」卡（蓝顶），五指标网格 + 窗口选择器（近 7/30/90 天，`watch(effDays)` 重拉）；类型 `Effectiveness`（`types/index.ts`）、API `getEffectiveness`（`api/dashboard.ts`）。
+- **测试**：`tests/test_effectiveness.py`（插入前/后绝对值口径：suppressed≥5、dispatch closed/on_time、hazard closed、anomaly alarms、MTTR>0、结构完整性；端点 200 + 字段；空范围比率不为 NaN）；`DashboardView.spec.ts` 补「卡渲染五项标签 + 窗口切换重拉」。
+- **已知近似**：MTTR 依赖处置时的 UPDATE 写回 `updated_at`；若业务后续引入独立 `handle_time` 列可替换为精确值（属后续增强，非缺陷）。

@@ -38,6 +38,7 @@ from app.service.alarm_service import (
     _period_key,
     aggregate_alarms_sql,
 )
+from app.service.effectiveness_service import compute_effectiveness
 from app.service.location_service import latest_locations
 
 router = APIRouter(tags=["大屏"])
@@ -608,3 +609,27 @@ def project_compare(
     # 风险指数降序（高风险项目在前），风险分相同再按原始风险分降序
     items.sort(key=lambda x: (x["risk_index"], x["risk_score"]), reverse=True)
     return ApiResponse.success(data={"window_days": days, "items": items})
+
+
+@router.get("/effectiveness")
+def effectiveness(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_read_db),
+    scope: DataScope = Depends(get_data_scope),
+    days: int = Query(30, ge=7, le=365, description="效能统计窗口(天)"),
+) -> ApiResponse:
+    """闭环效能度量：量化监测→异常→告警→派单→治理全链路有效性（数据范围隔离）。
+
+    返回风暴抑制率、告警处置 MTTR（近似口径）、派单 SLA 达成率、隐患治理闭环率，
+    以及趋势异常引擎对告警流的贡献占比。详见 ``app.service.effectiveness_service``。
+    复用 3s 响应缓存（与 /stats 同口径），将并发查看折叠为每窗口 1 次真实计算。
+    """
+    _cached = get_cached_json(current_user.id, request.url.path, request.url.query)
+    if _cached is not None:
+        return ApiResponse(**_cached)
+
+    data = compute_effectiveness(db, scope, days=days)
+    resp = ApiResponse.success(data=data)
+    set_cached_json(current_user.id, request.url.path, request.url.query, resp.model_dump())
+    return resp

@@ -2,7 +2,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Location } from "@element-plus/icons-vue";
-import { getDashboardStats, getRecentAlarms } from "@/api/dashboard";
+import { getDashboardStats, getRecentAlarms, getEffectiveness } from "@/api/dashboard";
 import {
   getRiskAlerts,
   getRiskTrend,
@@ -36,7 +36,7 @@ import { wgs84ToGcj02 } from "@/utils/geo";
 import { pct, tc, previewToTSV, snapTrendMaxOf } from "@/utils/snapshot";
 import MapPanel from "@/components/MapPanel.vue";
 import WorkPlanPopup from "@/components/WorkPlanPopup.vue";
-import type { AnomalyParams, DashboardStats, MapDevice, MapFence, RecentAlarm } from "@/types";
+import type { AnomalyParams, DashboardStats, MapDevice, MapFence, RecentAlarm, Effectiveness } from "@/types";
 
 const router = useRouter();
 function goAlarms() {
@@ -46,6 +46,9 @@ function goAlarms() {
 const stats = ref<DashboardStats | null>(null);
 const recent = ref<RecentAlarm[]>([]);
 const loading = ref(false);
+// 闭环效能度量（监测→异常→告警→派单→治理全链路有效性）
+const eff = ref<Effectiveness | null>(null);
+const effDays = ref(30);
 // 智能核心 v2：项目风险预警（阈值越阈，受数据范围约束）
 const riskAlerts = ref<RiskAlertItem[]>([]);
 const alertTrendMap = ref<Record<number, { t: string; v: number }[]>>({});
@@ -173,6 +176,11 @@ watch(
   { immediate: true },
 );
 const kOptions = [1.5, 2.0, 2.5, 3.0];
+
+// 闭环效能：切换统计窗口后重新拉取
+watch(effDays, () => {
+  void loadEffectiveness();
+});
 
 // 四类序列分别计算，命中位置用于高亮
 const alarmAnomalies = computed<boolean[]>(() =>
@@ -356,11 +364,21 @@ async function load() {
   void loadCorrelation();
   // 告警风暴抑制统计独立加载（同上）
   void loadStorm();
+  // 闭环效能度量独立加载（同上）
+  void loadEffectiveness();
 }
 
 async function loadStorm() {
   try {
     storm.value = (await getAlarmStorm()) || storm.value;
+  } catch {
+    /* 拦截器已提示 */
+  }
+}
+
+async function loadEffectiveness() {
+  try {
+    eff.value = (await getEffectiveness(effDays.value)) || eff.value;
   } catch {
     /* 拦截器已提示 */
   }
@@ -851,6 +869,48 @@ onUnmounted(() => {
               :image-size="40"
             />
           </div>
+        </el-card>
+
+        <!-- 闭环效能度量：监测→异常→告警→派单→治理全链路有效性（窗口可调） -->
+        <el-card shadow="never" class="bar-card eff-card">
+          <template #header>
+            <div class="card-head">
+              <span class="card-title">闭环效能度量</span>
+              <el-select v-model="effDays" size="small" style="width: 96px">
+                <el-option :value="7" label="近 7 天" />
+                <el-option :value="30" label="近 30 天" />
+                <el-option :value="90" label="近 90 天" />
+              </el-select>
+            </div>
+          </template>
+          <div v-if="eff" class="eff-grid">
+            <div class="eff-item">
+              <div class="eff-num">{{ eff.storm.rate_pct }}<span class="eff-unit">%</span></div>
+              <div class="eff-label">告警风暴抑制率</div>
+              <div class="eff-sub">压掉 {{ eff.storm.suppressed }} 条同源重复</div>
+            </div>
+            <div class="eff-item">
+              <div class="eff-num">{{ eff.mttr.avg_hours }}<span class="eff-unit">h</span></div>
+              <div class="eff-label">告警平均处置时长</div>
+              <div class="eff-sub">处置率 {{ eff.mttr.resolution_rate_pct }}%</div>
+            </div>
+            <div class="eff-item">
+              <div class="eff-num">{{ eff.dispatch_sla.sla_rate_pct }}<span class="eff-unit">%</span></div>
+              <div class="eff-label">派单 SLA 达成率</div>
+              <div class="eff-sub">闭环均 {{ eff.dispatch_sla.avg_cycle_hours }}h</div>
+            </div>
+            <div class="eff-item">
+              <div class="eff-num">{{ eff.hazard.closure_rate_pct }}<span class="eff-unit">%</span></div>
+              <div class="eff-label">隐患治理闭环率</div>
+              <div class="eff-sub">按期销号 {{ eff.hazard.on_time_rate_pct }}%</div>
+            </div>
+            <div class="eff-item">
+              <div class="eff-num">{{ eff.anomaly.share_pct }}<span class="eff-unit">%</span></div>
+              <div class="eff-label">异常引擎告警占比</div>
+              <div class="eff-sub">共因派单 {{ eff.anomaly.correlation_dispatches }}</div>
+            </div>
+          </div>
+          <el-empty v-else description="加载中…" :image-size="40" />
         </el-card>
 
         <el-card shadow="never" class="bar-card">
@@ -1595,6 +1655,52 @@ onUnmounted(() => {
 .anomaly-card {
   margin-bottom: 16px;
   border-top: 3px solid #909399;
+}
+/* 闭环效能度量卡 */
+.eff-card {
+  margin-bottom: 16px;
+  border-top: 3px solid #409eff;
+}
+.eff-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 10px;
+}
+.eff-item {
+  background: #f5f7fa;
+  border-radius: 8px;
+  padding: 10px 8px;
+  text-align: center;
+}
+.eff-num {
+  font-size: 22px;
+  font-weight: 700;
+  color: #303133;
+  line-height: 1.2;
+}
+.eff-unit {
+  font-size: 12px;
+  font-weight: 500;
+  color: #909399;
+  margin-left: 2px;
+}
+.eff-label {
+  font-size: 12px;
+  color: #606266;
+  margin-top: 4px;
+}
+.eff-sub {
+  font-size: 11px;
+  color: #909399;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1200px) {
+  .eff-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
 }
 .k-prefix {
   font-size: 11px;

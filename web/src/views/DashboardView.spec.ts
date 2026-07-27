@@ -35,6 +35,7 @@ const recent = {
 vi.mock("@/api/dashboard", () => ({
   getDashboardStats: vi.fn(),
   getRecentAlarms: vi.fn(),
+  getEffectiveness: vi.fn(),
 }));
 vi.mock("@/api/metrics", () => ({
   getRiskAlerts: vi.fn(),
@@ -57,7 +58,7 @@ vi.mock("@/components/MapPanel.vue", () => ({ default: { name: "M", template: "<
 vi.mock("@/components/WorkPlanPopup.vue", () => ({ default: { name: "WPP", template: "<div/>" } }));
 vi.mock("@/components/DailyTrendChart.vue", () => ({ default: { name: "DTC", template: "<div/>" } }));
 
-import { getDashboardStats, getRecentAlarms } from "@/api/dashboard";
+import { getDashboardStats, getRecentAlarms, getEffectiveness } from "@/api/dashboard";
 import { getRiskAlerts, getRiskTrend, getCorrelationSummary, getCorrelationTrend } from "@/api/metrics";
 import { fetchDevices, fetchLocations } from "@/api/realtime";
 import { fetchFences } from "@/api/fence";
@@ -82,6 +83,17 @@ beforeEach(() => {
   vi.mocked(fetchDevices).mockResolvedValue({ items: [], total: 0 } as any);
   vi.mocked(fetchLocations).mockResolvedValue({ items: [], total: 0 } as any);
   vi.mocked(fetchFences).mockResolvedValue({ items: [], total: 0 } as any);
+  vi.mocked(getEffectiveness).mockResolvedValue({
+    days: 30,
+    range_start: "2026-06-27T00:00:00+08:00",
+    range_end: "2026-07-27T23:59:59+08:00",
+    storm: { suppressed: 12, alarms: 40, rate_pct: 23.1 },
+    mttr: { avg_hours: 5.5, resolved: 30, resolution_rate_pct: 75.0 },
+    dispatch_sla: { closed: 8, on_time: 7, sla_rate_pct: 87.5, avg_cycle_hours: 4.0 },
+    hazard: { total: 10, closed: 6, closure_rate_pct: 60.0, on_time_rate_pct: 83.3 },
+    anomaly: { alarms: 4, share_pct: 10.0, correlation_dispatches: 2 },
+    computed_at: "2026-07-27T13:00:00+00:00",
+  } as any);
   vi.mocked(exportAlarmReport).mockResolvedValue(new Blob(["x"]));
   vi.mocked(fetchSnapshotPreview).mockResolvedValue({
     meta: { filters_desc: "全部", generated_at: "2026-07-21T10:00:00" },
@@ -225,5 +237,25 @@ describe("views/DashboardView.vue", () => {
     vm.anomalyK = 3.0;
     await flushPromises();
     expect(vm.anomalyList.length).toBe(0);
+  });
+
+  it("闭环效能度量卡：加载并渲染五项指标 + 窗口切换重拉", async () => {
+    wrapper = baseMount();
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    expect(vm.eff).not.toBeNull();
+    expect(vm.eff.storm.rate_pct).toBe(23.1);
+    expect(vm.eff.mttr.avg_hours).toBe(5.5);
+    // 模板含五项标签
+    const text = wrapper.text();
+    expect(text).toContain("告警风暴抑制率");
+    expect(text).toContain("告警平均处置时长");
+    expect(text).toContain("派单 SLA 达成率");
+    expect(text).toContain("隐患治理闭环率");
+    expect(text).toContain("异常引擎告警占比");
+    // 切换窗口 → 重新拉取（带参）
+    vm.effDays = 7;
+    await flushPromises();
+    expect(vi.mocked(getEffectiveness)).toHaveBeenLastCalledWith(7);
   });
 });
