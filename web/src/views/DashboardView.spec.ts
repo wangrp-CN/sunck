@@ -23,6 +23,7 @@ const stats = {
   trend_start: "2026-07-15",
   trend_end: "2026-07-21",
   current_period: "2026-07-21",
+  anomaly_params: { k: 2.0, window: 7, min_trailing: 3, min_points: 5 },
 };
 const recent = {
   items: [
@@ -187,5 +188,42 @@ describe("views/DashboardView.vue", () => {
     await flushPromises();
     expect(vi.mocked(fetchSnapshotPreview)).toHaveBeenCalled();
     expect(vm.snapPreviewVisible).toBe(true);
+  });
+
+  it("趋势异常检测：聚合四类序列异常点，k 阈值可调", async () => {
+    // 用多周期趋势构造一条尾部突增，验证 anomalyList 命中
+    const richStats = {
+      ...(stats as any),
+      alarm_trend_period: [
+        { period: "2026-07-15", count: 8 },
+        { period: "2026-07-16", count: 12 },
+        { period: "2026-07-17", count: 8 },
+        { period: "2026-07-18", count: 12 },
+        { period: "2026-07-19", count: 8 },
+        { period: "2026-07-20", count: 12 },
+        { period: "2026-07-21", count: 15 },
+      ],
+      device_trend_period: [
+        { period: "2026-07-15", active: 5 },
+        { period: "2026-07-16", active: 5 },
+        { period: "2026-07-17", active: 5 },
+        { period: "2026-07-18", active: 5 },
+        { period: "2026-07-19", active: 5 },
+        { period: "2026-07-20", active: 5 },
+        { period: "2026-07-21", active: 5 },
+      ],
+    };
+    vi.mocked(getDashboardStats).mockResolvedValueOnce(richStats as any);
+    wrapper = baseMount();
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    // 默认 k=2.0 下，告警量尾部 30 远超基线 → 至少 1 个异常
+    expect(vm.anomalyList.length).toBeGreaterThanOrEqual(1);
+    expect(vm.anomalyList[0].label).toBe("告警量");
+    expect(vm.anomalyList[0].direction).toBe("spike");
+    // 调高 k 到 3.0 后，偏离被吸收 → 异常消失
+    vm.anomalyK = 3.0;
+    await flushPromises();
+    expect(vm.anomalyList.length).toBe(0);
   });
 });

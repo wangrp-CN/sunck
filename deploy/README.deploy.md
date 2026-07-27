@@ -513,3 +513,13 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
 - **后端**：`app/api/v1/dashboard.py` 新增 `_compute_device_trend`（按周期 `date_trunc` 聚合 DISTINCT device_no，零填充至窗口全周期）+ `_periods_in_range`，`/stats` 响应新增 `device_trend_period`。其余三类序列前端直接复用既有数据（告警 `alarm_trend_period`、风险 `getRiskTrend`、关联 `getCorrelationTrend`）本地计算，无新增后端接口、无额外开销。
 - **前端**：`TrendLine.vue` 新增 `anomalies?: boolean[]` prop 渲染红点 + 悬浮标注「异常」；`DashboardView.vue` 四序列计算 `detectAnomalies` 并透传；新增「设备活跃趋势」卡。
 - **测试**：`web/src/utils/anomaly.spec.ts`（6 例：过短/平稳/突增/突降/样本不足/k 可调）；`test_dashboard_scope.py` 增补 `device_trend_period` 字段与零填充断言。
+
+### 13.8 趋势异常检测扩展：列表卡 + 阈值可调
+
+在 §13.7 基础上，把异常结果从「仅图上高亮」升级为「可查看明细 + 阈值可微调」。
+
+- **阈值配置化（后端）**：`app/config.py` 智能核心段新增 `anomaly_k`(2.0) / `anomaly_window`(7) / `anomaly_min_trailing`(3) / `anomaly_min_points`(5)，`/stats` 响应新增 `anomaly_params`（读 `settings`）回传给前端作为默认阈值；改阈值只需改配置，无需动前端。
+- **异常列表卡（前端）**：`DashboardView.vue` 右栏新增「趋势异常检测」卡，调用 `collectAnomalies`（`anomaly.ts`，跨四类序列聚合、按 `|z|` 降序）列出近期异常周期——含序列中文名、周期、实测值、基线均值、z 值、方向（突增红色 / 突降橙色），无异常时 `el-empty` 提示「当前阈值下无异常周期」。
+- **阈值可调**：卡内 `el-select`(k=1.5/2.0/2.5/3.0) 实时调整 z 阈值，与后端默认值（`anomaly_params.k`）首次加载同步（`watch`）；四类序列的高亮与列表随 `anomalyK` 联动。`formatZ` 处理基线恒定导致的 `z=±Infinity` 显示为 `∞`。
+- **类型**：`types/index.ts` 新增 `AnomalyParams` 接口与 `DashboardStats.anomaly_params`；`anomaly.ts` 新增 `AnomalySeriesInput` / `AnomalyItem` / `collectAnomalies`。
+- **测试**：`test_dashboard_scope.py` 增补 `anomaly_params` 字段与取值合法性断言；`DashboardView.spec.ts` 补「聚合四类序列异常点、k 阈值可调」用例（变量基线，验证 k 升档吸收异常）。

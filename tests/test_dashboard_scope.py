@@ -393,6 +393,14 @@ def test_dashboard_stats_device_fence(client, admin_token):
             assert set(item.keys()) >= {"period", "active"}, item
             assert isinstance(item["active"], int) and item["active"] >= 0, item
 
+        # 趋势异常检测阈值：/stats 返回 anomaly_params（与 config 对齐）
+        ap = d["anomaly_params"]
+        assert set(ap.keys()) >= {"k", "window", "min_trailing", "min_points"}, ap
+        assert ap["k"] > 0 and isinstance(ap["k"], (int, float)), ap
+        assert ap["window"] >= 1 and isinstance(ap["window"], int), ap
+        assert ap["min_trailing"] >= 1 and isinstance(ap["min_trailing"], int), ap
+        assert ap["min_points"] >= 1 and isinstance(ap["min_points"], int), ap
+
         # 远过去窗口（2020）：无设备上报 → window_active 必须为 0（窗口过滤生效）
         r2020 = client.get(
             "/api/v1/dashboard/stats",

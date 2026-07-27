@@ -116,3 +116,56 @@ export function detectAnomalies(
 
   return out;
 }
+
+/**
+ * 多序列异常聚合：对多条业务序列分别跑 detectAnomalies，收集所有异常点并按
+ * 偏离程度 |z| 降序排平，便于大屏「趋势异常」卡统一列出近期异常周期。
+ *
+ * 调用方负责把每条序列的「周期标签」准备好（periods 与 values 等长），
+ * 因为不同序列的周期格式不一样（告警按粒度格式化、共因/设备为日期、风险为快照时间）。
+ */
+export interface AnomalySeriesInput {
+  /** 序列标识，如 "alarm" / "correlation" / "device" / "risk:{project_id}" */
+  key: string;
+  /** 中文名，如 "告警量" / "跨设备共因" / "风险指数·某项目" */
+  label: string;
+  values: number[];
+  /** 与 values 等长、已格式化的周期标签 */
+  periods: string[];
+}
+
+export interface AnomalyItem {
+  key: string;
+  label: string;
+  period: string;
+  value: number;
+  baselineMean: number;
+  z: number;
+  direction: AnomalyDirection;
+}
+
+export function collectAnomalies(
+  series: AnomalySeriesInput[],
+  opts: DetectOptions = {},
+): AnomalyItem[] {
+  const out: AnomalyItem[] = [];
+  for (const s of series) {
+    const res = detectAnomalies(s.values, opts);
+    res.forEach((r, i) => {
+      if (r.isAnomaly) {
+        out.push({
+          key: s.key,
+          label: s.label,
+          period: s.periods[i] ?? "",
+          value: r.value,
+          baselineMean: r.baselineMean,
+          z: r.z,
+          direction: r.direction,
+        });
+      }
+    });
+  }
+  // |z| 越大越靠前（基线恒定时 z=±Infinity，排最前）
+  out.sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
+  return out;
+}

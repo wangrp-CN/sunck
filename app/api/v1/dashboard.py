@@ -378,6 +378,13 @@ def stats(
             "device_stats": device_stats,
             "device_trend_period": device_trend_period,
             "fence_stats": fence_stats,
+            # 趋势异常检测阈值（统计基线法）：前端以此作为 k 选择器默认值与窗口/样本下限
+            "anomaly_params": {
+                "k": settings.anomaly_k,
+                "window": settings.anomaly_window,
+                "min_trailing": settings.anomaly_min_trailing,
+                "min_points": settings.anomaly_min_points,
+            },
         },
         message="查询成功",
     )

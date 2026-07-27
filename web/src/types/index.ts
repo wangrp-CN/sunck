@@ -764,6 +764,16 @@ export interface DashboardStats {
   device_trend_period?: { period: string; active: number }[];
   // 围栏统计：总/启用/窗口内监控围栏数/按类型（随窗口周期联动）
   fence_stats?: FenceStats;
+  // 趋势异常检测阈值（统计基线法）：前端以此作为 k 选择器默认值与窗口/样本下限
+  anomaly_params?: AnomalyParams;
+}
+
+// 趋势异常检测阈值（与后端 /v1/dashboard/stats 的 anomaly_params 对齐）
+export interface AnomalyParams {
+  k: number;
+  window: number;
+  min_trailing: number;
+  min_points: number;
 }
 
 // 设备在线率（与后端 /v1/dashboard/stats 的 device_stats 对齐）

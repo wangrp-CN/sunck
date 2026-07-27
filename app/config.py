@@ -76,6 +76,16 @@ class Settings(BaseSettings):
     # 后续重复被合并并计入 anchor 的 suppressed_count（见 app/service/alarm_service）。
     alarm_suppress_window_seconds: int = 300
 
+    # ---------- 智能核心 / 趋势异常检测（统计基线法） ----------
+    # z-score 阈值：单点偏离其之前滚动基线超过 k 个标准差即判异常（k 越大越严格）。
+    anomaly_k: float = 2.0
+    # 滚动基线窗口（不含当前点，单位：周期）。
+    anomaly_window: int = 7
+    # 单点判异常所需的最少历史样本数（历史不足则跳过该点，防误报）。
+    anomaly_min_trailing: int = 3
+    # 序列最短长度，低于此整条不判异常（防 2~3 点的误报）。
+    anomaly_min_points: int = 5
+
     # ---------- PostgreSQL ----------
     postgres_host: str = "127.0.0.1"
     postgres_port: int = 5432

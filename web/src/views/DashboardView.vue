@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Location } from "@element-plus/icons-vue";
 import { getDashboardStats, getRecentAlarms } from "@/api/dashboard";
@@ -31,12 +31,12 @@ import {
   type SnapshotPreviewResult,
 } from "@/api/alarm";
 import { formatPeriodLabel, granularityLabel } from "@/utils/period";
-import { detectAnomalies } from "@/utils/anomaly";
+import { detectAnomalies, collectAnomalies, type AnomalyItem, type AnomalySeriesInput } from "@/utils/anomaly";
 import { wgs84ToGcj02 } from "@/utils/geo";
 import { pct, tc, previewToTSV, snapTrendMaxOf } from "@/utils/snapshot";
 import MapPanel from "@/components/MapPanel.vue";
 import WorkPlanPopup from "@/components/WorkPlanPopup.vue";
-import type { DashboardStats, MapDevice, MapFence, RecentAlarm } from "@/types";
+import type { AnomalyParams, DashboardStats, MapDevice, MapFence, RecentAlarm } from "@/types";
 
 const router = useRouter();
 function goAlarms() {
@@ -152,18 +152,40 @@ const maxDevice = computed(() => maxOf(stats.value?.device_by_type ?? []));
 const trendPeriod = computed(() => stats.value?.alarm_trend_period ?? []);
 const trendMax = computed(() => maxOf(trendPeriod.value));
 
-// 趋势异常检测（统计基线法）：对四类序列分别计算，命中位置用于高亮
+// 趋势异常检测（统计基线法）：阈值由后端 anomaly_params 提供默认值，前端可微调 k
+const anomalyParams = computed<AnomalyParams>(() =>
+  stats.value?.anomaly_params ?? { k: 2.0, window: 7, min_trailing: 3, min_points: 5 },
+);
+// 用户可调的 z 阈值（k）；其余窗口/样本下限沿用后端默认值
+const anomalyK = ref<number>(2.0);
+const anomalyOpts = computed(() => ({
+  k: anomalyK.value,
+  window: anomalyParams.value.window,
+  minTrailing: anomalyParams.value.min_trailing,
+  minPoints: anomalyParams.value.min_points,
+}));
+// 后端返回默认 k 时，同步到选择器（首次加载）
+watch(
+  () => anomalyParams.value.k,
+  (k) => {
+    if (typeof k === "number" && k > 0) anomalyK.value = k;
+  },
+  { immediate: true },
+);
+const kOptions = [1.5, 2.0, 2.5, 3.0];
+
+// 四类序列分别计算，命中位置用于高亮
 const alarmAnomalies = computed<boolean[]>(() =>
-  detectAnomalies(trendPeriod.value.map((x) => x.count)).map((a) => a.isAnomaly),
+  detectAnomalies(trendPeriod.value.map((x) => x.count), anomalyOpts.value).map((a) => a.isAnomaly),
 );
 const corrAnomalies = computed<boolean[]>(() =>
-  detectAnomalies(corrTrendPoints.value.map((x) => x.v)).map((a) => a.isAnomaly),
+  detectAnomalies(corrTrendPoints.value.map((x) => x.v), anomalyOpts.value).map((a) => a.isAnomaly),
 );
 const riskAnomaliesMap = computed<Record<number, boolean[]>>(() => {
   const m: Record<number, boolean[]> = {};
   for (const it of riskAlerts.value) {
     const pts = alertTrendMap.value[it.project_id] || [];
-    m[it.project_id] = detectAnomalies(pts.map((p) => p.v)).map((a) => a.isAnomaly);
+    m[it.project_id] = detectAnomalies(pts.map((p) => p.v), anomalyOpts.value).map((a) => a.isAnomaly);
   }
   return m;
 });
@@ -173,8 +195,49 @@ const deviceTrendPoints = computed(() =>
   deviceTrend.value.map((d) => ({ t: d.period, v: d.active })),
 );
 const deviceAnomalies = computed<boolean[]>(() =>
-  detectAnomalies(deviceTrendPoints.value.map((x) => x.v)).map((a) => a.isAnomaly),
+  detectAnomalies(deviceTrendPoints.value.map((x) => x.v), anomalyOpts.value).map((a) => a.isAnomaly),
 );
+
+// 跨四类序列聚合异常点，按 |z| 降序列出（大屏「趋势异常检测」卡）
+const anomalyList = computed<AnomalyItem[]>(() => {
+  const series: AnomalySeriesInput[] = [
+    {
+      key: "alarm",
+      label: "告警量",
+      values: trendPeriod.value.map((x) => x.count),
+      periods: trendPeriod.value.map((x) => formatPeriodLabel(x.period, trendGranularity.value)),
+    },
+    {
+      key: "correlation",
+      label: "跨设备共因",
+      values: corrTrendPoints.value.map((x) => x.v),
+      periods: corrTrendPoints.value.map((x) => String(x.t).slice(0, 10)),
+    },
+    {
+      key: "device",
+      label: "设备活跃",
+      values: deviceTrendPoints.value.map((x) => x.v),
+      periods: deviceTrendPoints.value.map((x) => String(x.t).slice(0, 10)),
+    },
+    ...riskAlerts.value.map((it) => {
+      const pts = alertTrendMap.value[it.project_id] || [];
+      return {
+        key: `risk:${it.project_id}`,
+        label: `风险指数·${it.project_name}`,
+        values: pts.map((p) => p.v),
+        periods: pts.map((p) => String(p.t).slice(0, 10)),
+      };
+    }),
+  ];
+  return collectAnomalies(series, anomalyOpts.value);
+});
+
+function round1(n: number): string {
+  return (Math.round(n * 10) / 10).toString();
+}
+function formatZ(z: number): string {
+  return isFinite(z) ? z.toFixed(1) : "∞";
+}
 
 const counts = computed(() => stats.value?.counts);
 
@@ -751,6 +814,42 @@ onUnmounted(() => {
           <div class="storm-sub">今日合并抑制的同源重复告警</div>
           <div class="storm-foot">
             抑制窗口 {{ storm.window_seconds }} 秒 · 窗口内同源仅保留首条，其余自动计入抑制数
+          </div>
+        </el-card>
+
+        <!-- 趋势异常检测：跨四类序列聚合异常周期，k 阈值可调（后端默认值同步） -->
+        <el-card shadow="never" class="bar-card anomaly-card">
+          <template #header>
+            <div class="card-head">
+              <span class="card-title">趋势异常检测</span>
+              <el-select v-model="anomalyK" size="small" style="width: 92px">
+                <template #prefix><span class="k-prefix">k=</span></template>
+                <el-option v-for="k in kOptions" :key="k" :label="k.toFixed(1)" :value="k" />
+              </el-select>
+            </div>
+          </template>
+          <div class="anomaly-list">
+            <div v-for="a in anomalyList" :key="a.key + ':' + a.period" class="anomaly-row">
+              <el-tag
+                :type="a.direction === 'spike' ? 'danger' : 'warning'"
+                size="small"
+                effect="dark"
+              >{{ a.direction === "spike" ? "突增" : "突降" }}</el-tag>
+              <span class="anomaly-label">{{ a.label }}</span>
+              <span class="anomaly-period">{{ a.period }}</span>
+              <span class="anomaly-val">
+                {{ a.value }}
+                <span class="muted">基线 {{ round1(a.baselineMean) }}</span>
+              </span>
+              <span class="anomaly-z" :class="a.direction === 'spike' ? 'z-up' : 'z-down'">
+                z={{ formatZ(a.z) }}
+              </span>
+            </div>
+            <el-empty
+              v-if="anomalyList.length === 0"
+              description="当前阈值下无异常周期"
+              :image-size="40"
+            />
           </div>
         </el-card>
 
@@ -1491,5 +1590,54 @@ onUnmounted(() => {
 .muted {
   color: #c0c4cc;
   font-size: 12px;
+}
+/* 趋势异常检测卡 */
+.anomaly-card {
+  margin-bottom: 16px;
+  border-top: 3px solid #909399;
+}
+.k-prefix {
+  font-size: 11px;
+  color: #c0c4cc;
+}
+.anomaly-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.anomaly-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  padding: 6px 8px;
+  background: #fafafa;
+  border-radius: 6px;
+}
+.anomaly-label {
+  font-weight: 600;
+  color: #303133;
+  white-space: nowrap;
+}
+.anomaly-period {
+  color: #909399;
+  white-space: nowrap;
+}
+.anomaly-val {
+  margin-left: auto;
+  color: #303133;
+  white-space: nowrap;
+}
+.anomaly-z {
+  width: 56px;
+  text-align: right;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.anomaly-z.z-up {
+  color: #f56c6c;
+}
+.anomaly-z.z-down {
+  color: #e6a23c;
 }
 </style>

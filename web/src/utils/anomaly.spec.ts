@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectAnomalies } from "./anomaly";
+import { collectAnomalies, detectAnomalies } from "./anomaly";
 
 describe("detectAnomalies (统计基线法)", () => {
   it("序列过短整条不判异常", () => {
@@ -48,5 +48,53 @@ describe("detectAnomalies (统计基线法)", () => {
     // 默认 k=2.0 不报（12 偏离约 1.5σ），k=1.0 应报
     expect(last(detectAnomalies(vals)).isAnomaly).toBe(false);
     expect(last(detectAnomalies(vals, { k: 1.0 })).isAnomaly).toBe(true);
+  });
+});
+
+describe("collectAnomalies (多序列聚合)", () => {
+  it("聚合多条序列并仅保留异常点，按 |z| 降序", () => {
+    const series = [
+      {
+        key: "alarm",
+        label: "告警量",
+        values: [10, 10, 10, 10, 10, 10, 10, 50],
+        periods: ["d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8"],
+      },
+      {
+        key: "device",
+        label: "设备活跃",
+        // 平稳序列无异常
+        values: [5, 5, 5, 5, 5, 5, 5, 5],
+        periods: ["d1", "d2", "d3", "d4", "d5", "d6", "d7", "d8"],
+      },
+    ];
+    const items = collectAnomalies(series);
+    // 仅告警量尾部 spike 命中
+    expect(items).toHaveLength(1);
+    expect(items[0].key).toBe("alarm");
+    expect(items[0].label).toBe("告警量");
+    expect(items[0].period).toBe("d8");
+    expect(items[0].direction).toBe("spike");
+  });
+
+  it("异常点方向正确（突升/突降分别归类）", () => {
+    const series = [
+      {
+        key: "a",
+        label: "A",
+        values: [10, 10, 10, 10, 10, 10, 10, 50],
+        periods: ["1", "2", "3", "4", "5", "6", "7", "8"],
+      },
+      {
+        key: "b",
+        label: "B",
+        values: [10, 10, 10, 10, 10, 10, 10, 0],
+        periods: ["1", "2", "3", "4", "5", "6", "7", "8"],
+      },
+    ];
+    const items = collectAnomalies(series);
+    expect(items).toHaveLength(2);
+    const dirs = items.map((x) => x.direction).sort();
+    expect(dirs).toEqual(["drop", "spike"]);
   });
 });
