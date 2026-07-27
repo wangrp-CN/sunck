@@ -41,10 +41,13 @@ export function getProjectCompare(days = 7): Promise<ProjectCompareResp> {
 }
 
 // 闭环效能度量（监测→异常→告警→派单→治理全链路有效性）
-export function getEffectiveness(days = 30): Promise<Effectiveness> {
+export function getEffectiveness(
+  days = 30,
+  projectId: number | null = null,
+): Promise<Effectiveness> {
   return http<Effectiveness>({
     url: "/v1/dashboard/effectiveness",
     method: "GET",
-    params: { days },
+    params: projectId ? { days, project_id: projectId } : { days },
   });
 }

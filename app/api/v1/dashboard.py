@@ -618,18 +618,21 @@ def effectiveness(
     db: Session = Depends(get_read_db),
     scope: DataScope = Depends(get_data_scope),
     days: int = Query(30, ge=7, le=365, description="效能统计窗口(天)"),
+    project_id: int | None = Query(None, ge=1, description="按项目下钻(留空=全量)"),
 ) -> ApiResponse:
     """闭环效能度量：量化监测→异常→告警→派单→治理全链路有效性（数据范围隔离）。
 
     返回风暴抑制率、告警处置 MTTR（近似口径）、派单 SLA 达成率、隐患治理闭环率，
-    以及趋势异常引擎对告警流的贡献占比。详见 ``app.service.effectiveness_service``。
+    以及趋势异常引擎对告警流的贡献占比；每项含「上一周期」环比趋势。
+    另返回 ``by_project`` 各项目指标排名明细，配合 ``project_id`` 可实现下钻视图。
+    详见 ``app.service.effectiveness_service``。
     复用 3s 响应缓存（与 /stats 同口径），将并发查看折叠为每窗口 1 次真实计算。
     """
     _cached = get_cached_json(current_user.id, request.url.path, request.url.query)
     if _cached is not None:
         return ApiResponse(**_cached)
 
-    data = compute_effectiveness(db, scope, days=days)
+    data = compute_effectiveness(db, scope, days=days, project_id=project_id)
     resp = ApiResponse.success(data=data)
     set_cached_json(current_user.id, request.url.path, request.url.query, resp.model_dump())
     return resp

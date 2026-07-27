@@ -24,6 +24,7 @@ import {
 } from "@/api/realtime";
 import TrendLine from "@/components/TrendLine.vue";
 import { fetchFences } from "@/api/fence";
+import { fetchProjects } from "@/api/project";
 import {
   exportAlarmReport,
   fetchSnapshotPreview,
@@ -36,7 +37,7 @@ import { wgs84ToGcj02 } from "@/utils/geo";
 import { pct, tc, previewToTSV, snapTrendMaxOf } from "@/utils/snapshot";
 import MapPanel from "@/components/MapPanel.vue";
 import WorkPlanPopup from "@/components/WorkPlanPopup.vue";
-import type { AnomalyParams, DashboardStats, MapDevice, MapFence, RecentAlarm, Effectiveness } from "@/types";
+import type { AnomalyParams, DashboardStats, MapDevice, MapFence, RecentAlarm, Effectiveness, ByProjectRow, EffTrend } from "@/types";
 
 const router = useRouter();
 function goAlarms() {
@@ -49,6 +50,8 @@ const loading = ref(false);
 // 闭环效能度量（监测→异常→告警→派单→治理全链路有效性）
 const eff = ref<Effectiveness | null>(null);
 const effDays = ref(30);
+const effProject = ref<number | null>(null); // null=全量；选定项目=下钻视图
+const effProjects = ref<{ id: number; name: string }[]>([]); // 项目下钻选择器选项
 // 智能核心 v2：项目风险预警（阈值越阈，受数据范围约束）
 const riskAlerts = ref<RiskAlertItem[]>([]);
 const alertTrendMap = ref<Record<number, { t: string; v: number }[]>>({});
@@ -177,10 +180,32 @@ watch(
 );
 const kOptions = [1.5, 2.0, 2.5, 3.0];
 
-// 闭环效能：切换统计窗口后重新拉取
+// 闭环效能：切换统计窗口 / 下钻项目后重新拉取
 watch(effDays, () => {
   void loadEffectiveness();
 });
+watch(effProject, () => {
+  void loadEffectiveness();
+});
+
+// 环比趋势徽标：箭头 + 着色（good=null 中性灰）
+function trendArrow(t: EffTrend | undefined): string {
+  if (!t || t.direction === "flat") return "–";
+  return t.direction === "up" ? "▲" : "▼";
+}
+function trendCls(t: EffTrend | undefined): string {
+  if (!t || t.good === null) return "eff-trend eff-trend--neutral";
+  return t.good ? "eff-trend eff-trend--good" : "eff-trend eff-trend--bad";
+}
+function trendText(t: EffTrend | undefined): string {
+  if (!t || t.delta_pct === null) return "无对比";
+  return `${t.delta_pct > 0 ? "+" : ""}${t.delta_pct}%`;
+}
+
+// 下钻：点击项目行切换头部指标视图
+function drillProject(row: ByProjectRow) {
+  effProject.value = effProject.value === row.project_id ? null : row.project_id;
+}
 
 // 四类序列分别计算，命中位置用于高亮
 const alarmAnomalies = computed<boolean[]>(() =>
@@ -378,9 +403,19 @@ async function loadStorm() {
 
 async function loadEffectiveness() {
   try {
-    eff.value = (await getEffectiveness(effDays.value)) || eff.value;
+    eff.value = (await getEffectiveness(effDays.value, effProject.value)) || eff.value;
   } catch {
     /* 拦截器已提示 */
+  }
+}
+
+// 加载可见项目列表（供下钻选择器；数据范围隔离由后端保证）
+async function loadEffProjects() {
+  try {
+    const page = await fetchProjects({ size: 200 });
+    effProjects.value = (page.items || []).map((p) => ({ id: p.id, name: p.name }));
+  } catch {
+    effProjects.value = [];
   }
 }
 
@@ -626,6 +661,7 @@ onMounted(() => {
   trendRange.value = defaultRangeFor(trendGranularity.value);
   load();
   loadMap();
+  void loadEffProjects();
   timer = window.setInterval(() => {
     load();
     loadMap();
@@ -871,16 +907,27 @@ onUnmounted(() => {
           </div>
         </el-card>
 
-        <!-- 闭环效能度量：监测→异常→告警→派单→治理全链路有效性（窗口可调） -->
+        <!-- 闭环效能度量：监测→异常→告警→派单→治理全链路有效性（窗口/项目可调） -->
         <el-card shadow="never" class="bar-card eff-card">
           <template #header>
             <div class="card-head">
               <span class="card-title">闭环效能度量</span>
-              <el-select v-model="effDays" size="small" style="width: 96px">
-                <el-option :value="7" label="近 7 天" />
-                <el-option :value="30" label="近 30 天" />
-                <el-option :value="90" label="近 90 天" />
-              </el-select>
+              <div class="eff-head-tools">
+                <el-select v-model="effProject" size="small" clearable placeholder="全部项目" style="width: 132px">
+                  <el-option :value="null" label="全部项目" />
+                  <el-option
+                    v-for="p in effProjects"
+                    :key="p.id"
+                    :value="p.id"
+                    :label="p.name"
+                  />
+                </el-select>
+                <el-select v-model="effDays" size="small" style="width: 96px">
+                  <el-option :value="7" label="近 7 天" />
+                  <el-option :value="30" label="近 30 天" />
+                  <el-option :value="90" label="近 90 天" />
+                </el-select>
+              </div>
             </div>
           </template>
           <div v-if="eff" class="eff-grid">
@@ -888,29 +935,100 @@ onUnmounted(() => {
               <div class="eff-num">{{ eff.storm.rate_pct }}<span class="eff-unit">%</span></div>
               <div class="eff-label">告警风暴抑制率</div>
               <div class="eff-sub">压掉 {{ eff.storm.suppressed }} 条同源重复</div>
+              <div :class="trendCls(eff.storm.trend)" class="eff-trend">
+                {{ trendArrow(eff.storm.trend) }} {{ trendText(eff.storm.trend) }}
+              </div>
             </div>
             <div class="eff-item">
               <div class="eff-num">{{ eff.mttr.avg_hours }}<span class="eff-unit">h</span></div>
               <div class="eff-label">告警平均处置时长</div>
               <div class="eff-sub">处置率 {{ eff.mttr.resolution_rate_pct }}%</div>
+              <div :class="trendCls(eff.mttr.trend)" class="eff-trend">
+                {{ trendArrow(eff.mttr.trend) }} {{ trendText(eff.mttr.trend) }}
+              </div>
             </div>
             <div class="eff-item">
               <div class="eff-num">{{ eff.dispatch_sla.sla_rate_pct }}<span class="eff-unit">%</span></div>
               <div class="eff-label">派单 SLA 达成率</div>
               <div class="eff-sub">闭环均 {{ eff.dispatch_sla.avg_cycle_hours }}h</div>
+              <div :class="trendCls(eff.dispatch_sla.trend)" class="eff-trend">
+                {{ trendArrow(eff.dispatch_sla.trend) }} {{ trendText(eff.dispatch_sla.trend) }}
+              </div>
             </div>
             <div class="eff-item">
               <div class="eff-num">{{ eff.hazard.closure_rate_pct }}<span class="eff-unit">%</span></div>
               <div class="eff-label">隐患治理闭环率</div>
               <div class="eff-sub">按期销号 {{ eff.hazard.on_time_rate_pct }}%</div>
+              <div :class="trendCls(eff.hazard.trend)" class="eff-trend">
+                {{ trendArrow(eff.hazard.trend) }} {{ trendText(eff.hazard.trend) }}
+              </div>
             </div>
             <div class="eff-item">
               <div class="eff-num">{{ eff.anomaly.share_pct }}<span class="eff-unit">%</span></div>
               <div class="eff-label">异常引擎告警占比</div>
               <div class="eff-sub">共因派单 {{ eff.anomaly.correlation_dispatches }}</div>
+              <div :class="trendCls(eff.anomaly.trend)" class="eff-trend">
+                {{ trendArrow(eff.anomaly.trend) }} {{ trendText(eff.anomaly.trend) }}
+              </div>
             </div>
           </div>
           <el-empty v-else description="加载中…" :image-size="40" />
+
+          <!-- 按项目下钻：风险分降序，点击行切换头部指标视图 -->
+          <div v-if="eff && eff.by_project && eff.by_project.length" class="eff-drill">
+            <div class="eff-drill-head">
+              <span class="eff-drill-title">按项目下钻</span>
+              <span class="eff-drill-hint">点击项目行查看其效能明细（再点取消）</span>
+            </div>
+            <el-table
+              :data="eff.by_project"
+              size="small"
+              :row-class-name="(row: any) => row.focused ? 'eff-row--focus' : ''"
+              @row-click="drillProject"
+              class="eff-drill-table"
+            >
+              <el-table-column label="项目" min-width="120">
+                <template #default="{ row }">
+                  <span class="eff-proj">{{ row.project_name }}</span>
+                  <el-tag
+                    size="small"
+                    :type="row.risk_level === '高' ? 'danger' : row.risk_level === '中' ? 'warning' : 'info'"
+                    effect="dark"
+                  >{{ row.risk_level }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="抑制率" align="right" width="92">
+                <template #default="{ row }">
+                  <div class="drill-val">{{ row.storm.rate_pct }}%</div>
+                  <div :class="trendCls(row.storm.trend)" class="drill-trend">{{ trendArrow(row.storm.trend) }} {{ trendText(row.storm.trend) }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column label="处置(h)" align="right" width="92">
+                <template #default="{ row }">
+                  <div class="drill-val">{{ row.mttr.avg_hours }}</div>
+                  <div :class="trendCls(row.mttr.trend)" class="drill-trend">{{ trendArrow(row.mttr.trend) }} {{ trendText(row.mttr.trend) }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column label="SLA" align="right" width="92">
+                <template #default="{ row }">
+                  <div class="drill-val">{{ row.dispatch_sla.sla_rate_pct }}%</div>
+                  <div :class="trendCls(row.dispatch_sla.trend)" class="drill-trend">{{ trendArrow(row.dispatch_sla.trend) }} {{ trendText(row.dispatch_sla.trend) }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column label="闭环率" align="right" width="92">
+                <template #default="{ row }">
+                  <div class="drill-val">{{ row.hazard.closure_rate_pct }}%</div>
+                  <div :class="trendCls(row.hazard.trend)" class="drill-trend">{{ trendArrow(row.hazard.trend) }} {{ trendText(row.hazard.trend) }}</div>
+                </template>
+              </el-table-column>
+              <el-table-column label="异常占比" align="right" width="96">
+                <template #default="{ row }">
+                  <div class="drill-val">{{ row.anomaly.share_pct }}%</div>
+                  <div :class="trendCls(row.anomaly.trend)" class="drill-trend">{{ trendArrow(row.anomaly.trend) }} {{ trendText(row.anomaly.trend) }}</div>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
         </el-card>
 
         <el-card shadow="never" class="bar-card">
@@ -1696,6 +1814,70 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* 环比趋势徽标 */
+.eff-trend {
+  font-size: 11px;
+  margin-top: 3px;
+  font-weight: 600;
+}
+.eff-trend--good {
+  color: #67c23a;
+}
+.eff-trend--bad {
+  color: #f56c6c;
+}
+.eff-trend--neutral {
+  color: #909399;
+}
+/* 头部工具区：项目下拉 + 窗口下拉 */
+.eff-head-tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+/* 按项目下钻表 */
+.eff-drill {
+  margin-top: 14px;
+  border-top: 1px dashed #ebeef5;
+  padding-top: 10px;
+}
+.eff-drill-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.eff-drill-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+}
+.eff-drill-hint {
+  font-size: 11px;
+  color: #c0c4cc;
+}
+.eff-drill-table {
+  cursor: pointer;
+}
+.eff-drill-table .el-table__row:hover {
+  background: #f5f7fa;
+}
+.eff-proj {
+  margin-right: 6px;
+  font-weight: 600;
+}
+.drill-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+}
+.drill-trend {
+  font-size: 10px;
+  margin-top: 1px;
+}
+.eff-row--focus {
+  background: #ecf5ff !important;
 }
 @media (max-width: 1200px) {
   .eff-grid {

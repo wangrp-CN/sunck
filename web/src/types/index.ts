@@ -777,25 +777,76 @@ export interface AnomalyParams {
 }
 
 // 闭环效能度量（与后端 GET /v1/dashboard/effectiveness 对齐）
+export type EffDirection = "up" | "down" | "flat";
+
+// 环比趋势：上一周期值 + 相对变化% + 方向 + 好坏语义（good=null 表示中性不着色）
+export interface EffTrend {
+  prev: number | null;
+  delta_pct: number | null;
+  direction: EffDirection;
+  good: boolean | null;
+}
+
+export interface EffStorm {
+  suppressed: number;
+  alarms: number;
+  rate_pct: number;
+  trend: EffTrend;
+}
+export interface EffMttr {
+  avg_hours: number;
+  resolved: number;
+  resolution_rate_pct: number;
+  trend: EffTrend;
+}
+export interface EffDispatchSla {
+  closed: number;
+  on_time: number;
+  sla_rate_pct: number;
+  avg_cycle_hours: number;
+  trend: EffTrend;
+}
+export interface EffHazard {
+  total: number;
+  closed: number;
+  closure_rate_pct: number;
+  on_time_rate_pct: number;
+  trend: EffTrend;
+}
+export interface EffAnomaly {
+  alarms: number;
+  share_pct: number;
+  correlation_dispatches: number;
+  trend: EffTrend;
+}
+
+// 按项目下钻明细行（与头部 5 指标同构 + 风险分/选中态）
+export interface ByProjectRow {
+  project_id: number;
+  project_name: string;
+  risk_index: number;
+  risk_level: string; // 高 / 中 / 低
+  focused: boolean;
+  storm: EffStorm;
+  mttr: EffMttr;
+  dispatch_sla: EffDispatchSla;
+  hazard: EffHazard;
+  anomaly: EffAnomaly;
+}
+
 export interface Effectiveness {
   days: number;
   range_start: string;
   range_end: string;
-  storm: { suppressed: number; alarms: number; rate_pct: number };
-  mttr: { avg_hours: number; resolved: number; resolution_rate_pct: number };
-  dispatch_sla: {
-    closed: number;
-    on_time: number;
-    sla_rate_pct: number;
-    avg_cycle_hours: number;
-  };
-  hazard: {
-    total: number;
-    closed: number;
-    closure_rate_pct: number;
-    on_time_rate_pct: number;
-  };
-  anomaly: { alarms: number; share_pct: number; correlation_dispatches: number };
+  prev_range_start: string;
+  prev_range_end: string;
+  project_focus: number | null;
+  storm: EffStorm;
+  mttr: EffMttr;
+  dispatch_sla: EffDispatchSla;
+  hazard: EffHazard;
+  anomaly: EffAnomaly;
+  by_project: ByProjectRow[] | null;
   computed_at: string;
 }
 

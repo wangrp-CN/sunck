@@ -138,10 +138,27 @@ def test_compute_effectiveness_deltas(env):
         # MTTR 近似：已处置告警存在 → avg_hours > 0
         assert after["mttr"]["avg_hours"] > 0
         assert after["mttr"]["resolved"] >= 2
-        # 结构完整性
+        # 结构完整性：五项指标 + 各自 trend + 按项目下钻
         for k in ("storm", "mttr", "dispatch_sla", "hazard", "anomaly"):
             assert k in after
-        assert set(after["storm"].keys()) == {"suppressed", "alarms", "rate_pct"}
+            assert "trend" in after[k]
+            assert after[k]["trend"]["direction"] in ("up", "down", "flat")
+        assert set(after["storm"].keys()) == {"suppressed", "alarms", "rate_pct", "trend"}
+        # 按项目下钻明细存在，全量时 project_focus=None
+        assert isinstance(after["by_project"], list)
+        assert after["project_focus"] is None
+
+        # 下钻：指定 fixture 项目 → 头部指标切换为该项目的下钻视图
+        focused = svc.compute_effectiveness(db, scope, days=30, project_id=env["pid"])
+        assert focused["project_focus"] == env["pid"]
+        match = next((p for p in focused["by_project"] if p["project_id"] == env["pid"]), None)
+        assert match is not None
+        assert focused["storm"]["rate_pct"] == match["storm"]["rate_pct"]
+        # 下钻行标记 focused
+        assert match["focused"] is True
+        # 风险分字段存在且为数值
+        assert isinstance(match["risk_index"], (int, float))
+        assert match["risk_level"] in ("高", "中", "低")
     finally:
         db.close()
 
@@ -157,9 +174,20 @@ def test_effectiveness_endpoint(env):
     assert data["days"] == 30
     for k in ("storm", "mttr", "dispatch_sla", "hazard", "anomaly"):
         assert k in data
-    # 范围边界为 ISO 字符串
+        assert "trend" in data[k]
+    # 范围边界为 ISO 字符串（含上一周期）
     assert isinstance(data["range_start"], str) and "T" in data["range_start"]
     assert isinstance(data["range_end"], str)
+    assert isinstance(data["prev_range_start"], str) and "T" in data["prev_range_start"]
+    assert isinstance(data["by_project"], list)
+    # 端点支持 project_id 下钻参数
+    r2 = c.get(
+        "/api/v1/dashboard/effectiveness",
+        headers=h,
+        params={"days": 30, "project_id": env["pid"]},
+    )
+    assert r2.status_code == 200, r2.text
+    assert r2.json()["data"]["project_focus"] == env["pid"]
 
 
 def test_effectiveness_empty_scope_is_all():
@@ -169,9 +197,11 @@ def test_effectiveness_empty_scope_is_all():
         # 全量删除极重，这里仅验证算子对空结果健壮：用 is_all + 不存在的极端范围
         scope = DataScope(is_all=True)
         data = svc.compute_effectiveness(db, scope, days=365)
-        # 即便库中有历史数据，比率字段也必须是合法数值（不会是 NaN/None）
+        # 即便库中有历史数据，比率字段也必须是合法数值（趋势子结构跳过）
         for grp in ("storm", "mttr", "dispatch_sla", "hazard", "anomaly"):
             for key, val in data[grp].items():
+                if key == "trend":
+                    continue
                 if key.endswith("pct") or key.endswith("hours") or key == "avg_hours":
                     assert isinstance(val, (int, float)), f"{grp}.{key} 应为数值"
     finally:

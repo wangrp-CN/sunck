@@ -50,6 +50,7 @@ vi.mock("@/api/realtime", () => ({
   DEVICE_TYPE_LABELS: { locate: "人机定位", anti_intrusion: "大机防侵限", train_approach: "列车接近" },
 }));
 vi.mock("@/api/fence", () => ({ fetchFences: vi.fn() }));
+vi.mock("@/api/project", () => ({ fetchProjects: vi.fn() }));
 vi.mock("@/api/alarm", () => ({
   exportAlarmReport: vi.fn(),
   fetchSnapshotPreview: vi.fn(),
@@ -62,6 +63,7 @@ import { getDashboardStats, getRecentAlarms, getEffectiveness } from "@/api/dash
 import { getRiskAlerts, getRiskTrend, getCorrelationSummary, getCorrelationTrend } from "@/api/metrics";
 import { fetchDevices, fetchLocations } from "@/api/realtime";
 import { fetchFences } from "@/api/fence";
+import { fetchProjects } from "@/api/project";
 import { exportAlarmReport, fetchSnapshotPreview } from "@/api/alarm";
 
 // el-dialog 在 jsdom 下卸载时过渡 vnode 为 null 会抛未处理异常（已知环境问题）。
@@ -83,15 +85,78 @@ beforeEach(() => {
   vi.mocked(fetchDevices).mockResolvedValue({ items: [], total: 0 } as any);
   vi.mocked(fetchLocations).mockResolvedValue({ items: [], total: 0 } as any);
   vi.mocked(fetchFences).mockResolvedValue({ items: [], total: 0 } as any);
+  vi.mocked(fetchProjects).mockResolvedValue({
+    items: [
+      { id: 1, name: "示范项目A" },
+      { id: 2, name: "示范项目B" },
+    ],
+    total: 2,
+  } as any);
   vi.mocked(getEffectiveness).mockResolvedValue({
     days: 30,
     range_start: "2026-06-27T00:00:00+08:00",
     range_end: "2026-07-27T23:59:59+08:00",
-    storm: { suppressed: 12, alarms: 40, rate_pct: 23.1 },
-    mttr: { avg_hours: 5.5, resolved: 30, resolution_rate_pct: 75.0 },
-    dispatch_sla: { closed: 8, on_time: 7, sla_rate_pct: 87.5, avg_cycle_hours: 4.0 },
-    hazard: { total: 10, closed: 6, closure_rate_pct: 60.0, on_time_rate_pct: 83.3 },
-    anomaly: { alarms: 4, share_pct: 10.0, correlation_dispatches: 2 },
+    prev_range_start: "2026-05-28T00:00:00+08:00",
+    prev_range_end: "2026-06-27T00:00:00+08:00",
+    project_focus: null,
+    storm: {
+      suppressed: 12,
+      alarms: 40,
+      rate_pct: 23.1,
+      trend: { prev: 20.0, delta_pct: 15.5, direction: "up", good: true },
+    },
+    mttr: {
+      avg_hours: 5.5,
+      resolved: 30,
+      resolution_rate_pct: 75.0,
+      trend: { prev: 6.0, delta_pct: -8.3, direction: "down", good: true },
+    },
+    dispatch_sla: {
+      closed: 8,
+      on_time: 7,
+      sla_rate_pct: 87.5,
+      avg_cycle_hours: 4.0,
+      trend: { prev: 80.0, delta_pct: 9.4, direction: "up", good: true },
+    },
+    hazard: {
+      total: 10,
+      closed: 6,
+      closure_rate_pct: 60.0,
+      on_time_rate_pct: 83.3,
+      trend: { prev: 55.0, delta_pct: 9.1, direction: "up", good: true },
+    },
+    anomaly: {
+      alarms: 4,
+      share_pct: 10.0,
+      correlation_dispatches: 2,
+      trend: { prev: 8.0, delta_pct: 25.0, direction: "up", good: null },
+    },
+    by_project: [
+      {
+        project_id: 1,
+        project_name: "示范项目A",
+        risk_index: 42.3,
+        risk_level: "中",
+        focused: false,
+        storm: { suppressed: 8, alarms: 20, rate_pct: 28.6, trend: { prev: 25.0, delta_pct: 14.4, direction: "up", good: true } },
+        mttr: { avg_hours: 4.5, resolved: 15, resolution_rate_pct: 75.0, trend: { prev: 5.0, delta_pct: -10.0, direction: "down", good: true } },
+        dispatch_sla: { closed: 4, on_time: 4, sla_rate_pct: 100.0, avg_cycle_hours: 3.5, trend: { prev: 90.0, delta_pct: 11.1, direction: "up", good: true } },
+        hazard: { total: 5, closed: 4, closure_rate_pct: 80.0, on_time_rate_pct: 100.0, trend: { prev: 70.0, delta_pct: 14.3, direction: "up", good: true } },
+        anomaly: { alarms: 2, share_pct: 10.0, correlation_dispatches: 1, trend: { prev: 5.0, delta_pct: -50.0, direction: "down", good: null } },
+      },
+      {
+        project_id: 2,
+        project_name: "示范项目B",
+        risk_index: 55.1,
+        risk_level: "高",
+        focused: false,
+        storm: { suppressed: 4, alarms: 20, rate_pct: 16.7, trend: { prev: 15.0, delta_pct: 11.3, direction: "up", good: true } },
+        mttr: { avg_hours: 6.5, resolved: 15, resolution_rate_pct: 75.0, trend: { prev: 7.0, delta_pct: -7.1, direction: "down", good: true } },
+        dispatch_sla: { closed: 4, on_time: 3, sla_rate_pct: 75.0, avg_cycle_hours: 4.5, trend: { prev: 70.0, delta_pct: 7.1, direction: "up", good: true } },
+        hazard: { total: 5, closed: 2, closure_rate_pct: 40.0, on_time_rate_pct: 50.0, trend: { prev: 40.0, delta_pct: 0.0, direction: "flat", good: null } },
+        anomaly: { alarms: 2, share_pct: 10.0, correlation_dispatches: 1, trend: { prev: 3.0, delta_pct: -33.3, direction: "down", good: null } },
+      },
+    ],
     computed_at: "2026-07-27T13:00:00+00:00",
   } as any);
   vi.mocked(exportAlarmReport).mockResolvedValue(new Blob(["x"]));
@@ -256,6 +321,27 @@ describe("views/DashboardView.vue", () => {
     // 切换窗口 → 重新拉取（带参）
     vm.effDays = 7;
     await flushPromises();
-    expect(vi.mocked(getEffectiveness)).toHaveBeenLastCalledWith(7);
+    expect(vi.mocked(getEffectiveness)).toHaveBeenLastCalledWith(7, null);
+  });
+
+  it("闭环效能：按项目下钻表渲染 + 点击行切换头部视图", async () => {
+    wrapper = baseMount();
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    // 下钻表数据就绪
+    expect(Array.isArray(vm.eff.by_project)).toBe(true);
+    expect(vm.eff.by_project.length).toBe(2);
+    // 表格行渲染
+    const rows = wrapper.findAll(".eff-drill-table .el-table__row");
+    expect(rows.length).toBe(2);
+    // 点击某项目行 → effProject 被设置 → 重新拉取带 project_id
+    vm.drillProject(vm.eff.by_project[1]);
+    await flushPromises();
+    expect(vm.effProject).toBe(vm.eff.by_project[1].project_id);
+    expect(vi.mocked(getEffectiveness)).toHaveBeenLastCalledWith(30, vm.eff.by_project[1].project_id);
+    // 再点一次取消下钻
+    vm.drillProject(vm.eff.by_project[1]);
+    await flushPromises();
+    expect(vm.effProject).toBeNull();
   });
 });

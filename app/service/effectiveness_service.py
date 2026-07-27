@@ -6,6 +6,12 @@
 - 派单是否在时限内闭环（SLA 达成率 + 平均闭环周期）；
 - 隐患治理闭环率，以及趋势异常引擎对告警流的贡献占比。
 
+本期增强（#82 细调）：
+- **趋势对比**：每个指标附带「上一周期」环比（prev / delta_pct / direction / good），
+  前端据此渲染上升/下降箭头与好坏着色（抑制率↑好、MTTR↑坏、异常占比中性）。
+- **按项目下钻**：端点支持 ``project_id``，返回 ``by_project`` 各项目指标排名明细，
+  点击即可把头部 5 指标切换为该项目的下钻视图。
+
 所有查询经 ``apply_data_scope`` 数据范围隔离，只读（由调用方传 read 会话）。
 软删除模型（dispatch_order / hazard）额外过滤 ``is_deleted``；alarm 无软删列。
 """
@@ -21,11 +27,30 @@ from app.core.data_scope import DataScope, apply_data_scope
 from app.model.alarm import Alarm
 from app.model.dispatch import DispatchOrder
 from app.model.hazard import Hazard
+from app.model.project import Project
 
 # 视为「已处置」的告警处理状态（用于 MTTR / 处置率分母）
 _RESOLVED_STATUSES = ("已处理", "已忽略", "已确认")
 _DISPATCH_CLOSED = "已闭环"
 _HAZARD_CLOSED = "已销号"
+
+# 空原始计数骨架（所有指标键齐全，便于聚合）
+_ZERO = {
+    "alarms": 0,
+    "suppressed": 0,
+    "resolved": 0,
+    "mttr_sum_seconds": 0.0,
+    "anomaly_alarms": 0,
+    "d_closed": 0,
+    "d_on_time": 0,
+    "d_with_deadline": 0,
+    "d_cycle_sum_hours": 0.0,
+    "corr_dispatch": 0,
+    "h_total": 0,
+    "h_closed": 0,
+    "h_ontime": 0,
+    "h_with_due": 0,
+}
 
 
 def _range(days: int) -> tuple[datetime, datetime]:
@@ -39,247 +64,358 @@ def _scalar_int(db, stmt) -> int:
     return int(db.scalar(stmt) or 0)
 
 
-def _scalar_float(db, stmt) -> float:
-    return float(db.scalar(stmt) or 0.0)
+def _trend(cur, prev, higher_is_better: bool | None):
+    """环比趋势：相对变化率 + 方向 + 好坏语义。
+
+    - prev 为 0/None：无法计算相对变化 → direction=flat，good=None（或「从 0 到正数」判为上升）。
+    - delta_pct：相对变化百分比（四舍五入 1 位）；good 依 higher_is_better 决定红绿。
+    - higher_is_better=None（如异常占比）：中性，good 恒为 None（前端灰色）。
+    """
+    if prev is None or (prev == 0 and cur == 0):
+        return {"prev": prev, "delta_pct": None, "direction": "flat", "good": None}
+    if prev == 0:
+        direction = "up" if cur > 0 else "flat"
+        good = None if direction == "flat" else ((direction == "up") == higher_is_better)
+        return {"prev": prev, "delta_pct": None, "direction": direction, "good": good}
+    delta = (cur - prev) / prev * 100.0
+    direction = "up" if delta > 0.5 else ("down" if delta < -0.5 else "flat")
+    good = None if direction == "flat" else ((direction == "up") == higher_is_better)
+    return {"prev": prev, "delta_pct": round(delta, 1), "direction": direction, "good": good}
 
 
-def compute_effectiveness(db, scope: DataScope, days: int = 30) -> dict:
-    """计算闭环效能指标，返回结构化的 dict（数值已四舍五入）。"""
+def _alarm_groups(db, scope: DataScope, start, end) -> dict[int, dict]:
+    """按项目聚合告警：数量、被抑制数、已处置数、MTTR 秒和、趋势异常数。"""
+    stmt = (
+        select(
+            Alarm.project_id,
+            func.count(),
+            func.coalesce(func.sum(Alarm.suppressed_count), 0),
+            func.count().filter(Alarm.handle_status.in_(_RESOLVED_STATUSES)),
+            func.coalesce(
+                func.sum(func.extract("epoch", Alarm.updated_at - Alarm.alarm_time)).filter(
+                    Alarm.handle_status.in_(_RESOLVED_STATUSES)
+                    & Alarm.updated_at.isnot(None)
+                    & Alarm.alarm_time.isnot(None)
+                    & (Alarm.updated_at >= Alarm.alarm_time)
+                ),
+                0,
+            ),
+            func.count().filter(Alarm.alarm_type == "trend_anomaly"),
+        )
+        .select_from(Alarm)
+        .where(Alarm.alarm_time >= start)
+    )
+    if end is not None:
+        stmt = stmt.where(Alarm.alarm_time < end)
+    stmt = stmt.group_by(Alarm.project_id)
+    stmt = apply_data_scope(stmt, Alarm, scope)
+    out: dict[int, dict] = {}
+    for pid, cnt, supp, resolved, mttr_sec, anomaly in db.execute(stmt).all():
+        out[pid] = {
+            "alarms": int(cnt),
+            "suppressed": int(supp),
+            "resolved": int(resolved),
+            "mttr_sum_seconds": float(mttr_sec or 0),
+            "anomaly_alarms": int(anomaly),
+        }
+    return out
+
+
+def _dispatch_closed_groups(db, scope: DataScope, start, end) -> dict[int, dict]:
+    """按项目聚合已闭环派单：闭环数、按期数、有期限数、闭环周期小时和。"""
+    stmt = (
+        select(
+            DispatchOrder.project_id,
+            func.count().filter(DispatchOrder.status == _DISPATCH_CLOSED),
+            func.count().filter(
+                (DispatchOrder.status == _DISPATCH_CLOSED)
+                & (DispatchOrder.closed_at <= DispatchOrder.deadline)
+                & DispatchOrder.deadline.isnot(None)
+            ),
+            func.count().filter(
+                (DispatchOrder.status == _DISPATCH_CLOSED) & DispatchOrder.deadline.isnot(None)
+            ),
+            func.coalesce(
+                func.sum(
+                    func.extract("epoch", DispatchOrder.closed_at - DispatchOrder.created_at)
+                    / 3600.0
+                ).filter(DispatchOrder.status == _DISPATCH_CLOSED),
+                0,
+            ),
+        )
+        .select_from(DispatchOrder)
+        .where(DispatchOrder.is_deleted.is_(False), DispatchOrder.closed_at >= start)
+    )
+    if end is not None:
+        stmt = stmt.where(DispatchOrder.closed_at < end)
+    stmt = stmt.group_by(DispatchOrder.project_id)
+    stmt = apply_data_scope(stmt, DispatchOrder, scope)
+    out: dict[int, dict] = {}
+    for pid, closed, on_time, with_deadline, cycle_h in db.execute(stmt).all():
+        out[pid] = {
+            "d_closed": int(closed),
+            "d_on_time": int(on_time),
+            "d_with_deadline": int(with_deadline),
+            "d_cycle_sum_hours": float(cycle_h or 0),
+        }
+    return out
+
+
+def _dispatch_corr_groups(db, scope: DataScope, start, end) -> dict[int, dict]:
+    """按项目聚合由跨设备共因发起的派单数。"""
+    stmt = (
+        select(DispatchOrder.project_id, func.count())
+        .select_from(DispatchOrder)
+        .where(
+            DispatchOrder.is_deleted.is_(False),
+            DispatchOrder.created_at >= start,
+            DispatchOrder.source_type == "correlation",
+        )
+    )
+    if end is not None:
+        stmt = stmt.where(DispatchOrder.created_at < end)
+    stmt = stmt.group_by(DispatchOrder.project_id)
+    stmt = apply_data_scope(stmt, DispatchOrder, scope)
+    out: dict[int, dict] = {}
+    for pid, cnt in db.execute(stmt).all():
+        out[pid] = {"corr_dispatch": int(cnt)}
+    return out
+
+
+def _hazard_groups(db, scope: DataScope, start, end) -> dict[int, dict]:
+    """按项目聚合隐患：总数、已销号、按期销号、有期限数。"""
+    stmt = (
+        select(
+            Hazard.project_id,
+            func.count(),
+            func.count().filter(Hazard.status == _HAZARD_CLOSED),
+            func.count().filter(
+                (Hazard.status == _HAZARD_CLOSED)
+                & (Hazard.closed_at <= Hazard.due_at)
+                & Hazard.due_at.isnot(None)
+            ),
+            func.count().filter((Hazard.status == _HAZARD_CLOSED) & Hazard.due_at.isnot(None)),
+        )
+        .select_from(Hazard)
+        .where(Hazard.is_deleted.is_(False), Hazard.created_at >= start)
+    )
+    if end is not None:
+        stmt = stmt.where(Hazard.created_at < end)
+    stmt = stmt.group_by(Hazard.project_id)
+    stmt = apply_data_scope(stmt, Hazard, scope)
+    out: dict[int, dict] = {}
+    for pid, total, closed, ontime, with_due in db.execute(stmt).all():
+        out[pid] = {
+            "h_total": int(total),
+            "h_closed": int(closed),
+            "h_ontime": int(ontime),
+            "h_with_due": int(with_due),
+        }
+    return out
+
+
+def _collect(db, scope: DataScope, start, end) -> dict[int, dict]:
+    """聚合四种模型的分组结果，返回 {pid: 完整原始计数}。"""
+    raw: dict[int, dict] = {}
+
+    def acc(d: dict[int, dict]):
+        for pid, vals in d.items():
+            r = raw.setdefault(pid, dict(_ZERO))
+            r.update(vals)
+
+    acc(_alarm_groups(db, scope, start, end))
+    acc(_dispatch_closed_groups(db, scope, start, end))
+    acc(_dispatch_corr_groups(db, scope, start, end))
+    acc(_hazard_groups(db, scope, start, end))
+    # 补全所有键
+    for pid in list(raw.keys()):
+        merged = dict(_ZERO)
+        merged.update(raw[pid])
+        raw[pid] = merged
+    return raw
+
+
+def _sum(raw: dict[int, dict]) -> dict:
+    s = dict(_ZERO)
+    for r in raw.values():
+        for k, v in r.items():
+            s[k] += v
+    return s
+
+
+def _accessible_projects(db, scope: DataScope) -> list[tuple[int, str]]:
+    """可见项目 (id, name) 列表：is_all 取全部，否则按部门过滤，与 dashboard 同口径。"""
+    stmt = select(Project.id, Project.name).where(Project.is_deleted.is_(False))
+    if scope.dept_ids:
+        stmt = stmt.where(Project.dept_id.in_(scope.dept_ids))
+    return list(db.execute(stmt).all())
+
+
+def _derive(raw: dict, prev: dict) -> dict:
+    """从原始计数派生 5 项指标 + 各自环比趋势。"""
+    # 1) 风暴抑制率
+    denom = raw["alarms"] + raw["suppressed"]
+    rate = round(raw["suppressed"] / denom * 100, 1) if denom else 0.0
+    pdenom = prev["alarms"] + prev["suppressed"]
+    prate = round(prev["suppressed"] / pdenom * 100, 1) if pdenom else 0.0
+    storm = {
+        "suppressed": raw["suppressed"],
+        "alarms": raw["alarms"],
+        "rate_pct": rate,
+        "trend": _trend(rate, prate, True),
+    }
+
+    # 2) 告警处置 MTTR（近似）
+    resolved = raw["resolved"]
+    avg_h = round(raw["mttr_sum_seconds"] / 3600.0 / resolved, 1) if resolved else 0.0
+    presolved = prev["resolved"]
+    pavg = round(prev["mttr_sum_seconds"] / 3600.0 / presolved, 1) if presolved else 0.0
+    resolution_rate = round(resolved / raw["alarms"] * 100, 1) if raw["alarms"] else 0.0
+    mttr = {
+        "avg_hours": avg_h,
+        "resolved": resolved,
+        "resolution_rate_pct": resolution_rate,
+        "trend": _trend(avg_h, pavg, False),
+    }
+
+    # 3) 派单 SLA
+    closed = raw["d_closed"]
+    on_time = raw["d_on_time"]
+    with_deadline = raw["d_with_deadline"]
+    sla = round(on_time / with_deadline * 100, 1) if with_deadline else 0.0
+    pon_time = prev["d_on_time"]
+    pwith_deadline = prev["d_with_deadline"]
+    psla = round(pon_time / pwith_deadline * 100, 1) if pwith_deadline else 0.0
+    cycle = round(raw["d_cycle_sum_hours"] / closed, 1) if closed else 0.0
+    dispatch_sla = {
+        "closed": closed,
+        "on_time": on_time,
+        "sla_rate_pct": sla,
+        "avg_cycle_hours": cycle,
+        "trend": _trend(sla, psla, True),
+    }
+
+    # 4) 隐患治理闭环率
+    h_total = raw["h_total"]
+    h_closed = raw["h_closed"]
+    closure = round(h_closed / h_total * 100, 1) if h_total else 0.0
+    ph_total = prev["h_total"]
+    ph_closed = prev["h_closed"]
+    pclosure = round(ph_closed / ph_total * 100, 1) if ph_total else 0.0
+    h_ontime = raw["h_ontime"]
+    h_with_due = raw["h_with_due"]
+    on_time_rate = round(h_ontime / h_with_due * 100, 1) if h_with_due else 0.0
+    hazard = {
+        "total": h_total,
+        "closed": h_closed,
+        "closure_rate_pct": closure,
+        "on_time_rate_pct": on_time_rate,
+        "trend": _trend(closure, pclosure, True),
+    }
+
+    # 5) 异常贡献（趋势异常告警占比；中性、不着色）
+    anomaly_alarms = raw["anomaly_alarms"]
+    share = round(anomaly_alarms / raw["alarms"] * 100, 1) if raw["alarms"] else 0.0
+    panomaly_alarms = prev["anomaly_alarms"]
+    pshare = round(panomaly_alarms / prev["alarms"] * 100, 1) if prev["alarms"] else 0.0
+    anomaly = {
+        "alarms": anomaly_alarms,
+        "share_pct": share,
+        "correlation_dispatches": raw["corr_dispatch"],
+        "trend": _trend(share, pshare, None),
+    }
+
+    return {
+        "storm": storm,
+        "mttr": mttr,
+        "dispatch_sla": dispatch_sla,
+        "hazard": hazard,
+        "anomaly": anomaly,
+    }
+
+
+def _risk_index(m: dict) -> tuple[float, str]:
+    """项目下钻风险分：表现越差分越高（SLA/闭环率权重最大）。"""
+    s = m["storm"]["rate_pct"]
+    sla = m["dispatch_sla"]["sla_rate_pct"]
+    cl = m["hazard"]["closure_rate_pct"]
+    mt = m["mttr"]["avg_hours"]
+    score = (
+        (100 - s) * 0.15
+        + (100 - sla) * 0.35
+        + (100 - cl) * 0.35
+        + (min(mt, 168) / 168 * 100) * 0.15
+    )
+    score = round(score, 1)
+    level = "高" if score >= 60 else ("中" if score >= 30 else "低")
+    return score, level
+
+
+def compute_effectiveness(
+    db, scope: DataScope, days: int = 30, project_id: int | None = None
+) -> dict:
+    """计算闭环效能指标（含环比与按项目下钻）。
+
+    - project_id 为 None：头部 5 指标为全量聚合，by_project 返回各项目明细排名。
+    - project_id 指定且可见：头部 5 指标切换为该项目的下钻视图，by_project 仍返回全量明细。
+    """
     start, end = _range(days)
+    prev_start = start - timedelta(days=days)
+    prev_end = start  # 上一周期上界（不含）
 
-    # 1) 告警风暴抑制率：区间内被合并掉的重复告警数 / (实际告警 + 被抑制)
-    suppressed = _scalar_int(
-        db,
-        apply_data_scope(
-            select(func.coalesce(func.sum(Alarm.suppressed_count), 0))
-            .select_from(Alarm)
-            .where(Alarm.alarm_time >= start),
-            Alarm,
-            scope,
-        ),
-    )
-    alarms = _scalar_int(
-        db,
-        apply_data_scope(
-            select(func.count()).select_from(Alarm).where(Alarm.alarm_time >= start),
-            Alarm,
-            scope,
-        ),
-    )
-    denom = alarms + suppressed
-    storm_rate = round(suppressed / denom * 100, 1) if denom else 0.0
+    gc = _collect(db, scope, start, None)  # 当前窗口（无上界，与历史口径一致）
+    gp = _collect(db, scope, prev_start, prev_end)  # 上一周期（等长、不含当前起点）
 
-    # 2) 告警处置 MTTR（近似）：updated_at - alarm_time（仅已处置类，且 updated_at>=alarm_time）
-    #    Alarm 无独立 handle_time，updated_at 近似最后处置时间，属保守估算，已在口径文档标注。
-    mttr_hours = _scalar_float(
-        db,
-        apply_data_scope(
-            select(func.avg(func.extract("epoch", Alarm.updated_at - Alarm.alarm_time)) / 3600.0)
-            .select_from(Alarm)
-            .where(
-                Alarm.alarm_time >= start,
-                Alarm.handle_status.in_(_RESOLVED_STATUSES),
-                Alarm.alarm_time.isnot(None),
-                Alarm.updated_at.isnot(None),
-                Alarm.updated_at >= Alarm.alarm_time,
-            ),
-            Alarm,
-            scope,
-        ),
-    )
-    resolved = _scalar_int(
-        db,
-        apply_data_scope(
-            select(func.count())
-            .select_from(Alarm)
-            .where(Alarm.alarm_time >= start, Alarm.handle_status.in_(_RESOLVED_STATUSES)),
-            Alarm,
-            scope,
-        ),
-    )
-    resolution_rate = round(resolved / alarms * 100, 1) if alarms else 0.0
+    overall = _sum(gc)
+    overall_prev = _sum(gp)
 
-    # 3) 派单 SLA：已闭环工单中，闭环时间 <= 处理时限 的比例 + 平均闭环周期
-    closed = _scalar_int(
-        db,
-        apply_data_scope(
-            select(func.count())
-            .select_from(DispatchOrder)
-            .where(
-                DispatchOrder.is_deleted.is_(False),
-                DispatchOrder.closed_at >= start,
-                DispatchOrder.status == _DISPATCH_CLOSED,
-            ),
-            DispatchOrder,
-            scope,
-        ),
-    )
-    on_time = _scalar_int(
-        db,
-        apply_data_scope(
-            select(func.count())
-            .select_from(DispatchOrder)
-            .where(
-                DispatchOrder.is_deleted.is_(False),
-                DispatchOrder.closed_at >= start,
-                DispatchOrder.status == _DISPATCH_CLOSED,
-                DispatchOrder.closed_at <= DispatchOrder.deadline,
-                DispatchOrder.deadline.isnot(None),
-            ),
-            DispatchOrder,
-            scope,
-        ),
-    )
-    closed_with_deadline = _scalar_int(
-        db,
-        apply_data_scope(
-            select(func.count())
-            .select_from(DispatchOrder)
-            .where(
-                DispatchOrder.is_deleted.is_(False),
-                DispatchOrder.closed_at >= start,
-                DispatchOrder.status == _DISPATCH_CLOSED,
-                DispatchOrder.deadline.isnot(None),
-            ),
-            DispatchOrder,
-            scope,
-        ),
-    )
-    sla_rate = round(on_time / closed_with_deadline * 100, 1) if closed_with_deadline else 0.0
-    cycle_hours = _scalar_float(
-        db,
-        apply_data_scope(
-            select(
-                func.avg(func.extract("epoch", DispatchOrder.closed_at - DispatchOrder.created_at))
-                / 3600.0
-            )
-            .select_from(DispatchOrder)
-            .where(
-                DispatchOrder.is_deleted.is_(False),
-                DispatchOrder.closed_at >= start,
-                DispatchOrder.status == _DISPATCH_CLOSED,
-            ),
-            DispatchOrder,
-            scope,
-        ),
-    )
+    # 校验下钻项目可见性
+    focus_pid: int | None = None
+    if project_id is not None:
+        visible = {pid for pid, _ in _accessible_projects(db, scope)}
+        if project_id in visible:
+            focus_pid = project_id
 
-    # 4) 隐患治理闭环率 + 按期销号率
-    hz_total = _scalar_int(
-        db,
-        apply_data_scope(
-            select(func.count())
-            .select_from(Hazard)
-            .where(Hazard.is_deleted.is_(False), Hazard.created_at >= start),
-            Hazard,
-            scope,
-        ),
-    )
-    hz_closed = _scalar_int(
-        db,
-        apply_data_scope(
-            select(func.count())
-            .select_from(Hazard)
-            .where(
-                Hazard.is_deleted.is_(False),
-                Hazard.created_at >= start,
-                Hazard.status == _HAZARD_CLOSED,
-            ),
-            Hazard,
-            scope,
-        ),
-    )
-    closure_rate = round(hz_closed / hz_total * 100, 1) if hz_total else 0.0
-    hz_ontime = _scalar_int(
-        db,
-        apply_data_scope(
-            select(func.count())
-            .select_from(Hazard)
-            .where(
-                Hazard.is_deleted.is_(False),
-                Hazard.created_at >= start,
-                Hazard.status == _HAZARD_CLOSED,
-                Hazard.closed_at <= Hazard.due_at,
-                Hazard.due_at.isnot(None),
-            ),
-            Hazard,
-            scope,
-        ),
-    )
-    hz_with_due = _scalar_int(
-        db,
-        apply_data_scope(
-            select(func.count())
-            .select_from(Hazard)
-            .where(
-                Hazard.is_deleted.is_(False),
-                Hazard.created_at >= start,
-                Hazard.status == _HAZARD_CLOSED,
-                Hazard.due_at.isnot(None),
-            ),
-            Hazard,
-            scope,
-        ),
-    )
-    hz_ontime_rate = round(hz_ontime / hz_with_due * 100, 1) if hz_with_due else 0.0
+    if focus_pid is None:
+        focus_raw, focus_prev = overall, overall_prev
+    else:
+        focus_raw = gc.get(focus_pid, dict(_ZERO))
+        focus_prev = gp.get(focus_pid, dict(_ZERO))
 
-    # 5) 异常贡献：趋势异常告警占告警流比例 + 由跨设备共因发起的派单数
-    anomaly_alarms = _scalar_int(
-        db,
-        apply_data_scope(
-            select(func.count())
-            .select_from(Alarm)
-            .where(Alarm.alarm_time >= start, Alarm.alarm_type == "trend_anomaly"),
-            Alarm,
-            scope,
-        ),
-    )
-    anomaly_share = round(anomaly_alarms / alarms * 100, 1) if alarms else 0.0
-    corr_dispatch = _scalar_int(
-        db,
-        apply_data_scope(
-            select(func.count())
-            .select_from(DispatchOrder)
-            .where(
-                DispatchOrder.is_deleted.is_(False),
-                DispatchOrder.created_at >= start,
-                DispatchOrder.source_type == "correlation",
-            ),
-            DispatchOrder,
-            scope,
-        ),
-    )
+    metrics = _derive(focus_raw, focus_prev)
+
+    # 按项目下钻明细（含零活动项目，避免遗漏）
+    by_project: list[dict] = []
+    for pid, name in _accessible_projects(db, scope):
+        raw = gc.get(pid, dict(_ZERO))
+        prev = gp.get(pid, dict(_ZERO))
+        m = _derive(raw, prev)
+        score, level = _risk_index(m)
+        by_project.append(
+            {
+                "project_id": pid,
+                "project_name": name,
+                "risk_index": score,
+                "risk_level": level,
+                "focused": pid == focus_pid,
+                **m,
+            }
+        )
+    # 风险分降序（最需关注的项目在前）
+    by_project.sort(key=lambda x: x["risk_index"], reverse=True)
 
     return {
         "days": days,
         "range_start": start.isoformat(),
         "range_end": end.isoformat(),
-        "storm": {
-            "suppressed": suppressed,
-            "alarms": alarms,
-            "rate_pct": storm_rate,
-        },
-        "mttr": {
-            "avg_hours": round(mttr_hours, 1),
-            "resolved": resolved,
-            "resolution_rate_pct": resolution_rate,
-        },
-        "dispatch_sla": {
-            "closed": closed,
-            "on_time": on_time,
-            "sla_rate_pct": sla_rate,
-            "avg_cycle_hours": round(cycle_hours, 1),
-        },
-        "hazard": {
-            "total": hz_total,
-            "closed": hz_closed,
-            "closure_rate_pct": closure_rate,
-            "on_time_rate_pct": hz_ontime_rate,
-        },
-        "anomaly": {
-            "alarms": anomaly_alarms,
-            "share_pct": anomaly_share,
-            "correlation_dispatches": corr_dispatch,
-        },
+        "prev_range_start": prev_start.isoformat(),
+        "prev_range_end": prev_end.isoformat(),
+        "project_focus": focus_pid,
+        "storm": metrics["storm"],
+        "mttr": metrics["mttr"],
+        "dispatch_sla": metrics["dispatch_sla"],
+        "hazard": metrics["hazard"],
+        "anomaly": metrics["anomaly"],
+        "by_project": by_project,
         "computed_at": datetime.now(timezone.utc).isoformat(),
     }

@@ -549,4 +549,18 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
 - **端点**：`GET /api/v1/dashboard/effectiveness?days=30`（`dashboard:view`，复用 3s 响应缓存，与 `/stats` 同口径）。
 - **前端**：`DashboardView.vue` 新增「闭环效能度量」卡（蓝顶），五指标网格 + 窗口选择器（近 7/30/90 天，`watch(effDays)` 重拉）；类型 `Effectiveness`（`types/index.ts`）、API `getEffectiveness`（`api/dashboard.ts`）。
 - **测试**：`tests/test_effectiveness.py`（插入前/后绝对值口径：suppressed≥5、dispatch closed/on_time、hazard closed、anomaly alarms、MTTR>0、结构完整性；端点 200 + 字段；空范围比率不为 NaN）；`DashboardView.spec.ts` 补「卡渲染五项标签 + 窗口切换重拉」。
+
+#### 13.10.1 细调：趋势对比 + 按项目下钻
+
+在 13.10 基础上，把静态五项指标升级为「可对比、可下钻」的运营视图。
+
+- **趋势对比（环比）**：每个指标附「上一周期」环比 —— `trend: { prev, delta_pct, direction, good }`。
+  - `prev` 为上一等长窗口（start−days, start）的同口径值；`delta_pct` 为相对变化率；`direction` ∈ up/down/flat；`good` 依语义着色（抑制率↑好、SLA/闭环率↑好、MTTR↑坏、异常占比中性 `good=null` 灰色）。
+  - 实现：服务对「当前窗口（无上界，与历史口径一致）」与「上一周期（等长、不含当前起点）」各做一次分组聚合，再派生总体/单项目指标与其环比，避免与既有数值口径脱节。
+- **按项目下钻**：端点新增 `project_id` 查询参数（留空=全量）。
+  - 返回 `by_project`：各项目指标排名明细（按风险分降序，高/中/低），含与头部同构的 5 指标 + 各自 `trend`。
+  - 头部 5 指标随 `project_id` 切换为该项目的下钻视图（`project_focus` 标记）；非可见项目（越权）自动忽略回退全量。
+  - 前端卡新增项目下拉（源自 `fetchProjects`，数据范围由后端保证），并把 `by_project` 渲染为可点击下钻表：点击行 → 头部切换该项目视图，再点取消。
+- **测试**：`tests/test_effectiveness.py` 增补「趋势结构存在 / 方向合法 / `by_project` 列表 / `project_id` 下钻头部切换 + focused 标记 + 风险分字段」；`DashboardView.spec.ts` 增补「下钻表渲染 2 行 + 点击行切换 `effProject` 并带 `project_id` 重拉 + 再点取消」。
+
 - **已知近似**：MTTR 依赖处置时的 UPDATE 写回 `updated_at`；若业务后续引入独立 `handle_time` 列可替换为精确值（属后续增强，非缺陷）。
