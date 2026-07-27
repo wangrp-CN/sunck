@@ -18,6 +18,7 @@ from app.api.v1 import (
     fences,
     hazards,
     inspections,
+    intelligence,
     jobs,
     machines,
     media,
@@ -51,3 +52,4 @@ api_router.include_router(dicts.router, prefix="/v1/dicts", tags=["数据字典"
 api_router.include_router(inspections.router, prefix="/v1/inspections", tags=["巡检打卡"])
 api_router.include_router(videos.router, prefix="/v1/videos", tags=["视频AI"])
 api_router.include_router(metrics.router, prefix="/v1/metrics", tags=["指标快照"])
+api_router.include_router(intelligence.router, prefix="", tags=["智能核心"])

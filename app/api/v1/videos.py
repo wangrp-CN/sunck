@@ -12,6 +12,7 @@
 """
 
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, Field
 
 from app.core.data_scope import DataScope
 from app.core.database import get_db
@@ -23,6 +24,7 @@ from app.schema.video import (
     VideoChannelUpdate,
     VideoEventIngest,
 )
+from app.service import video_ai as video_ai_svc
 from app.service import video_service as svc
 
 router = APIRouter(tags=["视频AI"])
@@ -176,3 +178,25 @@ def handle_event(
     e = svc.handle_event(db, event_id, scope)
     db.commit()
     return ApiResponse.success(data=svc.to_event_out(e).model_dump(), message="已处理")
+
+
+class VideoAiAnalyzeReq(BaseModel):
+    channel_no: str | None = Field(None, description="目标视频通道编号")
+    frame_url: str | None = Field(None, description="待分析帧/视频片段地址")
+    model: str | None = Field(None, description="指定推理模型（可选）")
+
+
+@router.post(
+    "/ai/analyze",
+    summary="视频 AI 异常识别（接口预留）",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("video:list"))],
+)
+def ai_analyze(req: VideoAiAnalyzeReq) -> ApiResponse:
+    """对指定通道/帧发起异常识别（接口预留，待能力接入）。
+
+    能力就绪前返回 ``status=pending_capability`` + 预期识别能力清单，
+    便于前端/编排层提前对接；能力接入后改为返回真实识别结果。
+    """
+    result = video_ai_svc.analyze(req.model_dump(exclude_none=True))
+    return ApiResponse.success(data=result)

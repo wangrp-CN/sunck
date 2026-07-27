@@ -20,14 +20,16 @@ import logging
 import threading
 from typing import Any
 
+from app.config import settings
 from app.core.redis import get_redis_client
 from app.ws import bridge
 
 logger = logging.getLogger("rail_monitor.ws.correlation")
 
 REDIS_CHANNEL = "ws:correlation"
-# 指纹去重 TTL：同一共因事件 7 天内不重复推送（每日重算也不会重复轰炸）。
-FP_TTL_SECONDS = 7 * 86400
+# 指纹去重 TTL 改由配置 ``settings.correlation_fp_ttl_seconds`` 驱动（默认 7 天），
+# 便于按业务节奏调优（见 app/config.py）。此处保留常量名仅为兼容可能的外部引用。
+FP_TTL_SECONDS = settings.correlation_fp_ttl_seconds
 
 
 def _fingerprint(project_id: Any, spatial_type: str, scope_key: str, started_at: Any) -> str:
@@ -54,7 +56,8 @@ def publish_new_cross_device_groups(groups: list[Any]) -> int:
         fp = _fingerprint(g.project_id, g.spatial_type, g.scope_key, g.started_at)
         key = f"correlation:pushed:{fp}"
         try:
-            if r.exists(key):
+            # 去重开关关闭（调试/重放）或指纹未命中 → 推送
+            if settings.correlation_dedup_enabled and r.exists(key):
                 continue
             ws_payload = {
                 "type": "correlation",
@@ -66,7 +69,7 @@ def publish_new_cross_device_groups(groups: list[Any]) -> int:
                 channels.append(f"corr:project:{g.project_id}")
             wrapper = {"ws_channels": channels, "payload": ws_payload}
             r.publish(REDIS_CHANNEL, json.dumps(wrapper, ensure_ascii=False, default=str))
-            r.set(key, "1", ex=FP_TTL_SECONDS)
+            r.set(key, "1", ex=settings.correlation_fp_ttl_seconds)
             published += 1
         except Exception as exc:  # noqa: BLE001
             logger.warning("关联事件 WS 发布单条失败(已忽略): %s", exc)

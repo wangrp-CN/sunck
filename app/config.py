@@ -72,9 +72,20 @@ class Settings(BaseSettings):
     correlation_gap_minutes: int = 30
     # 跨设备共因事件的 WebSocket 实时推送开关（Redis Pub/Sub 桥接，见 app/ws/correlation_pubsub）。
     ws_correlation_enabled: bool = True
+    # 跨设备共因事件 WS 推送指纹去重 TTL（秒）：同一共因在该窗口内只推送一次，
+    # 避免每日重算反复轰炸。可据业务节奏调小（更灵敏）或调大（更稳）。默认 7 天。
+    correlation_fp_ttl_seconds: int = 7 * 86400
+    # 关联指纹去重总开关：关闭后每次重算均推送（仅用于调试/重放）。默认开启。
+    correlation_dedup_enabled: bool = True
     # 告警风暴抑制窗口（秒）：同一 (设备, 类型, 围栏, 状态) 在该窗口内只产生 1 条告警，
     # 后续重复被合并并计入 anchor 的 suppressed_count（见 app/service/alarm_service）。
     alarm_suppress_window_seconds: int = 300
+
+    # ---------- 智能核心 / 视频 AI 异常识别（接口预留，待能力接入） ----------
+    # 平台自身不做推理，异常识别由外部 AI 盒子/推理服务完成并经 /videos/events/ingest
+    # 回推。video_ai_enabled 仅作为"能力就绪"开关；能力接入前 /videos/ai/analyze 返回
+    # pending_capability 占位，便于前端/编排层提前对接接口契约。
+    video_ai_enabled: bool = False
 
     # ---------- 智能核心 / 趋势异常检测（统计基线法） ----------
     # z-score 阈值：单点偏离其之前滚动基线超过 k 个标准差即判异常（k 越大越严格）。

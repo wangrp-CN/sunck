@@ -15,12 +15,12 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from app.config import settings
 from app.core.metrics import PROJECT_RISK_INDEX
 from app.core.notify import notify_for_project
 from app.model.risk_alert import RiskAlertState
 from app.model.snapshot import RiskHealthSnapshot
 from app.service import metrics_snapshot as snap_svc
+from app.service.threshold_calibration import get_active_threshold
 
 
 def _latest_two(db) -> tuple[dict[str, RiskHealthSnapshot], dict[str, RiskHealthSnapshot]]:
@@ -81,7 +81,7 @@ def evaluate_risk_alerts(db, threshold: int | None = None) -> list[dict]:
     说明：``is_new`` 仅用于前端展示语义，真正的「不重复轰炸」由 ``alert_newly_breached``
     基于 ``RiskAlertState`` 去重保证（见该函数）。
     """
-    threshold = settings.risk_alert_threshold if threshold is None else threshold
+    threshold = get_active_threshold(db) if threshold is None else threshold
     latest, prev = _latest_two(db)
 
     breached: list[dict] = []
@@ -129,7 +129,7 @@ def alert_newly_breached(db, threshold: int | None = None) -> int:
 
     返回实际触发下发通知的项目数（0 表示无新增预警）。
     """
-    threshold = settings.risk_alert_threshold if threshold is None else threshold
+    threshold = get_active_threshold(db) if threshold is None else threshold
     latest, _ = _latest_two(db)
 
     sent = 0

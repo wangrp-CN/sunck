@@ -6,6 +6,8 @@
 - ``POST /snapshot/run``：手动触发一次快照（仅超级管理员）。
 """
 
+import logging
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -24,6 +26,8 @@ from app.service import anomaly_service as anomaly_svc
 from app.service import metrics_snapshot as svc
 from app.service import risk_alert as alert_svc
 from app.service.alarm_service import ALARM_DEDUP_TTL, storm_suppressed_today
+
+logger = logging.getLogger("rail_monitor.api.metrics")
 
 router = APIRouter()
 
@@ -319,3 +323,33 @@ def correlations_run(
         db, window_hours=window_hours, cluster_gap_minutes=gap_minutes
     )
     return ApiResponse.success(data=result, message="关联计算完成")
+
+
+@router.get(
+    "/correlations/dedup-stats",
+    dependencies=[Depends(require_permissions("dashboard:view"))],
+)
+def correlations_dedup_stats(db: Session = Depends(get_read_db)):
+    """跨设备关联 WS 推送去重观测（误报降噪 · #④-2）。
+
+    返回当前活跃指纹数（Redis ``correlation:pushed:*`` 键计数）、去重 TTL 与开关，
+    便于运维评估"同一共因重算轰炸"的抑制效果并调优 ``correlation_fp_ttl_seconds``。
+    Redis 不可用时 ``active_fingerprints`` 返回 -1（不阻断主流程）。
+    """
+    from app.core.redis import get_redis_client
+
+    active = -1
+    try:
+        r = get_redis_client()
+        # scan_iter 增量遍历，避免 KEYS 阻塞；限定前缀精确计数
+        active = sum(1 for _ in r.scan_iter("correlation:pushed:*", count=200))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("关联去重统计 Redis 不可用: %s", exc)
+    return ApiResponse.success(
+        data={
+            "active_fingerprints": active,
+            "fp_ttl_seconds": settings.correlation_fp_ttl_seconds,
+            "fp_ttl_days": round(settings.correlation_fp_ttl_seconds / 86400, 2),
+            "dedup_enabled": settings.correlation_dedup_enabled,
+        }
+    )
