@@ -17,6 +17,7 @@ import {
   VideoCamera,
   TrendCharts,
   Promotion,
+  MagicStick,
 } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
@@ -190,10 +191,20 @@ onUnmounted(() => {
           <el-icon><TrendCharts /></el-icon>
           <span>对比大屏</span>
         </el-menu-item>
-        <el-menu-item index="/intelligence/correlation">
-          <el-icon><Connection /></el-icon>
-          <span>跨设备根因关联</span>
-        </el-menu-item>
+        <el-sub-menu index="/intelligence-group">
+          <template #title>
+            <el-icon><MagicStick /></el-icon>
+            <span>智能核心</span>
+          </template>
+          <el-menu-item index="/intelligence/threshold">
+            <el-icon><MagicStick /></el-icon>
+            <span>阈值自学习</span>
+          </el-menu-item>
+          <el-menu-item index="/intelligence/correlation">
+            <el-icon><Connection /></el-icon>
+            <span>跨设备根因关联</span>
+          </el-menu-item>
+        </el-sub-menu>
         <el-sub-menu index="/devices-group">
           <template #title>
             <el-icon><Cpu /></el-icon>

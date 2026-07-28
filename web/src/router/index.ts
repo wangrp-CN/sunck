@@ -109,6 +109,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "跨设备根因关联" },
       },
       {
+        path: "intelligence/threshold",
+        name: "intelligence-threshold",
+        component: () => import("@/views/ThresholdAutoLearningView.vue"),
+        meta: { title: "阈值自学习" },
+      },
+      {
         path: "alarms",
         name: "alarms",
         component: () => import("@/views/AlarmView.vue"),
