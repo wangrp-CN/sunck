@@ -9,7 +9,7 @@ const hoisted = vi.hoisted(() => ({
   getCorrelationHeatmap: vi.fn(),
   getCorrelationMembers: vi.fn(),
   runCorrelations: vi.fn(),
-  createCorrelationSocket: vi.fn(() => () => {}),
+  createCorrelationSocket: vi.fn(),
   elMessageSuccess: vi.fn(),
   elMessageInfo: vi.fn(),
   authUser: { is_superuser: true, permission_codes: [] as string[] },

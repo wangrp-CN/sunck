@@ -180,6 +180,31 @@ def handle_event(
     return ApiResponse.success(data=svc.to_event_out(e).model_dump(), message="已处理")
 
 
+@router.post(
+    "/events/{event_id}/escalate",
+    summary="升级为平台告警（闭环联动）",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("video:update"))],
+)
+def escalate_event(
+    event_id: int, db=Depends(get_db), scope: DataScope = Depends(get_data_scope)
+) -> ApiResponse:
+    """将视频 AI 事件升级为平台告警并回填 alarm_id，闭合「监测→异常→告警」链路。
+
+    幂等：事件已升级则直接返回既有 alarm_id，不重复建单。
+    """
+    event, alarm = svc.escalate_event_to_alarm(db, event_id, scope)
+    db.commit()
+    return ApiResponse.success(
+        data={
+            "event_id": event.id,
+            "alarm_id": event.alarm_id,
+            "alarm_level": alarm.alarm_level if alarm else None,
+        },
+        message="已升级为平台告警" if event.alarm_id else "已关联既有告警",
+    )
+
+
 class VideoAiAnalyzeReq(BaseModel):
     channel_no: str | None = Field(None, description="目标视频通道编号")
     frame_url: str | None = Field(None, description="待分析帧/视频片段地址")

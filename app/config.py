@@ -87,6 +87,12 @@ class Settings(BaseSettings):
     # pending_capability 占位，便于前端/编排层提前对接接口契约。
     video_ai_enabled: bool = False
 
+    # 视频 AI 事件自动升级为平台告警（深化⑧）：外部推理回推的高危/高置信事件在
+    # ingest 时自动建一条平台告警并回填 video_event.alarm_id，闭合「监测→异常→告警」
+    # 链路。手动「升级为告警」不受此开关限制，独立于自动升级始终可用。
+    video_auto_escalate_enabled: bool = False
+    video_auto_escalate_threshold: float = 0.8
+
     # ---------- 智能核心 / 趋势异常检测（统计基线法） ----------
     # z-score 阈值：单点偏离其之前滚动基线超过 k 个标准差即判异常（k 越大越严格）。
     anomaly_k: float = 2.0

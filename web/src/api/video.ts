@@ -68,6 +68,7 @@ export function deleteVideoChannel(id: number): Promise<unknown> {
 export function fetchVideoEvents(params?: {
   project_id?: number;
   channel_id?: number;
+  event_type?: string;
   handled?: boolean;
   limit?: number;
 }): Promise<VideoEvent[]> {
@@ -82,6 +83,16 @@ export function fetchVideoEvents(params?: {
 export function handleVideoEvent(id: number): Promise<unknown> {
   return http<unknown>({
     url: `/v1/videos/events/${id}/handle`,
+    method: "POST",
+  });
+}
+
+// 升级为平台告警（闭环联动⑧）：回填 alarm_id，闭合「监测→异常→告警」
+export function escalateVideoEvent(
+  id: number,
+): Promise<{ event_id: number; alarm_id: number | null; alarm_level?: string | null }> {
+  return http<{ event_id: number; alarm_id: number | null; alarm_level?: string | null }>({
+    url: `/v1/videos/events/${id}/escalate`,
     method: "POST",
   });
 }

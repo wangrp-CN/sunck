@@ -5,12 +5,17 @@
 - 事件按通道可见性过滤（通道可见即事件可见）。
 """
 
+import logging
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.clock import now_local
+from app.core.constants import ALARM_STATUS_START
 from app.core.data_scope import DataScope, apply_data_scope
 from app.core.exceptions import BusinessError
+from app.model.alarm import Alarm
 from app.model.project import Project
 from app.model.video import VideoChannel, VideoEvent
 from app.schema.video import (
@@ -19,6 +24,21 @@ from app.schema.video import (
     VideoChannelOut,
     VideoEventOut,
 )
+from app.service.alarm_service import create_alarm
+
+logger = logging.getLogger(__name__)
+
+# 事件类型 → 告警级别（深化⑧：视频AI事件升级为平台告警）
+VIDEO_EVENT_ALARM_LEVEL = {
+    "intrusion": "严重",
+    "smoke_fire": "严重",
+    "no_helmet": "警告",
+    "other": "提示",
+}
+# 满足自动升级的高危类型（低危 other 不自动升级，避免噪声）
+VIDEO_AUTO_ESCALATE_TYPES = {"intrusion", "smoke_fire", "no_helmet"}
+# 高置信度（无论类型）至少提升到「严重」
+VIDEO_HIGH_CONF = 0.9
 
 
 def to_channel_out(db: Session, c: VideoChannel) -> VideoChannelOut:
@@ -146,7 +166,97 @@ def ingest_event(db: Session, data: dict) -> VideoEvent:
     )
     db.add(e)
     db.flush()
+
+    # 深化⑧：高置信/高危事件在回推时自动升级为平台告警（开关受控，独立手动升级之外）
+    if (
+        settings.video_auto_escalate_enabled
+        and event_type in VIDEO_AUTO_ESCALATE_TYPES
+        and (e.confidence is None or e.confidence >= settings.video_auto_escalate_threshold)
+    ):
+        sp = db.begin_nested()
+        try:
+            escalate_event_to_alarm(db, e.id, scope=None)
+            sp.commit()
+        except Exception:  # noqa: BLE001
+            sp.rollback()
+            logger.warning("视频事件自动升级失败（不影响事件回推）", exc_info=True)
+
     return e
+
+
+def escalate_event_to_alarm(
+    db: Session,
+    event_id: int,
+    scope: DataScope | None = None,
+) -> tuple[VideoEvent, Alarm | None]:
+    """将视频 AI 事件升级为平台告警（深化⑧），回填 ``event.alarm_id``。
+
+    - 幂等：``event.alarm_id`` 已存在则直接返回既有告警，不重复建单。
+    - ``scope=None`` 时（外部 ingest 自动升级）跳过通道可见性校验，按全局定位。
+    - 经 ``create_alarm`` 走平台统一告警去重；若命中去重锚点（并发/重复上报），
+      回退查询最近一条同键告警并回填，保证联动链路闭合。
+    返回 ``(event, alarm|None)``；``alarm`` 为 ``None`` 仅发生在去重命中且锚点已不存在的极端情况。
+    """
+    e = db.get(VideoEvent, event_id)
+    if e is None:
+        raise BusinessError("视频事件不存在", code=404)
+    channel = db.get(VideoChannel, e.channel_id)
+    if channel is None:
+        raise BusinessError("事件所属通道不存在", code=404)
+    if scope is not None:
+        # 手动升级须落在可见通道范围内
+        if get_channel(db, e.channel_id, scope) is None:
+            raise BusinessError("事件不存在或无权访问", code=404)
+
+    if e.alarm_id is not None:
+        return e, db.get(Alarm, e.alarm_id)
+
+    label = VIDEO_EVENT_TYPE_LABELS.get(e.event_type, e.event_type)
+    base_level = VIDEO_EVENT_ALARM_LEVEL.get(e.event_type, "警告")
+    level = base_level
+    if e.confidence is not None and e.confidence >= VIDEO_HIGH_CONF and base_level != "严重":
+        level = "严重"
+
+    info = f"[视频AI] {label}：{channel.name}({channel.channel_no}) 检测到{label}"
+    if e.confidence is not None:
+        info += f"，置信度 {e.confidence * 100:.0f}%"
+    if e.detail:
+        info += f"。{e.detail}"
+    if len(info) > 500:
+        info = info[:497] + "..."
+
+    alarm_type = f"视频AI-{label}"
+    fields = dict(
+        project_id=e.project_id,
+        alarm_type=alarm_type,
+        device_type="视频通道",
+        device_name=channel.name,
+        device_no=channel.channel_no,
+        alarm_info=info,
+        alarm_status=ALARM_STATUS_START,
+        alarm_level=level,
+        handle_status="待处理",
+        alarm_time=e.event_time or now_local(),
+        media_urls=e.snapshot_url,
+    )
+    alarm = create_alarm(db, **fields)
+    if alarm is None:
+        # 去重命中：回退查找最近一条同键告警作为锚点
+        anchor = db.scalar(
+            select(Alarm)
+            .where(
+                Alarm.project_id == e.project_id,
+                Alarm.device_no == channel.channel_no,
+                Alarm.alarm_type == alarm_type,
+                Alarm.alarm_status == ALARM_STATUS_START,
+            )
+            .order_by(Alarm.id.desc())
+        )
+        alarm = anchor
+    if alarm is not None:
+        e.alarm_id = alarm.id
+        db.flush()
+    return e, alarm
 
 
 def list_events(

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import {
   fetchVideoChannels,
@@ -8,12 +9,15 @@ import {
   deleteVideoChannel,
   fetchVideoEvents,
   handleVideoEvent,
+  escalateVideoEvent,
 } from "@/api/video";
 import { fetchProjects } from "@/api/project";
 import type { VideoChannel, VideoEvent, Project } from "@/types";
 
 const auth = useAuthStore();
-const canManage = computed(() => auth.user?.permission_codes.includes("video:manage") ?? false);
+const router = useRouter();
+// 后端视频写操作统一要求 video:update（含处理/升级）；超管免校验
+const canManage = computed(() => auth.hasPermission("video:update"));
 
 const EVENT_TYPE_LABELS: Record<string, string> = {
   intrusion: "区域入侵",
@@ -32,6 +36,17 @@ const loading = ref(false);
 const events = ref<VideoEvent[]>([]);
 const eventsLoading = ref(false);
 const showHandled = ref(false);
+const eventTypeFilter = ref<string | null>(null);
+
+const stats = computed(() => {
+  const list = events.value;
+  return {
+    total: list.length,
+    pending: list.filter((e) => !e.handled).length,
+    escalated: list.filter((e) => e.alarm_id != null).length,
+    handled: list.filter((e) => e.handled).length,
+  };
+});
 
 async function loadProjects() {
   try {
@@ -56,6 +71,7 @@ async function loadEvents() {
   try {
     events.value = await fetchVideoEvents({
       handled: showHandled.value ? undefined : false,
+      event_type: eventTypeFilter.value || undefined,
       limit: 200,
     });
   } catch (e: any) {
@@ -63,6 +79,28 @@ async function loadEvents() {
   } finally {
     eventsLoading.value = false;
   }
+}
+
+// 升级为平台告警（闭环联动⑧）：回填 alarm_id，事件列表将展示「查看告警」入口
+async function doEscalate(row: VideoEvent) {
+  try {
+    await escalateVideoEvent(row.id);
+    ElMessage.success("已升级为平台告警");
+    loadEvents();
+  } catch (e: any) {
+    ElMessage.error(e?.message || "升级失败");
+  }
+}
+
+// 跳转告警管理，查看由本事件升级生成的告警
+function viewAlarm(_row?: VideoEvent) {
+  router.push({ name: "alarms" });
+}
+
+// 截图加载失败（外部地址不可达）时隐藏破图
+function onSnapError(e: Event) {
+  const el = e.target as HTMLImageElement | null;
+  if (el) el.style.display = "none";
 }
 function projectName(id?: number | null) {
   if (id == null) return "—";
@@ -236,9 +274,32 @@ onMounted(async () => {
           <template #header>
             <div class="panel-head">
               <span>AI 事件流</span>
-              <el-switch v-model="showHandled" @change="loadEvents" active-text="含已处理" />
+              <div class="head-tools">
+                <el-select
+                  v-model="eventTypeFilter"
+                  placeholder="全部类型"
+                  clearable
+                  size="small"
+                  style="width: 130px"
+                  @change="loadEvents"
+                >
+                  <el-option
+                    v-for="(label, key) in EVENT_TYPE_LABELS"
+                    :key="key"
+                    :label="label"
+                    :value="key"
+                  />
+                </el-select>
+                <el-switch v-model="showHandled" @change="loadEvents" active-text="含已处理" />
+              </div>
             </div>
           </template>
+          <div class="evt-stats">
+            <span>事件 <b>{{ stats.total }}</b></span>
+            <span>待处理 <b class="warn">{{ stats.pending }}</b></span>
+            <span>已升级告警 <b class="ok">{{ stats.escalated }}</b></span>
+            <span>已处理 <b>{{ stats.handled }}</b></span>
+          </div>
           <el-table :data="events" v-loading="eventsLoading" border stripe height="520">
             <el-table-column label="通道" min-width="120">
               <template #default="{ row }">{{ row.channel_name || row.channel_no || "—" }}</template>
@@ -253,6 +314,12 @@ onMounted(async () => {
             <el-table-column label="置信" width="70">
               <template #default="{ row }">{{ row.confidence != null ? (row.confidence * 100).toFixed(0) + "%" : "—" }}</template>
             </el-table-column>
+            <el-table-column label="截图" width="84">
+              <template #default="{ row }">
+                <img v-if="row.snapshot_url" :src="row.snapshot_url" class="snap" alt="截图" @error="onSnapError" />
+                <span v-else class="muted">—</span>
+              </template>
+            </el-table-column>
             <el-table-column label="时间" min-width="130">
               <template #default="{ row }">{{ row.event_time || "—" }}</template>
             </el-table-column>
@@ -263,8 +330,24 @@ onMounted(async () => {
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="80" fixed="right">
+            <el-table-column label="操作" width="170" fixed="right">
               <template #default="{ row }">
+                <el-button
+                  v-if="!row.alarm_id && canManage"
+                  link
+                  type="primary"
+                  @click="doEscalate(row)"
+                >
+                  升级告警
+                </el-button>
+                <el-button
+                  v-if="row.alarm_id"
+                  link
+                  type="success"
+                  @click="viewAlarm(row)"
+                >
+                  查看告警
+                </el-button>
                 <el-button
                   v-if="!row.handled && canManage"
                   link
@@ -273,7 +356,7 @@ onMounted(async () => {
                 >
                   处理
                 </el-button>
-                <span v-else>—</span>
+                <span v-if="row.handled && !row.alarm_id" class="muted">—</span>
               </template>
             </el-table-column>
             <template #empty>暂无事件</template>
@@ -327,4 +410,24 @@ onMounted(async () => {
 <style scoped>
 .page { padding: 16px; }
 .panel-head { display: flex; align-items: center; justify-content: space-between; }
+.head-tools { display: flex; align-items: center; gap: 10px; }
+.evt-stats {
+  display: flex;
+  gap: 18px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #606266;
+}
+.evt-stats b { color: #303133; font-size: 15px; margin-left: 2px; }
+.evt-stats b.warn { color: #e6a23c; }
+.evt-stats b.ok { color: #67c23a; }
+.snap {
+  width: 64px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 4px;
+  border: 1px solid #ebeef5;
+  background: #f5f7fa;
+}
+.muted { color: #c0c4cc; }
 </style>
