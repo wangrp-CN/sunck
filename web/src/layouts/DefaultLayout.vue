@@ -200,6 +200,10 @@ onUnmounted(() => {
             <el-icon><MagicStick /></el-icon>
             <span>阈值自学习</span>
           </el-menu-item>
+          <el-menu-item index="/intelligence/subscriptions">
+            <el-icon><Bell /></el-icon>
+            <span>报告订阅</span>
+          </el-menu-item>
           <el-menu-item index="/intelligence/correlation">
             <el-icon><Connection /></el-icon>
             <span>跨设备根因关联</span>

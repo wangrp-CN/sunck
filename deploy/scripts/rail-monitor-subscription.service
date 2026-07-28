@@ -1,0 +1,12 @@
+[Unit]
+Description=Rail Monitor 定期订阅推送（模块①·报告与触达增强）
+Documentation=deploy/README.deploy.md
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/rail_monitor
+EnvironmentFile=/opt/rail_monitor/.env
+ExecStart=/opt/rail_monitor/.venv/bin/python scripts/report_subscription_job.py
+User=rail_monitor
+# 单条订阅失败不影响其他；下一周期自动重试

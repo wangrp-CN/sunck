@@ -115,6 +115,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "阈值自学习" },
       },
       {
+        path: "intelligence/subscriptions",
+        name: "intelligence-subscriptions",
+        component: () => import("@/views/SubscriptionView.vue"),
+        meta: { title: "报告订阅" },
+      },
+      {
         path: "alarms",
         name: "alarms",
         component: () => import("@/views/AlarmView.vue"),

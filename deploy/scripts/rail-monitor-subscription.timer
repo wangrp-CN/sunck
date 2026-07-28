@@ -1,0 +1,10 @@
+[Unit]
+Description=每小时执行 Rail Monitor 定期订阅推送检查
+
+[Timer]
+OnCalendar=*-*-* *:05:00
+Persistent=true
+Unit=rail-monitor-subscription.service
+
+[Install]
+WantedBy=timers.target

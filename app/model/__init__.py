@@ -22,6 +22,7 @@ from app.model import (  # noqa: F401
     person,
     project,
     realtime,
+    report_subscription,
     risk_alert,
     snapshot,
     system,
