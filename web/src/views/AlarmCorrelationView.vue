@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from "vue";
+import type { TableInstance } from "element-plus";
 import { useAuthStore } from "@/stores/auth";
 import {
   getCorrelations,
@@ -44,6 +45,38 @@ const items = ref<CorrelationItem[]>([]);
 const trend = ref<CorrelationTrendPoint[]>([]);
 const heatPoints = ref<CorrelationHeatPoint[]>([]);
 
+// 热力图→列表 下钻联动：选中热点后筛选关联列表到该事件组（及同空间范围事件组）
+const tableRef = ref<TableInstance>();
+const selectedPoint = ref<CorrelationHeatPoint | null>(null);
+
+// 命中判定：精确 id 匹配；同项目 + 同空间范围（网格/围栏）视为「同一地点下钻」
+function matchScope(it: CorrelationItem, p: CorrelationHeatPoint): boolean {
+  if (it.id === p.id) return true;
+  if (it.project_id !== p.project_id) return false;
+  if (it.spatial_type !== p.spatial_type) return false;
+  if (p.spatial_type === "geo") return it.grid_cell === p.grid_cell;
+  if (p.spatial_type === "fence") return it.fence_name === p.fence_name;
+  return false;
+}
+
+const filteredItems = computed(() =>
+  selectedPoint.value
+    ? items.value.filter((it) => matchScope(it, selectedPoint.value!))
+    : items.value,
+);
+
+function rowClass({ row }: { row: CorrelationItem }): string {
+  return selectedPoint.value && row.id === selectedPoint.value.id
+    ? "heat-active-row"
+    : "";
+}
+
+function scopeTextOfPoint(p: CorrelationHeatPoint): string {
+  if (p.spatial_type === "fence") return p.fence_name || "围栏";
+  if (p.spatial_type === "geo") return `地理网格 ${p.grid_cell ?? ""}`.trim();
+  return "单机";
+}
+
 // 成员明细懒加载缓存：groupId -> {loading, items}
 const memberMap = reactive<Record<number, { loading: boolean; items: CorrelationMember[] }>>({});
 
@@ -60,6 +93,7 @@ const summary = computed(() => {
 
 async function load() {
   loading.value = true;
+  selectedPoint.value = null; // 重新加载后失效旧的筛选
   try {
     const [res, t, hm] = await Promise.all([
       getCorrelations(onlyCross.value, 100),
@@ -80,13 +114,29 @@ async function load() {
 
 const trendPoints = computed(() => trend.value.map((p) => ({ t: p.date, v: p.count })));
 
-// 点击热力点：提示该共因的根因摘要（便于从空间视图快速定位事件组）
-function onHeatSelect(p: CorrelationHeatPoint) {
-  ElMessage({
-    message: p.root_cause_hint || `${p.project_name || "项目"} · 告警 ${p.alarm_count} 条`,
-    type: "info",
-    duration: 4000,
-  });
+// 点击热力点：下钻联动到关联列表（筛选 + 高亮 + 自动展开命中事件组的成员明细）
+async function onHeatSelect(p: CorrelationHeatPoint) {
+  // 再次点击同一热点 → 取消筛选（切换）
+  if (selectedPoint.value?.id === p.id) {
+    selectedPoint.value = null;
+    return;
+  }
+  selectedPoint.value = p;
+  const exact = items.value.find((it) => it.id === p.id);
+  if (exact) {
+    await nextTick();
+    tableRef.value?.toggleRowExpansion(exact, true);
+    ElMessage.success(
+      `已下钻：${p.project_name || "项目"} · ${scopeTextOfPoint(p)}（${p.alarm_count} 条告警）`,
+    );
+  } else {
+    ElMessage.info(`已筛选该空间范围内 ${filteredItems.value.length} 个事件组`);
+  }
+}
+
+// 清除热力图筛选
+function clearHeatFilter() {
+  selectedPoint.value = null;
 }
 
 async function onRecalc() {
@@ -267,12 +317,29 @@ onUnmounted(() => {
           按事件组代表坐标投影 · 热度=告警数 · {{ onlyCross ? "仅跨设备共因" : "全部事件组" }}
         </span>
       </div>
-      <CorrelationHeatmap :points="heatPoints" :height="360" @select="onHeatSelect" />
+      <div v-if="selectedPoint" class="heat-filter">
+        <el-tag type="primary" effect="light" size="small">
+          已下钻：{{ selectedPoint.project_name || "项目" }} · {{ scopeTextOfPoint(selectedPoint) }}
+          · 命中 {{ filteredItems.length }} 组
+        </el-tag>
+        <el-button link type="primary" size="small" @click="clearHeatFilter">
+          清除筛选
+        </el-button>
+      </div>
+      <CorrelationHeatmap
+        :points="heatPoints"
+        :height="360"
+        :active-id="selectedPoint?.id ?? null"
+        @select="onHeatSelect"
+      />
     </el-card>
 
     <el-card shadow="never">
       <el-table
-        :data="items"
+        ref="tableRef"
+        :data="filteredItems"
+        row-key="id"
+        :row-class-name="rowClass"
         v-loading="loading"
         border
         stripe
@@ -445,6 +512,18 @@ onUnmounted(() => {
 }
 .heat-card {
   margin-bottom: 12px;
+}
+.heat-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.heat-active-row {
+  background: #ecf3ff !important;
+}
+.heat-active-row:hover > td {
+  background: #e0ecff !important;
 }
 .trend-head {
   display: flex;

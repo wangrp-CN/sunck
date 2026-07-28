@@ -11,8 +11,10 @@ const props = withDefaults(
     points: CorrelationHeatPoint[];
     width?: number;
     height?: number;
+    // 当前被选中的事件组 id（由关联大屏下钻联动传入），用于高亮对应热团
+    activeId?: number | null;
   }>(),
-  { width: 820, height: 360 },
+  { width: 820, height: 360, activeId: null },
 );
 
 const emit = defineEmits<{ (e: "select", p: CorrelationHeatPoint): void }>();
@@ -84,6 +86,7 @@ interface Blob {
   r: number;
   bkt: number;
   color: string;
+  active: boolean;
 }
 
 const blobs = computed<Blob[]>(() =>
@@ -97,6 +100,7 @@ const blobs = computed<Blob[]>(() =>
       r: radiusOf(p.weight),
       bkt: bucket(p.weight),
       color: HEAT_COLORS[bucket(p.weight)],
+      active: props.activeId != null && p.id === props.activeId,
     })),
 );
 
@@ -179,9 +183,17 @@ const legendTicks = computed(() => {
           v-for="b in blobs"
           :key="b.p.id"
           class="blob"
+          :class="{ active: b.active }"
           @click="emit('select', b.p)"
         >
           <circle :cx="b.x" :cy="b.y" :r="b.r" :fill="`url(#heat-g-${b.bkt})`" />
+          <circle
+            v-if="b.active"
+            :cx="b.x"
+            :cy="b.y"
+            :r="b.r + 6"
+            class="active-ring"
+          />
           <circle :cx="b.x" :cy="b.y" r="3.2" :fill="b.color" class="core">
             <title>{{ tipText(b.p) }}</title>
           </circle>
@@ -224,6 +236,15 @@ const legendTicks = computed(() => {
 .blob .core {
   stroke: #fff;
   stroke-width: 1;
+}
+.blob .active-ring {
+  fill: none;
+  stroke: #2d6cdf;
+  stroke-width: 2.5;
+  stroke-dasharray: 5 4;
+}
+.blob.active {
+  cursor: pointer;
 }
 .legend {
   display: flex;
