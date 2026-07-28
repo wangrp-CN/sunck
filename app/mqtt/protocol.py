@@ -140,10 +140,14 @@ _DOWNLINK_ACTIONS: dict[str, set[str]] = {
 }
 
 
-def build_command(device_type: str, action: str, params: dict | None) -> dict:
+def build_command(
+    device_type: str, action: str, params: dict | None, cmd_id: int | None = None
+) -> dict:
     """封装平台→设备下发指令报文。
 
     返回形如 {"action": ..., "params": ..., "ts": <iso>} 的 dict（由调用方序列化并发布）。
+    可选 ``cmd_id`` 会写入报文，供设备在上行回执 ``device/{device_no}/ack`` 时原样带回，
+    用于平台关联回执到具体的下发记录（见 app.service.command_service）。
     """
     if device_type not in _DOWNLINK_ACTIONS:
         raise ProtocolError(f"未知设备类型: {device_type}")
@@ -160,4 +164,7 @@ def build_command(device_type: str, action: str, params: dict | None) -> dict:
         if isinstance(v, str) and v != "":
             continue
         raise ProtocolError(f"参数 {k} 取值非法")
-    return {"action": action, "params": params, "ts": _now_iso()}
+    out: dict[str, object] = {"action": action, "params": params, "ts": _now_iso()}
+    if cmd_id is not None:
+        out["cmd_id"] = cmd_id
+    return out

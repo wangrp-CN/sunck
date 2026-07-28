@@ -30,7 +30,6 @@ from app.model.job import WorkPlan, WorkPlanDevice, WorkPlanFence
 from app.model.project import Project
 from app.model.realtime import DeviceLocation
 from app.model.system import User
-from app.mqtt import client as mqtt_client
 from app.service.location_service import save_location
 from app.service.pipeline import handle_upstream
 from app.ws import bridge
@@ -366,7 +365,10 @@ def test_online_status_recent_vs_stale(isolated):
 def test_send_command_dept_isolation(monkeypatch, isolated):
     """下发指令部门隔离：越权部门设备返回 404 且不真正下发；可见设备 200 且下发。"""
     published = []
-    monkeypatch.setattr(mqtt_client, "publish", lambda *a, **k: published.append((a, k)))
+    # send_command 现经 command_service.build_and_send 下发，publish 按名导入需 patch service 侧引用
+    monkeypatch.setattr(
+        "app.service.command_service.publish", lambda *a, **k: published.append((a, k))
+    )
 
     client = TestClient(app)
     admin_token = _admin_token()

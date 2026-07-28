@@ -7,7 +7,6 @@
 坐标统一对外转换：WGS-84（设备）→ GCJ-02（高德地图），内部规则判定仍用 WGS-84。
 """
 
-import json
 from datetime import datetime, timezone
 from typing import Any
 
@@ -18,7 +17,6 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.cache import get_cached_json, set_cached_json
-from app.core.constants import down_topic
 from app.core.data_scope import DataScope
 from app.core.database import get_db, get_read_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
@@ -27,8 +25,8 @@ from app.core.geo import wgs84_to_gcj02
 from app.core.responses import ApiResponse
 from app.model.project import Project
 from app.model.system import User
-from app.mqtt import client as mqtt_client
-from app.mqtt import protocol
+from app.schema.command import DeviceCommandOut
+from app.service import command_service
 from app.service.device_service import list_devices, resolve_device
 from app.service.location_service import latest_locations, trajectory
 
@@ -277,22 +275,24 @@ def send_command(
     if allowed is not None and device["project_id"] not in allowed:
         raise HTTPException(status_code=404, detail="设备不存在或无权操作")
 
+    # 持久化下发记录（状态机：pending→sent/failed），并发布到设备下行主题。
+    # 非法动作/参数会抛 BusinessError(400)，合法动作发布失败则记录为 failed（不阻断业务）。
     try:
-        payload = protocol.build_command(req.device_type, req.action, req.params)
-    except protocol.ProtocolError as exc:
-        raise BusinessError(str(exc), code=400)
-    topic = down_topic(req.device_type, req.device_no)
-    try:
-        mqtt_client.publish(topic, json.dumps(payload, ensure_ascii=False), qos=1)
+        cmd = command_service.build_and_send(
+            db,
+            device_no=req.device_no,
+            device_type=req.device_type,
+            action=req.action,
+            params=req.params,
+            project_id=device["project_id"],
+            device_id=device["device_id"],
+            actor_id=_.id,
+        )
+    except BusinessError:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=503, detail=f"MQTT 下发失败：{exc}")
     return ApiResponse.success(
-        data={
-            "topic": topic,
-            "device_type": req.device_type,
-            "device_no": req.device_no,
-            "action": req.action,
-            "payload": payload,
-        },
-        message="指令已下发",
+        data=DeviceCommandOut.model_validate(cmd).model_dump(),
+        message="指令已下发（可在「指令下发记录」查看回执状态）",
     )

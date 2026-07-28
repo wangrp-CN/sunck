@@ -533,6 +533,27 @@ export interface VideoEvent {
   created_at?: string | null;
 }
 
+// ===================== 设备指令下发记录（闭环追踪） =====================
+export interface DeviceCommand {
+  id: number;
+  device_id?: number | null;
+  device_no: string;
+  device_type: string;
+  project_id?: number | null;
+  action: string;
+  params_json?: Record<string, unknown> | null;
+  payload?: string | null;
+  topic?: string | null;
+  status: string; // pending / sent / acked / failed
+  retry_count: number;
+  last_error?: string | null;
+  alarm_id?: number | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  sent_at?: string | null;
+  acked_at?: string | null;
+}
+
 // ===================== 设备健康（P3·⑫） =====================
 export interface DeviceHealthItem {
   id: number;

@@ -93,6 +93,12 @@ class Settings(BaseSettings):
     video_auto_escalate_enabled: bool = False
     video_auto_escalate_threshold: float = 0.8
 
+    # ---------- 设备指令下发闭环（状态追踪 + 回执 + 重试） ----------
+    # 平台向设备下发指令后等待回执的超时（秒）：超过该时长仍未回执视为可重试。
+    command_ack_timeout_seconds: int = 60
+    # 单条指令的最大自动重试次数（达到后状态置为 failed，不再自动重试）。
+    command_max_retries: int = 3
+
     # ---------- 智能核心 / 趋势异常检测（统计基线法） ----------
     # z-score 阈值：单点偏离其之前滚动基线超过 k 个标准差即判异常（k 越大越严格）。
     anomaly_k: float = 2.0

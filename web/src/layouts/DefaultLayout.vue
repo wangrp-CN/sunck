@@ -220,6 +220,10 @@ onUnmounted(() => {
             <el-icon><Monitor /></el-icon>
             <span>设备健康</span>
           </el-menu-item>
+          <el-menu-item index="/devices/commands">
+            <el-icon><Promotion /></el-icon>
+            <span>指令下发记录</span>
+          </el-menu-item>
         </el-sub-menu>
         <el-menu-item index="/persons">
           <el-icon><User /></el-icon>

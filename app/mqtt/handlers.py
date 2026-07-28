@@ -9,22 +9,27 @@
 见 app.service.pipeline.handle_upstream。
 """
 
+import json
 import logging
 
 from paho.mqtt.client import Client, MQTTMessage
 
-from app.core.constants import parse_up_topic
+from app.core.constants import parse_ack_topic, parse_up_topic
+from app.core.database import SessionLocal
 from app.core.ingest import enqueue as ingest_enqueue
 from app.core.metrics import MQTT_MESSAGES_TOTAL
 from app.mqtt import protocol
+from app.service import command_service
 
 logger = logging.getLogger("rail_monitor.mqtt")
 
 
 def on_connect(client: Client, userdata, flags, reason_code, properties=None) -> None:
-    logger.info("MQTT 已连接，订阅设备上行主题")
+    logger.info("MQTT 已连接，订阅设备上行/回执主题")
     # 订阅全部设备上行：device/{type}/up
     client.subscribe("device/+/up", qos=1)
+    # 订阅设备指令回执：device/{device_no}/ack（用于闭环状态追踪）
+    client.subscribe("device/+/ack", qos=1)
 
 
 def on_disconnect(client: Client, userdata, disconnect_flags, reason_code, properties=None) -> None:
@@ -32,11 +37,38 @@ def on_disconnect(client: Client, userdata, disconnect_flags, reason_code, prope
     logger.warning("MQTT 连接断开 reason=%s（将自动重连）", reason_code)
 
 
+def _handle_ack(topic: str, payload: bytes) -> None:
+    """处理设备指令回执：解析 cmd_id，更新下发记录状态。"""
+    device_no = parse_ack_topic(topic)
+    try:
+        data = json.loads(payload.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        logger.warning("指令回执 JSON 解析失败 device=%s: %s", device_no, exc)
+        return
+    cmd_id = data.get("cmd_id")
+    if cmd_id is None:
+        logger.debug("指令回执缺少 cmd_id，忽略 device=%s", device_no)
+        return
+    ok = data.get("status", "ok") not in ("fail", "failed", "error", False)
+    detail = data.get("detail")
+    # MQTT 回调线程需独立会话；用完即关，避免连接泄漏。
+    db = SessionLocal()
+    try:
+        command_service.ack_command(db, int(cmd_id), ok=ok, detail=detail)
+    except Exception:  # noqa: BLE001
+        logger.exception("指令回执处理异常 cmd_id=%s device=%s", cmd_id, device_no)
+    finally:
+        db.close()
+
+
 def on_message(client: Client, userdata, msg: MQTTMessage) -> None:
     topic: str = msg.topic
+    if parse_ack_topic(topic) is not None:
+        _handle_ack(topic, msg.payload)
+        return
     dtype = parse_up_topic(topic)
     if dtype is None:
-        logger.debug("忽略非上行主题: %s", topic)
+        logger.debug("忽略非上行/回执主题: %s", topic)
         return
     MQTT_MESSAGES_TOTAL.labels(device_type=dtype).inc()
     try:

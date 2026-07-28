@@ -55,6 +55,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "设备在线看板" },
       },
       {
+        path: "devices/commands",
+        name: "devices-commands",
+        component: () => import("@/views/CommandView.vue"),
+        meta: { title: "指令下发记录" },
+      },
+      {
         path: "persons",
         name: "persons",
         component: () => import("@/views/PersonView.vue"),

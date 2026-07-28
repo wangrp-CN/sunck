@@ -5,7 +5,6 @@
 """
 
 import calendar
-import json
 import logging
 from datetime import datetime, timedelta
 from urllib.parse import quote
@@ -17,17 +16,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.constants import ALARM_STATUS_CLEARED
-from app.core.constants import down_topic as _down_topic
 from app.core.data_scope import DataScope, apply_data_scope
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.exceptions import BusinessError
 from app.core.responses import ApiResponse
 from app.model.alarm import Alarm, AlarmConfig
+from app.model.command import COMMAND_STATUS_FAILED
 from app.model.project import Project
 from app.model.system import User
-from app.mqtt import client as mqtt_client
-from app.mqtt import protocol
+from app.service import command_service
 from app.service import hazard_service as hz_svc
 from app.service.alarm_report import (
     build_excel,
@@ -307,21 +305,30 @@ def handle_alarm_endpoint(
     # 避免「指令已下发但 commit 失败导致状态回滚」的设备-数据不一致。
     db.commit()
 
-    # 已消警 → 下发消警指令到设备（状态已落库，下发失败不影响业务一致性，仅提示）
+    # 已消警 → 下发消警指令到设备（状态已落库，下发失败不影响业务一致性，仅提示）。
+    # 改为经 command_service 持久化下发记录，可在「指令下发记录」查看回执与重试。
     if (
         req.handle_status == ALARM_STATUS_CLEARED
         and result.get("device_type")
         and result.get("device_no")
     ):
         try:
-            payload = protocol.build_command(result["device_type"], "alarm", {"on": False})
-            mqtt_client.publish(
-                _down_topic(result["device_type"], result["device_no"]),
-                json.dumps(payload, ensure_ascii=False),
-                qos=1,
+            cmd = command_service.build_and_send(
+                db,
+                device_no=result["device_no"],
+                device_type=result["device_type"],
+                action="alarm",
+                params={"on": False},
+                project_id=result.get("project_id"),
+                alarm_id=alarm_id,
+                actor_id=_.id,
             )
         except Exception as exc:  # noqa: BLE001
             logger.warning("消警指令下发失败（处置状态已保存）：%s", exc)
+            return ApiResponse.success(
+                data=result, message="处置已保存，但消警指令下发失败，请检查设备连接"
+            )
+        if cmd.status == COMMAND_STATUS_FAILED:
             return ApiResponse.success(
                 data=result, message="处置已保存，但消警指令下发失败，请检查设备连接"
             )
@@ -394,19 +401,26 @@ def batch_handle_alarms(
             skipped += 1
             continue
         handled.append(result)
-        # 已消警 → 下发消警指令（处置状态已落库，下发失败仅提示）
+        # 已消警 → 下发消警指令（处置状态已落库，下发失败仅提示）。
+        # 经 command_service 持久化下发记录，便于回执追踪与重试。
         if (
             req.handle_status == ALARM_STATUS_CLEARED
             and result.get("device_type")
             and result.get("device_no")
         ):
             try:
-                payload = protocol.build_command(result["device_type"], "alarm", {"on": False})
-                mqtt_client.publish(
-                    _down_topic(result["device_type"], result["device_no"]),
-                    json.dumps(payload, ensure_ascii=False),
-                    qos=1,
+                cmd = command_service.build_and_send(
+                    db,
+                    device_no=result["device_no"],
+                    device_type=result["device_type"],
+                    action="alarm",
+                    params={"on": False},
+                    project_id=result.get("project_id"),
+                    alarm_id=aid,
+                    actor_id=_.id,
                 )
+                if cmd.status == COMMAND_STATUS_FAILED:
+                    downlink_failures += 1
             except Exception as exc:  # noqa: BLE001
                 downlink_failures += 1
                 logger.warning("批量消警指令下发失败（处置状态已保存）：%s", exc)

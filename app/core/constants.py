@@ -140,6 +140,20 @@ def down_topic_broadcast(device_type: str) -> str:
     return f"device/{device_type}/down"
 
 
+_ACK_TOPIC_RE = __import__("re").compile(r"^device/([^/]+)/ack$")
+
+
+def ack_topic(device_no: str) -> str:
+    """设备向平台回执指令执行结果（携带 cmd_id 关联下发记录）。"""
+    return f"device/{device_no}/ack"
+
+
+def parse_ack_topic(topic: str) -> str | None:
+    """从回执主题解析设备编号；非回执主题返回 None。"""
+    m = _ACK_TOPIC_RE.match(topic)
+    return m.group(1) if m else None
+
+
 def ws_channel_for_project(project_id: int | None) -> str:
     """WebSocket 推送频道：按项目分频道；project_id 为空时走全局。"""
     if project_id:

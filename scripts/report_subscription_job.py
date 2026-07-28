@@ -5,6 +5,9 @@
 报告并经通知中心触达（in_app 真实，sms/voice 预留）。因订阅记录 ``last_run_at`` 已记
 本周期运行时刻，天然幂等，不会同周期重复下发——故可放心每小时调用。
 
+同时承担「设备指令下发闭环」的周期重试：对超时未回执或失败且未达上限的指令自动重发，
+直至达到 ``command_max_retries``（详见 app.service.command_service.retry_stale_commands）。
+
 用法：
   PYTHONPATH=/opt/rail_monitor .venv/bin/python scripts/report_subscription_job.py
 
@@ -27,8 +30,9 @@ try:
 except Exception:
     pass
 
-from app.core.database import SessionLocal
-from app.service import report_subscription as sub_svc
+from app.core.database import SessionLocal  # noqa: E402
+from app.service import command_service  # noqa: E402
+from app.service import report_subscription as sub_svc  # noqa: E402
 
 
 def main() -> None:
@@ -45,6 +49,15 @@ def main() -> None:
         for r in results:
             if r.get("status") == "failed":
                 print(f"[subscription] FAILED id={r.get('id')} {r.get('error')}", flush=True)
+
+        # 设备指令下发闭环：周期重试超时未回执/失败的指令
+        retry = command_service.retry_stale_commands(db, now=now)
+        if retry["total"]:
+            print(
+                f"[command] {now.isoformat()} -> stale={retry['total']} "
+                f"retried={retry['retried']} exhausted={retry['exhausted']}",
+                flush=True,
+            )
     finally:
         db.close()
 
