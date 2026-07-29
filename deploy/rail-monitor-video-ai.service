@@ -1,0 +1,16 @@
+[Unit]
+Description=Rail Monitor 视频 AI 参考推理服务（⑧）
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/rail_monitor
+# 复用平台虚拟环境（已含 fastapi/uvicorn/pillow/numpy）
+ExecStart=/opt/rail_monitor/.venv/bin/python -m uvicorn services.video_ai.app:app --host 127.0.0.1 --port 8900
+Restart=on-failure
+RestartSec=5
+User=www-data
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

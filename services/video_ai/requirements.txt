@@ -1,0 +1,7 @@
+# 视频 AI 参考推理服务依赖（最小化，仅 ReferenceDetector 必需）
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pillow>=10.0
+numpy>=1.26
+# 可选：接入真实 YOLO 模型时取消注释（见 README）
+# ultralytics>=8.0

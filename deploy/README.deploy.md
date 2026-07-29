@@ -170,6 +170,29 @@ sudo systemctl enable --now rail-monitor-api
 sudo journalctl -u rail-monitor-api -f   # 观察启动日志
 ```
 
+### 3.5 视频 AI 参考推理服务（⑧，可选）
+
+平台「视频 AI 分析」依赖一个**外部推理服务**完成实际识别。仓库已内置可运行的
+参考实现 `services/video-ai`（FastAPI + Pillow/numpy 像素级启发式，可一键替换为
+真实 YOLO 模型，详见 `services/video-ai/README.md`）。
+
+```bash
+# 1) 安装并启用 systemd 单元（监听 127.0.0.1:8900）
+sudo cp deploy/rail-monitor-video-ai.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now rail-monitor-video-ai
+curl http://127.0.0.1:8900/health        # 期望 {"status":"ok"}
+
+# 2) 平台 .env 启用并指向推理服务
+VIDEO_AI_ENABLED=true
+VIDEO_AI_ENDPOINT=http://127.0.0.1:8900/infer   # 生产可改 https://<域名>/ai/infer（已配 nginx /ai/ 反代）
+
+# 3) 重启平台后端，验证 POST /api/v1/videos/ai/analyze 返回 status=done + findings
+```
+
+> Docker 部署：`docker compose -f deploy/docker-compose.video-ai.yml up -d --build`。
+> nginx 已新增 `/ai/` 反代（`deploy/nginx.conf`），无需额外改动即可经域名对外暴露推理服务。
+
 ---
 
 ## 4. 前端部署（构建 + Nginx 托管）
