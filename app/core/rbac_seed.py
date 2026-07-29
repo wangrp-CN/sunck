@@ -21,6 +21,7 @@ _MODULES = [
     ("alarm", "告警管理", "/alarm", "alert"),
     ("dashboard", "监控大屏", "/dashboard", "dashboard"),
     ("dispatch", "根因派单", "/dispatch", "dispatch"),
+    ("duty", "值班体系", "/duty", "duty"),
 ]
 
 # 各模块下的按钮/接口权限（type=3）
@@ -57,6 +58,7 @@ _CHILDREN = {
     "alarm": ["alarm:list", "alarm:view", "alarm:handle", "alarm:config"],
     "dashboard": ["dashboard:view"],
     "dispatch": ["dispatch:list", "dispatch:create", "dispatch:handle"],
+    "duty": ["duty:list", "duty:manage"],
 }
 
 # 角色 -> 权限编码集合
@@ -105,6 +107,8 @@ _ROLES = {
             "dispatch:list",
             "dispatch:create",
             "dispatch:handle",
+            "duty:list",
+            "duty:manage",
         },
         # 自定义数据范围（data_scope=2）绑定的部门编码；空表示不限定（看不到数据）
         "dept_codes": ["SECTION"],
@@ -129,6 +133,8 @@ _ROLES = {
             "dispatch:list",
             "dispatch:create",
             "dispatch:handle",
+            "duty:list",
+            "duty:manage",
         },
     },
     "operator": {

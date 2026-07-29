@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.model.alarm import Alarm
 from app.model.device import AntiIntrusionDevice, LocateDevice, TrainApproachDevice
 from app.model.dispatch import DispatchOrder
+from app.model.duty_roster import DutyRoster
 from app.model.fence import ElectronicFence
 from app.model.hazard import Hazard
 from app.model.inspection import InspectionTask
@@ -141,6 +142,7 @@ _MODEL_DEPT_LINK: dict[type, str] = {
     InspectionTask: VIA_PROJECT,
     VideoChannel: VIA_PROJECT,
     DispatchOrder: VIA_PROJECT,
+    DutyRoster: VIA_PROJECT,
 }
 
 

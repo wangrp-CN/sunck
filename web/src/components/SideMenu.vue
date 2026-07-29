@@ -22,6 +22,7 @@ import {
   VideoCamera,
   Warning,
   Monitor,
+  Clock,
 } from "@element-plus/icons-vue";
 
 const route = useRoute();
@@ -126,6 +127,10 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
     <el-menu-item index="/dispatch">
       <el-icon><Promotion /></el-icon>
       <span>根因派单</span>
+    </el-menu-item>
+    <el-menu-item index="/duty-roster">
+      <el-icon><Clock /></el-icon>
+      <span>值班排班</span>
     </el-menu-item>
     <el-menu-item index="/hazards">
       <el-icon><Bell /></el-icon>

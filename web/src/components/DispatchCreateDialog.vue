@@ -5,6 +5,7 @@ import { listUsers } from "@/api/user";
 import { createDispatch, type DispatchOptions, type DispatchPreset } from "@/api/dispatch";
 import { getDispatchOptions } from "@/api/dispatch";
 import { fetchProjects } from "@/api/project";
+import { getOnDuty } from "@/api/duty";
 
 const props = defineProps<{
   modelValue: boolean;
@@ -39,6 +40,25 @@ const users = ref<{ id: number; name: string }[]>([]);
 const projects = ref<{ id: number; name: string }[]>([]);
 const projectsLoading = ref(false);
 const submitting = ref(false);
+// 当前选中项目的在班值班人（用于自动预填处理人，与后端自动派单兜底一致）
+const onDutyName = ref<string | null>(null);
+
+// 选中项目变化时，自动预填当前值班人为处理人（可手动覆盖）
+async function prefillOnDuty() {
+  onDutyName.value = null;
+  const pid = form.value.project_id;
+  if (!pid) {
+    form.value.assignee_id = null;
+    return;
+  }
+  try {
+    const r = await getOnDuty(pid);
+    onDutyName.value = r.user_name;
+    if (r.user_id) form.value.assignee_id = r.user_id;
+  } catch {
+    onDutyName.value = null;
+  }
+}
 
 watch(
   () => props.modelValue,
@@ -57,7 +77,17 @@ watch(
         deadline: "",
         description: "",
       };
+      // 带预设项目时（如告警转派单）也预填在班人
+      if (form.value.project_id) prefillOnDuty();
     }
+  },
+);
+
+// 用户在对话框内切换归属项目时同步预填
+watch(
+  () => form.value.project_id,
+  () => {
+    if (props.modelValue) prefillOnDuty();
   },
 );
 
@@ -176,6 +206,9 @@ async function submit() {
         <el-select v-model="form.assignee_id as any" filterable placeholder="选择处理人" style="width: 100%">
           <el-option v-for="u in users" :key="u.id" :label="u.name" :value="u.id" />
         </el-select>
+        <div v-if="onDutyName" class="onduty-hint">
+          已自动预填当前值班人：<b>{{ onDutyName }}</b>（可手动修改）
+        </div>
       </el-form-item>
       <el-form-item label="处理时限">
         <el-date-picker
@@ -195,3 +228,7 @@ async function submit() {
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+.onduty-hint { font-size: 12px; color: #67c23a; margin-top: 4px; }
+</style>

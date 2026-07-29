@@ -34,8 +34,9 @@
 | ⑪ | **多项目对比大屏** | 全栈 | P3 | ✅ 已完成 | `GET /v1/dashboard/project-compare` 风险分降序 |
 | ⑫ | **设备健康 / 运维** | 全栈 | P3 | ✅ 已完成 | `GET /v1/devices/health` 在线率/健康分 |
 | ⑬ | **闭环效能度量** | 全栈 | P3 | ✅ 已完成 | 大屏「闭环效能度量」卡：风暴抑制率/告警MTTR/派单SLA/隐患闭环率/异常引擎贡献占比（窗口可调）；`GET /v1/dashboard/effectiveness` + `effectiveness_service` |
+| ⑭ | **🅱 告警治理与值班体系** | 全栈 | P4 | 🟡 进行中(M1-M3✅) | 值班排班模型+CRUD接口+权限(M1)；派单自动兜底当班人(M3，后端+前端预填)；前端值班页+菜单(M2)。缺口：**M4 告警收敛/抑制/升级策略**(AlarmPolicy)、**M5 处置预案/知识库联动**(Playbook，可后置) |
 
-图例：✅ 已完成 · 🔲 尚未启动
+图例：✅ 已完成 · 🟡 进行中 · 🔲 尚未启动
 
 > **进度补记（2026-07-29）**：本表停留在 2026-07-24，期间已额外交付「智能核心 v2」整条链路（风险/健康快照 → 阈值预警 → 跨设备共因关联 → 趋势异常检测 → 异常进告警流 → 一键派单闭环），以及本轮「闭环效能度量」。上述能力均已在 `CHANGELOG` 与 `deploy/README.deploy.md` §13 记录，本表仅补充 ⑬ 与刷新日期。另：③移动端适配（响应式布局 / 侧栏抽屉化 / ResponsiveTable 横向滚动）、④视频AI深化（`VideoPlayer` 实时拉流、外部推理端点接入就绪 + 超时降级、能力清单对齐、前端 AI 分析对话框）已交付。**⑧ 视频AI 真实推理服务已部署闭环**：新增可运行参考推理服务 `services/video-ai`（FastAPI + 像素级 `ReferenceDetector`，可插拔真实 YOLO），配套 systemd/nginx(`/ai/`)反代/Docker 接入，端到端验证平台 `/v1/videos/ai/analyze` 经 `VIDEO_AI_ENDPOINT` 返回 `status=done` + 真实 `findings`。**① 短信/语音网关已按「模拟真实数据」模式交付**（触达记录落库 + 真实形态回执，真实厂商仅差凭据+SDK 调用一处），路线图全部条目闭环。
 
@@ -75,6 +76,21 @@
 - **⑫ 设备健康（✅）**：`GET /v1/devices/health` 在线判定与实时看板同源，健康分=在线60+活跃20+无告警20；前端健康看板。
 - ⑥ 报表导出对称化（✅）：隐患/设备 Excel·PDF 导出。
 - 全量后端 pytest 178 passed / 1 skipped；前端 `vue-tsc --noEmit` 通过 + 生产构建通过。
+
+### P4 · 告警治理与值班体系 — 进行中（2026-07-29 启动）
+目标：把"值班→派单→处置→闭环"串成可运营的值班体系，消除告警无主/无兜底的状态。
+- **⑭ 值班排班与自动派单（M1-M3 ✅ 2026-07-29）**
+  - M1 值班模型：`DutyRoster`（project_id/user_id/shift/duty_role/起止时间窗）模型 + 迁移 `aa1b2c3d4e5f` + 注册 `_MODEL_DEPT_LINK`(VIA_PROJECT) 数据隔离。
+  - M2 后端 CRUD：7 个端点（`/`列表、`/on-duty`当前值班、`/meta`班次枚举、`/{id}`详情、`POST`/`PUT`/`DELETE`）+ 权限 `duty:list`/`duty:manage`（已入 `rbac_seed` device 子树 + monitor/project_manager 角色）+ 前端 `DutyRosterView.vue` 值班页 + 菜单/路由。
+  - M3 自动派单兜底：`dispatch_service.create_order` 未指定 `assignee_id` 时调 `resolve_on_duty(db, project_id)` 取当前在班人；前端 `DispatchCreateDialog` 选归属项目后自动预填当班人为处理人（可手动覆盖）。**无排班时保持「待派」，不报错。**
+  - 测试：`tests/test_duty.py`（5 用例绿），覆盖建/列/在班解析/自动派单兜底/无排班不指派。
+  - 顺带修复：`app/api/v1/dispatch.py` 3 处误用不存在的 `ApiResponse.error` → 改 `ApiResponse.fail(code=404,...)`，与项目"业务失败 HTTP200+非0 code"约定一致。
+- **M4 告警收敛/抑制/升级策略（🔲 待做）**：`AlarmPolicy` 模型（按项目/类型/等级配置风暴抑制窗口、去重、静默、升级时限）→ `create_alarm` 集成；前端策略配置页。
+- **M5 处置预案/知识库联动（🔲 可后置）**：`Playbook` 模型 + 告警关联预案 + 前端联动，闭环处置指导。
+- **🅰 双厂商抽象代码（🔲 待做，优先级高于 Phase 5）**：`RealSms/VoiceGateway._call_provider` 阿里云/腾讯云 SDK 适配（当前 simulate 模式回执形态已对齐真实网关，仅差一处厂商调用）。
+- **Phase 5 · 智能化预测（🔲 规划中）**：从"阈值告警"升级到"预测性预警"——`forecast_service` 挂快照基座，对趋势/健康分做短期预测，命中预测阈值即回灌告警流；关联增强 + 驾驶舱预测卡。
+
+> 执行顺序（用户确认）：先 🅱 告警治理与值班体系 → 再 🅰 双厂商抽象代码 → 最后 Phase 5 智能化预测。
 
 ---
 

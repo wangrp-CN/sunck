@@ -23,6 +23,7 @@ from app.model.correlation import CorrelatedEventGroup
 from app.model.dispatch import DispatchOrder
 from app.model.project import Project
 from app.model.system import User
+from app.service.duty_service import resolve_on_duty
 
 logger = logging.getLogger("rail_monitor.dispatch")
 
@@ -79,7 +80,15 @@ def create_order(db: Session, scope: DataScope, creator_id: int | None, data) ->
             code=400,
         )
 
-    assignee_name = _user_name(db, data.assignee_id)
+    # 🅱 自动派单：未显式指定处理人时，按项目当前值班人兜底（值班体系）
+    eff_assignee = data.assignee_id
+    eff_assignee_name = _user_name(db, eff_assignee)
+    if eff_assignee is None:
+        on_uid, on_name = resolve_on_duty(db, project_id)
+        if on_uid is not None:
+            eff_assignee = on_uid
+            eff_assignee_name = on_name
+
     order = DispatchOrder(
         project_id=project_id,
         source_type=data.source_type,
@@ -88,18 +97,18 @@ def create_order(db: Session, scope: DataScope, creator_id: int | None, data) ->
         root_cause_hint=data.root_cause_hint or src.get("root_cause_hint"),
         level=data.level or src.get("level"),
         status="待派",
-        assignee_id=data.assignee_id,
-        assignee_name=assignee_name,
+        assignee_id=eff_assignee,
+        assignee_name=eff_assignee_name,
         deadline=data.deadline,
         description=data.description,
         created_by=creator_id,
     )
     db.add(order)
     db.flush()
-    if data.assignee_id is not None:
+    if eff_assignee is not None:
         notify(
             db,
-            [data.assignee_id],
+            [eff_assignee],
             f"新派单：{order.title}",
             content=order.root_cause_hint or "请及时处理",
             link="/dispatch",

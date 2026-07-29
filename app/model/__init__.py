@@ -15,6 +15,7 @@ from app.model import (  # noqa: F401
     correlation,
     device,
     dispatch,
+    duty_roster,
     fence,
     hazard,
     inspection,

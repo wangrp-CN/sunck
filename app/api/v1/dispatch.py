@@ -102,7 +102,7 @@ def detail(
 ) -> ApiResponse:
     order = svc.get_order(db, scope, order_id)
     if order is None:
-        return ApiResponse.error(code=404, message="派单不存在或无权访问")
+        return ApiResponse.fail(code=404, message="派单不存在或无权访问")
     return ApiResponse.success(data=DispatchOut.model_validate(order).model_dump())
 
 
@@ -134,7 +134,7 @@ def action(
 ) -> ApiResponse:
     order = svc.apply_action(db, scope, order_id, payload.action, payload.note, user.id)
     if order is None:
-        return ApiResponse.error(code=404, message="派单不存在或无权访问")
+        return ApiResponse.fail(code=404, message="派单不存在或无权访问")
     db.commit()
     return ApiResponse.success(data=DispatchOut.model_validate(order).model_dump())
 
@@ -152,6 +152,6 @@ def reassign(
 ) -> ApiResponse:
     order = svc.reassign(db, scope, order_id, payload.assignee_id, payload.note)
     if order is None:
-        return ApiResponse.error(code=404, message="派单不存在或无权访问")
+        return ApiResponse.fail(code=404, message="派单不存在或无权访问")
     db.commit()
     return ApiResponse.success(data=DispatchOut.model_validate(order).model_dump())
