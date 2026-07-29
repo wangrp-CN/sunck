@@ -1,0 +1,54 @@
+name: stress-test
+
+on:
+  schedule:
+    # 每周日 03:00 CST（= 周六 19:00 UTC）例行校验压测编排器健康
+    - cron: "0 19 * * 6"
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "在具备完整后端栈的自托管 runner 上跑完整压测（需 PG/Redis/MQTT/后端 已起）"
+        type: boolean
+        default: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: 校验压测编排器逻辑（不依赖运行中的后端）
+        run: |
+          cd rail_monitor
+          python scripts/stress_test.py --self-test
+
+  # 完整压测：仅在自带后端栈的自托管 runner 上手动触发（inputs.full=true）。
+  # 默认不跑，避免在无依赖的 CI 环境中失败；生产常态由宿主机的 systemd timer 执行。
+  full:
+    if: github.event_name == 'workflow_dispatch' && inputs.full == true
+    runs-on: [self-hosted, rail-monitor-stack]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: 安装依赖
+        run: |
+          cd rail_monitor
+          python -m venv .venv && . .venv/bin/activate
+          pip install -r requirements.txt
+      - name: 启动原生服务并等待后端就绪
+        run: |
+          cd rail_monitor
+          bash scripts/native-services.sh
+          ./deploy/smoke_drill.sh
+      - name: 运行完整压测（回归则非零退出）
+        run: |
+          cd rail_monitor
+          . .venv/bin/activate
+          python scripts/stress_test.py \
+            --host http://127.0.0.1:8000 \
+            --pushgateway "${STRESS_PUSHGATEWAY:-}" \
+            --out /tmp/rail_stress

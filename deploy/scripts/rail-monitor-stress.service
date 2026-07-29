@@ -1,0 +1,18 @@
+[Unit]
+Description=Rail Monitor 压测常态化编排（HTTP 查看者 + 千台设备上行）
+Documentation=deploy/README.deploy.md
+After=network.target postgresql.service redis.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/rail_monitor
+EnvironmentFile=/opt/rail_monitor/.env
+# 与 STRESS_TEST_REPORT 同口径：1000 设备 @2s + 100 查看者，180s；结果写 /var/lib/rail_monitor/stress
+# 若监控栈已起 pushgateway（deploy/monitoring），可通过 STRESS_PUSHGATEWAY 推送趋势指标
+ExecStart=/opt/rail_monitor/.venv/bin/python scripts/stress_test.py \
+    --host http://127.0.0.1:8000 \
+    --viewers 100 --spawn-rate 20 --devices 1000 --interval 2 --duration 180 \
+    --out /var/lib/rail_monitor/stress \
+    --env-tag prod
+User=rail_monitor
+# 压测失败（回归）不应阻断系统；下一周期自动重试（timer Persistent=true）

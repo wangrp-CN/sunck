@@ -7,3 +7,9 @@ scrape_configs:
     # 原生部署（非容器）请改用 deploy/prometheus.yml（target 为 127.0.0.1:8000）。
     static_configs:
       - targets: ['host.docker.internal:8000']
+  - job_name: pushgateway
+    # 压测常态化：scripts/stress_test.py 运行后把 rail_monitor_stress_* 推到 pushgateway。
+    # honor_labels 保证推送时自带的 run_ts/env 标签不被 job/instance 覆盖。
+    honor_labels: true
+    static_configs:
+      - targets: ['pushgateway:9091']

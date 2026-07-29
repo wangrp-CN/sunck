@@ -1,0 +1,37 @@
+{
+  "generated_from": "STRESS_TEST_REPORT.md §3 优化后实测（2026-07-22，1000 设备@2s + 100 查看者）",
+  "source_numbers": {
+    "http_rps_real": 44.7,
+    "http_p95_ms_worst_real": 470,
+    "http_error_rate_real": 0.0,
+    "mqtt_rate_msg_per_s": 495.4,
+    "mqtt_error_rate": 0.0
+  },
+  "thresholds": {
+    "http_rps": {
+      "warn_lt": 40,
+      "alert_lt": 30,
+      "note": "真实端点合计 RPS（排除 media/access 预期 404）。基线约 44.7。"
+    },
+    "http_p95_ms": {
+      "warn_gt": 600,
+      "alert_gt": 1000,
+      "note": "真实端点中最慢 P95（devices/list 基线约 470ms），留余量。"
+    },
+    "http_error_rate": {
+      "warn_gt": 0.01,
+      "alert_gt": 0.05,
+      "note": "真实端点失败率；基线 0%。"
+    },
+    "mqtt_rate": {
+      "warn_lt": 450,
+      "alert_lt": 350,
+      "note": "设备上行 msg/s；基线约 495。"
+    },
+    "mqtt_error_rate": {
+      "warn_gt": 0.01,
+      "alert_gt": 0.05,
+      "note": "MQTT 发布错误率；基线 0%。"
+    }
+  }
+}

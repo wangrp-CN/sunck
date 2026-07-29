@@ -1,0 +1,11 @@
+[Unit]
+Description=每周例行执行 Rail Monitor 压测常态化编排
+
+[Timer]
+# 每周日 03:00（CST）跑一次，守住吞吐拐点
+OnCalendar=Sun *-*-* 03:00:00
+Persistent=true
+Unit=rail-monitor-stress.service
+
+[Install]
+WantedBy=timers.target

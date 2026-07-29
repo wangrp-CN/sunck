@@ -404,6 +404,28 @@ sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/py
 - 也可经后端接口手动触发（仅超管）：`POST /api/v1/metrics/snapshot/run`；
 - 查询接口：`GET /api/v1/metrics/risk-trend`、`/health-trend`、`/risk-latest`（均需 `dashboard:view`）。
 
+### 13.x 压测常态化定时任务（维度⑥收尾）
+
+把「千台设备并发压测」从一次性动作变成每周例行，守住吞吐拐点。编排器：`scripts/stress_test.py`
+（串 `seed_stress` + `mqtt_flood` + `locust`，解析后与 `deploy/stress-test/baseline.json` 比对，回归即非零退出）。
+
+部署 unit（每周日 03:00 CST 执行）：`deploy/scripts/rail-monitor-stress.service` + `rail-monitor-stress.timer`。
+
+```bash
+sudo cp deploy/scripts/rail-monitor-stress.{service,timer} /etc/systemd/system/
+sudo sed -i 's#/opt/rail_monitor#<你的部署根>#g' /etc/systemd/system/rail-monitor-stress.*
+sudo systemctl daemon-reload
+sudo systemctl enable --now rail-monitor-stress.timer
+# 手动触发一次验证（需后端 + PG + Redis + MQTT 已起）：
+sudo -u rail_monitor PYTHONPATH=/opt/rail_monitor /opt/rail_monitor/.venv/bin/python \
+    scripts/stress_test.py --pushgateway http://127.0.0.1:9091
+```
+
+- 完整监控栈（含 Pushgateway + 压测趋势看板）见 `deploy/monitoring/docker-compose.yml` 与
+  `deploy/grafana-stress-dashboard.json`（`uid=rail-monitor-stress`）；Prometheus 已加 `pushgateway` job。
+- CI 守护：`.github/workflows/stress-test.yml` 周级跑 `--self-test` 校验编排器健康。
+
+
 ### 13.1 项目风险指数阈值预警（智能核心 v2）
 
 快照任务在落库后自动评估「项目风险指数 ≥ `risk_alert_threshold`（默认 60，对应风险分档

@@ -278,3 +278,53 @@ PY
 # 6) 清理
 .venv/bin/python scripts/seed_stress.py clean
 ```
+
+## 9. 压测常态化（把一次性压测变成可重复、可告警的例行任务）
+
+阶段⑥已验证容量；但原 `locustfile.py` + `mqtt_flood.py` + `seed_stress.py` 是手敲的多条命令，
+结果散落 stdout / 临时 CSV，**无法与历史基线对比、无法趋势化、无法在回归时自动告警**。
+`scripts/stress_test.py` 把三步串成一次「压测运行」并补齐上述能力。
+
+### 9.1 能力
+- **一键编排**：`seed_stress`（幂等建千台设备）→ 后台 `mqtt_flood`（千台上行）→ `locust`（查看者负载）
+  → 解析 Locust `--csv` 与 mqtt 摘要 → 结构化指标。
+- **基线比对**：与 `deploy/stress-test/baseline.json` 阈值比对，判定 `ok / warn / alert`；
+  指标含 HTTP 真实端点 RPS、最慢 P95、错误率、MQTT 上行速率与错误率（media/access 预期 404 不计入）。
+- **结果落盘**：写 `latest.json`（人读）+ 追加 `history.csv`（趋势）。
+- **监控推送**：可选 `--pushgateway <url>` 把 `rail_monitor_stress_*` gauge 推到 Prometheus Pushgateway，
+  Grafana 看板 `rail-monitor-stress` 展示趋势 + 超阈（看板 JSON：`deploy/grafana-stress-dashboard.json`）。
+- **退出码**：`0=健康 / 1=warn / 2=alert`，供 systemd / CI 判定失败并告警。
+
+### 9.2 用法
+```bash
+# 完整跑（默认 1000 设备@2s + 100 查看者，与 §3 同口径）
+.venv/bin/python scripts/stress_test.py
+
+# 轻量冒烟（CI / 快速验证脚本逻辑，不压真实后端）
+.venv/bin/python scripts/stress_test.py --self-test
+
+# 推送监控栈（需 deploy/monitoring 已起 pushgateway，见 9.3）
+.venv/bin/python scripts/stress_test.py --pushgateway http://127.0.0.1:9091 --env-tag prod
+```
+
+### 9.3 监控栈接入（deploy/monitoring）
+- `docker-compose.yml` 新增 `pushgateway` 服务（:9091）；
+- `prometheus.docker.yml` / `prometheus.yml` 新增 `pushgateway` job（`honor_labels: true`，保留 `run_ts/env` 标签）；
+- `grafana-stress-dashboard.json` 挂载到 `/var/lib/grafana/dashboards/`，看板 `uid=rail-monitor-stress`。
+
+### 9.4 定时例行（systemd）
+- `deploy/scripts/rail-monitor-stress.service`（oneshot，调 `stress_test.py`）+ `rail-monitor-stress.timer`
+  （默认**每周日 03:00 CST**）。启用：
+```bash
+sudo cp deploy/scripts/rail-monitor-stress.{service,timer} /etc/systemd/system/
+sudo sed -i 's#/opt/rail_monitor#<你的部署根>#g' /etc/systemd/system/rail-monitor-stress.*
+sudo systemctl daemon-reload
+sudo systemctl enable --now rail-monitor-stress.timer
+```
+- CI：`.github/workflows/stress-test.yml` 周级 scheduled 跑 `--self-test` 守护脚本健康；
+  完整压测需带全栈的自托管 runner，经 `workflow_dispatch` + `inputs.full=true` 触发。
+
+### 9.5 基线（deploy/stress-test/baseline.json）
+取自 §3 优化后实测：http_rps≈44.7、http_p95_ms≈470（devices/list 最慢）、http 错误率 0%、
+mqtt_rate≈495 msg/s、mqtt 错误率 0%。阈值：RPS<40 warn / <30 alert；P95>600 warn / >1000 alert；
+错误率>1% warn / >5% alert；mqtt_rate<450 warn / <350 alert。

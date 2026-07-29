@@ -32,6 +32,7 @@ services:
     volumes:
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
       - ../grafana-dashboard.json:/var/lib/grafana/dashboards/rail-monitor.json:ro
+      - ../grafana-stress-dashboard.json:/var/lib/grafana/dashboards/rail-monitor-stress.json:ro
       - grafana_data:/var/lib/grafana
     environment:
       # 生产请通过环境变量覆盖：GRAFANA_ADMIN_PASSWORD=强密码 docker compose up -d
@@ -41,6 +42,13 @@ services:
       GF_SERVER_ROOT_URL: "%(protocol)s://%(domain)s:%(http_port)s/"
     ports:
       - "3000:3000"
+    restart: unless-stopped
+
+  pushgateway:
+    image: prom/pushgateway:latest
+    container_name: railmon-pushgateway
+    ports:
+      - "9091:9091"
     restart: unless-stopped
 
 volumes:
