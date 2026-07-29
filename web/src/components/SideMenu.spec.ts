@@ -46,7 +46,7 @@ describe("SideMenu", () => {
       },
     });
     // 手动触发 el-menu 的 select 事件（由 SideMenu 监听并转 emit navigate）
-    await (wrapper.find(".el-menu").vm as any).$emit("select");
+    await wrapper.findComponent(menuStub).vm.$emit("select");
     expect(wrapper.emitted("navigate")).toBeTruthy();
   });
 });

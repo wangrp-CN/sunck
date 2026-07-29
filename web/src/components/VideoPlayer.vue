@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // 视频流播放器（深化⑧）：支持 HLS(.m3u8，hls.js)、MP4/WebM 原生播放；
 // RTSP/RTMP 浏览器无法直接解码，给出提示。stream_url 来自通道登记。
-import { onBeforeUnmount, ref, watch } from "vue";
+import { nextTick, onBeforeUnmount, ref, watch } from "vue";
+import type HlsType from "hls.js";
 
 const props = withDefaults(defineProps<{ url?: string | null; autoplay?: boolean }>(), {
   url: null,
@@ -9,8 +10,8 @@ const props = withDefaults(defineProps<{ url?: string | null; autoplay?: boolean
 });
 
 const videoEl = ref<HTMLVideoElement | null>(null);
-// hls.js 实例（动态加载，仅 HLS 时创建）
-let hls: { destroy: () => void } | null = null;
+// hls.js 实例（动态加载，仅 HLS 时创建；type-only import 不影响按需打包）
+let hls: HlsType | null = null;
 
 type Kind = "hls" | "native" | "unsupported" | "empty";
 function detectKind(url: string | null | undefined): Kind {
@@ -34,8 +35,11 @@ async function load() {
   }
   const url = props.url;
   kind.value = detectKind(url);
+  if (!url || kind.value === "empty" || kind.value === "unsupported") return;
+  // v-if 渲染 <video> 需等一帧；immediate watch 在挂载前触发时 ref 也尚未就绪
+  await nextTick();
   const el = videoEl.value;
-  if (!el || !url || kind.value === "empty" || kind.value === "unsupported") return;
+  if (!el) return;
 
   if (kind.value === "hls") {
     // 动态加载 hls.js，避免无视频页面也打包该依赖
@@ -72,7 +76,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="player">
     <video
-      v-show="kind === 'hls' || kind === 'native'"
+      v-if="kind === 'hls' || kind === 'native'"
       ref="videoEl"
       class="video"
       controls

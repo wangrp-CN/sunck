@@ -1,6 +1,6 @@
 // 视频 AI API（P3·⑧ PoC）
 import { http } from "@/utils/request";
-import type { VideoChannel, VideoEvent } from "@/types";
+import type { VideoAiAnalyzeResult, VideoChannel, VideoEvent } from "@/types";
 
 // 通道列表
 export function fetchVideoChannels(params?: {

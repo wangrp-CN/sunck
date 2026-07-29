@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import { getCorrelationCompare } from "@/api/metrics";
 import CorrelationHeatmap from "@/components/CorrelationHeatmap.vue";
@@ -86,8 +86,8 @@ const pointsB = computed(() => resp.value?.window_b.points ?? []);
 
 const changedSorted = computed(() =>
   (resp.value?.diff.changed ?? [])
-    .slice()
-    .sort((a, b) => Math.abs(b.delta || 0) - Math.abs(a.delta || 0)),
+    .map((c) => ({ ...c, delta: c.delta ?? 0 }))
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta)),
 );
 
 const diffTotal = computed(() => {
@@ -111,6 +111,9 @@ function scopeLabel(d: CorrelationCompareDiffItem): string {
   return d.scope_text || d.key || "热点";
 }
 
+// v-model 变化即重拉（watch 比 @change 更稳健：程序化赋值同样触发）
+watch([preset, onlyCross], () => void load());
+
 onMounted(() => {
   void load();
   timer = window.setInterval(() => void load(), 60000);
@@ -133,9 +136,8 @@ onUnmounted(() => {
             inline-prompt
             active-text="仅跨设备"
             inactive-text="全部"
-            @change="load"
           />
-          <el-select v-model="preset" size="small" style="width: 168px" @change="load">
+          <el-select v-model="preset" size="small" style="width: 168px">
             <el-option v-for="p in PRESETS" :key="p.key" :label="p.label" :value="p.key" />
           </el-select>
         </div>

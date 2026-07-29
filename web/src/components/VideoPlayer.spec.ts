@@ -5,7 +5,6 @@ import VideoPlayer from "@/components/VideoPlayer.vue";
 
 // jsdom 未实现 media.play，补一个返回 resolved promise 的桩，避免 load() 抛错
 beforeEach(() => {
-  // @ts-expect-error 测试桩
   HTMLMediaElement.prototype.play = vi.fn().mockResolvedValue(undefined);
 });
 afterEach(() => {

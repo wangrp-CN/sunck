@@ -6,6 +6,14 @@ import axios, {
 import type { Router } from "vue-router";
 import type { ApiResponse } from "@/types";
 
+// 扩展 axios 配置：silent=true 时请求失败不弹全局错误提示，
+// 由调用方自行降级处理（如媒体缩略图批量解析，单条失败仅显示占位）。
+declare module "axios" {
+  export interface AxiosRequestConfig {
+    silent?: boolean;
+  }
+}
+
 const TOKEN_KEY = "rm_token";
 let routerInstance: Router | null = null;
 
@@ -51,19 +59,25 @@ request.interceptors.response.use(
     const body = resp.data;
     // 若后端返回了标准结构且 code != 0，视为业务错误
     if (body && typeof body.code === "number" && body.code !== 0) {
-      ElMessage.error(body.message || "请求失败");
+      if (!resp.config?.silent) {
+        ElMessage.error(body.message || "请求失败");
+      }
       return Promise.reject(new Error(body.message || "business error"));
     }
     return resp;
   },
   (error) => {
     const status = error.response?.status;
+    const silent = error.config?.silent === true;
     if (status === 401) {
+      // 登录态失效不静默：无论哪个请求触发都要引导重新登录
       clearToken();
       ElMessage.error("登录已过期，请重新登录");
       if (routerInstance && routerInstance.currentRoute.value.name !== "login") {
         routerInstance.push({ name: "login" });
       }
+    } else if (silent) {
+      // 静默请求：调用方自行降级，不弹全局提示
     } else if (status === 403) {
       ElMessage.error("无权限访问");
     } else if (status === 423) {

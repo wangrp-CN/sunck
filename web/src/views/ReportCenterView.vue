@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import {
   exportRiskHealthReport,
@@ -9,6 +9,8 @@ import {
 } from "@/api/reports";
 
 const period = ref<RiskHealthPeriod>("weekly");
+// 周期变化即重拉（watch 比 @change 更稳健：程序化赋值同样触发）
+watch(period, () => void load());
 const loading = ref(false);
 const exporting = ref<"" | "excel" | "pdf">("");
 const data = ref<RiskHealthReportPreview | null>(null);
@@ -71,7 +73,7 @@ onMounted(load);
   <div class="report-center" v-loading="loading">
     <el-card shadow="never" class="toolbar">
       <div class="toolbar-row">
-        <el-radio-group v-model="period" @change="load">
+        <el-radio-group v-model="period">
           <el-radio-button value="weekly">周报（上周）</el-radio-button>
           <el-radio-button value="daily">日报（昨日）</el-radio-button>
         </el-radio-group>

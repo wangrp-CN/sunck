@@ -30,6 +30,8 @@ export function presignedMedia(
 }
 
 // 获取部门隔离的预签名媒体 URL（前端 <img>/<video> 展示用，取代匿名代理 URL）
+// silent：批量缩略图解析场景中，单个对象缺失/越权（404）属预期降级（显示占位），
+// 不应向用户弹全局错误提示（否则切到列表页会被历史脏 media_urls 刷屏报错）。
 export function fetchMediaAccess(
   key: string,
 ): Promise<{ key: string; presigned_url: string }> {
@@ -37,6 +39,7 @@ export function fetchMediaAccess(
     url: "/v1/media/access",
     method: "GET",
     params: { key },
+    silent: true,
   });
 }
 
