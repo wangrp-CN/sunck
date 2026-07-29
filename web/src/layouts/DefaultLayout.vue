@@ -1,28 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import {
-  DataLine,
-  Position,
-  Folder,
-  Cpu,
-  User,
-  Setting,
-  Location,
-  Notebook,
-  Connection,
-  Warning,
-  Bell,
-  Monitor,
-  Compass,
-  VideoCamera,
-  TrendCharts,
-  Promotion,
-  MagicStick,
-  Histogram,
-  Document,
-} from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import { useBreakpoint } from "@/composables/useBreakpoint";
+import SideMenu from "@/components/SideMenu.vue";
 import {
   fetchNotifications,
   fetchUnreadCount,
@@ -30,12 +11,18 @@ import {
   markNotificationRead,
   type NotificationItem,
 } from "@/api/notification";
+import { Bell, Menu as MenuIcon } from "@element-plus/icons-vue";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
+const { isMobile } = useBreakpoint();
 
-const activeMenu = computed(() => route.path);
+// 移动端抽屉式侧栏（窄屏下替代固定侧栏）
+const drawerVisible = ref(false);
+function openDrawer() {
+  drawerVisible.value = true;
+}
 
 const nickname = computed(() => auth.user?.nickname || auth.user?.username || "未登录");
 
@@ -174,133 +161,25 @@ onUnmounted(() => {
 
 <template>
   <el-container class="layout">
-    <el-aside width="220px" class="aside">
+    <el-aside v-show="!isMobile" width="220px" class="aside">
       <div class="logo">涉铁监控平台</div>
-      <el-menu :default-active="activeMenu" router class="menu">
-        <el-menu-item index="/dashboard">
-          <el-icon><DataLine /></el-icon>
-          <span>监控大屏</span>
-        </el-menu-item>
-        <el-menu-item index="/realtime">
-          <el-icon><Position /></el-icon>
-          <span>实时监控</span>
-        </el-menu-item>
-        <el-menu-item index="/projects">
-          <el-icon><Folder /></el-icon>
-          <span>项目管理</span>
-        </el-menu-item>
-        <el-menu-item index="/projects/compare">
-          <el-icon><TrendCharts /></el-icon>
-          <span>对比大屏</span>
-        </el-menu-item>
-        <el-sub-menu index="/intelligence-group">
-          <template #title>
-            <el-icon><MagicStick /></el-icon>
-            <span>智能核心</span>
-          </template>
-          <el-menu-item index="/intelligence/threshold">
-            <el-icon><MagicStick /></el-icon>
-            <span>阈值自学习</span>
-          </el-menu-item>
-          <el-menu-item index="/intelligence/subscriptions">
-            <el-icon><Bell /></el-icon>
-            <span>报告订阅</span>
-          </el-menu-item>
-          <el-menu-item index="/intelligence/correlation">
-            <el-icon><Connection /></el-icon>
-            <span>跨设备根因关联</span>
-          </el-menu-item>
-          <el-menu-item index="/intelligence/correlation-compare">
-            <el-icon><Histogram /></el-icon>
-            <span>关联热力对比</span>
-          </el-menu-item>
-          <el-menu-item index="/intelligence/report-center">
-            <el-icon><Document /></el-icon>
-            <span>报表中心</span>
-          </el-menu-item>
-        </el-sub-menu>
-        <el-sub-menu index="/devices-group">
-          <template #title>
-            <el-icon><Cpu /></el-icon>
-            <span>设备管理</span>
-          </template>
-          <el-menu-item index="/devices">设备列表</el-menu-item>
-          <el-menu-item index="/devices/online">在线看板</el-menu-item>
-          <el-menu-item index="/devices/health">
-            <el-icon><Monitor /></el-icon>
-            <span>设备健康</span>
-          </el-menu-item>
-          <el-menu-item index="/devices/commands">
-            <el-icon><Promotion /></el-icon>
-            <span>指令下发记录</span>
-          </el-menu-item>
-        </el-sub-menu>
-        <el-menu-item index="/persons">
-          <el-icon><User /></el-icon>
-          <span>人员管理</span>
-        </el-menu-item>
-        <el-menu-item index="/machines">
-          <el-icon><Setting /></el-icon>
-          <span>机械管理</span>
-        </el-menu-item>
-        <el-menu-item index="/fences">
-          <el-icon><Location /></el-icon>
-          <span>电子围栏</span>
-        </el-menu-item>
-        <el-menu-item index="/jobs">
-          <el-icon><Notebook /></el-icon>
-          <span>作业计划</span>
-        </el-menu-item>
-        <el-menu-item index="/inspections">
-          <el-icon><Compass /></el-icon>
-          <span>巡检打卡</span>
-        </el-menu-item>
-        <el-menu-item index="/videos">
-          <el-icon><VideoCamera /></el-icon>
-          <span>视频AI</span>
-        </el-menu-item>
-        <el-menu-item index="/alarms">
-          <el-icon><Warning /></el-icon>
-          <span>告警管理</span>
-        </el-menu-item>
-        <el-menu-item index="/dispatch">
-          <el-icon><Promotion /></el-icon>
-          <span>根因派单</span>
-        </el-menu-item>
-        <el-menu-item index="/hazards">
-          <el-icon><Bell /></el-icon>
-          <span>隐患治理</span>
-        </el-menu-item>
-        <el-menu-item index="/notifications">
-          <el-icon><Bell /></el-icon>
-          <span>消息中心</span>
-        </el-menu-item>
-        <el-menu-item index="/audit-logs">
-          <el-icon><Document /></el-icon>
-          <span>操作审计</span>
-        </el-menu-item>
-        <el-sub-menu index="/system">
-          <template #title>
-            <el-icon><Setting /></el-icon>
-            <span>系统管理</span>
-          </template>
-          <el-menu-item index="/system/users">用户管理</el-menu-item>
-          <el-menu-item index="/system/roles">角色管理</el-menu-item>
-          <el-menu-item index="/system/departments">部门管理</el-menu-item>
-          <el-menu-item index="/dicts">数据字典</el-menu-item>
-        </el-sub-menu>
-      </el-menu>
+      <SideMenu />
     </el-aside>
     <el-container>
       <el-header class="header">
-        <span class="title">{{ (route.meta.title as string) || "控制台" }}</span>
+        <div class="header-left">
+          <el-button v-if="isMobile" text class="hamburger" @click="openDrawer">
+            <el-icon :size="20"><MenuIcon /></el-icon>
+          </el-button>
+          <span class="title">{{ (route.meta.title as string) || "控制台" }}</span>
+        </div>
         <div class="user">
           <el-badge :value="notifUnread" :hidden="notifUnread === 0" :max="99" class="notif-badge">
             <el-button text circle @click="openNotif">
               <el-icon :size="20"><Bell /></el-icon>
             </el-button>
           </el-badge>
-          <span class="nickname">{{ nickname }}</span>
+          <span class="nickname hide-mobile">{{ nickname }}</span>
           <el-button text type="primary" @click="handleLogout">退出</el-button>
         </div>
       </el-header>
@@ -308,6 +187,17 @@ onUnmounted(() => {
         <router-view />
       </el-main>
     </el-container>
+
+    <!-- 移动端侧栏抽屉（窄屏下替代固定侧栏） -->
+    <el-drawer
+      v-model="drawerVisible"
+      direction="ltr"
+      size="220px"
+      :with-header="false"
+      class="mobile-menu-drawer"
+    >
+      <SideMenu @navigate="drawerVisible = false" />
+    </el-drawer>
 
     <!-- 通知中心抽屉 -->
     <el-drawer v-model="notifVisible" title="通知中心" direction="rtl" size="380px">
@@ -412,9 +302,26 @@ onUnmounted(() => {
   background: #fff;
   border-bottom: 1px solid #eee;
 }
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hamburger {
+  margin-left: -8px;
+}
 .title {
   font-size: 16px;
   font-weight: 600;
+}
+/* 窄屏：缩小主区域留白，避免内容过挤 */
+@media (max-width: 960px) {
+  .main {
+    padding: 8px;
+  }
+  .header {
+    padding: 0 10px;
+  }
 }
 .user {
   display: flex;

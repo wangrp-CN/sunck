@@ -16,3 +16,36 @@ body {
   color: #303133;
   background: #f0f2f5;
 }
+
+/* ===================== 移动端适配辅助类 ===================== */
+/* 窄屏（<=960px）隐藏/显示工具类 */
+.hide-mobile {
+  display: inline-flex;
+}
+@media (max-width: 960px) {
+  .hide-mobile {
+    display: none !important;
+  }
+  .show-mobile {
+    display: inline-flex !important;
+  }
+}
+.show-mobile {
+  display: none;
+}
+
+/* 自适应栅格：卡片类内容在窄屏自动换行堆叠 */
+.resp-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+/* 移动端抽屉侧栏：复用平台深色主题 */
+.mobile-menu-drawer .el-drawer__body {
+  padding: 0;
+  background: #001529;
+}
+.mobile-menu-drawer .el-menu {
+  border-right: none;
+}

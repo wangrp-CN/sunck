@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import ResponsiveTable from "@/components/ResponsiveTable.vue";
 import {
   fetchVideoChannels,
   createVideoChannel,
@@ -231,7 +232,7 @@ onMounted(async () => {
   <div class="page">
     <el-row :gutter="16">
       <!-- 通道管理 -->
-      <el-col :span="13">
+      <el-col :span="13" :xs="24">
         <el-card shadow="never" class="panel">
           <template #header>
             <div class="panel-head">
@@ -239,7 +240,7 @@ onMounted(async () => {
               <el-button v-if="canManage" type="primary" size="small" @click="openCreate">新增通道</el-button>
             </div>
           </template>
-          <el-table :data="channels" v-loading="loading" border stripe height="520">
+          <ResponsiveTable :data="channels" v-loading="loading" border stripe height="520">
             <el-table-column prop="name" label="名称" min-width="120" />
             <el-table-column prop="channel_no" label="编号" width="110" />
             <el-table-column label="项目" min-width="110">
@@ -264,12 +265,12 @@ onMounted(async () => {
               </template>
             </el-table-column>
             <template #empty>暂无通道</template>
-          </el-table>
+          </ResponsiveTable>
         </el-card>
       </el-col>
 
       <!-- AI 事件流 -->
-      <el-col :span="11">
+      <el-col :span="11" :xs="24">
         <el-card shadow="never" class="panel">
           <template #header>
             <div class="panel-head">
@@ -300,7 +301,7 @@ onMounted(async () => {
             <span>已升级告警 <b class="ok">{{ stats.escalated }}</b></span>
             <span>已处理 <b>{{ stats.handled }}</b></span>
           </div>
-          <el-table :data="events" v-loading="eventsLoading" border stripe height="520">
+          <ResponsiveTable :data="events" v-loading="eventsLoading" border stripe height="520">
             <el-table-column label="通道" min-width="120">
               <template #default="{ row }">{{ row.channel_name || row.channel_no || "—" }}</template>
             </el-table-column>
@@ -360,7 +361,7 @@ onMounted(async () => {
               </template>
             </el-table-column>
             <template #empty>暂无事件</template>
-          </el-table>
+          </ResponsiveTable>
         </el-card>
       </el-col>
     </el-row>
@@ -430,4 +431,11 @@ onMounted(async () => {
   background: #f5f7fa;
 }
 .muted { color: #c0c4cc; }
+
+/* 移动端：缩小留白、统计与筛选工具自动换行 */
+@media (max-width: 768px) {
+  .page { padding: 8px; }
+  .evt-stats { flex-wrap: wrap; gap: 10px; }
+  .head-tools { flex-wrap: wrap; }
+}
 </style>
