@@ -7,12 +7,14 @@
 """
 
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.clock import ensure_aware_local
 from app.core.data_scope import DataScope, apply_data_scope
 from app.core.database import get_db, get_read_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
@@ -211,26 +213,57 @@ def correlations_heatmap(
         None, description="可选：限定单个项目（须落在数据范围内，对比大屏下钻用）"
     ),
     limit: int = Query(500, ge=1, le=2000, description="返回热力点上限"),
+    start: datetime | None = Query(
+        None,
+        description="可选：窗口开始(ISO8601；缺时区按业务时区Asia/Shanghai)。提供后须同时提供 end，按该窗口重算聚类",
+    ),
+    end: datetime | None = Query(
+        None, description="可选：窗口结束(ISO8601；缺时区按业务时区Asia/Shanghai)"
+    ),
 ):
     """跨设备共因事件组的空间热力点（受数据范围约束）。
 
     每个点带原始 WGS-84 (``lng``/``lat``) 与转换后的 ``gcj02`` (高德展示用)，
     ``weight`` 为告警数（前端映射热力强度）。用于对比大屏/关联视图的空间热力图。
+
+    同时提供 ``start`` + ``end`` 时，改为在指定历史窗口内对原始告警重算聚类
+    （不依赖派生滚动表），实现任意时间窗的关联热力回看。
     """
     proj_stmt = apply_data_scope(
         select(Project.id).where(Project.is_deleted.is_(False)), Project, scope
     )
     allowed = {row[0] for row in db.execute(proj_stmt).all()}
     if not allowed:
-        return ApiResponse.success(data={"total": 0, "points": []})
+        return ApiResponse.success(data={"total": 0, "points": [], "window": "rolling"})
     # 单项目下钻：与数据范围求交，越权项目返回空
     if project_id is not None:
         if project_id not in allowed:
-            return ApiResponse.success(data={"total": 0, "points": [], "project_id": project_id})
+            return ApiResponse.success(
+                data={"total": 0, "points": [], "project_id": project_id, "window": "rolling"}
+            )
         allowed = {project_id}
-    points = corr_svc.get_correlation_heatmap(
-        db, allowed, only_cross_device=only_cross_device, limit=limit
-    )
+
+    window = "rolling"
+    if start is not None or end is not None:
+        if start is None or end is None:
+            raise BusinessError("start 与 end 须同时提供", code=400)
+        start = ensure_aware_local(start)
+        end = ensure_aware_local(end)
+        if end < start:
+            raise BusinessError("结束时间须晚于开始时间", code=400)
+        if (end - start).days > settings.correlation_compare_max_days:
+            raise BusinessError(
+                f"对比窗口跨度不得超过 {settings.correlation_compare_max_days} 天", code=400
+            )
+        window = "custom"
+        points = corr_svc.get_correlation_heatmap_windowed(
+            db, allowed, start=start, end=end, only_cross_device=only_cross_device, limit=limit
+        )
+    else:
+        points = corr_svc.get_correlation_heatmap(
+            db, allowed, only_cross_device=only_cross_device, limit=limit
+        )
+
     for p in points:
         glng, glat = wgs84_to_gcj02(p["lng"], p["lat"])
         p["gcj02"] = {"lng": glng, "lat": glat}
@@ -239,9 +272,110 @@ def correlations_heatmap(
             "total": len(points),
             "only_cross_device": only_cross_device,
             "project_id": project_id,
+            "window": window,
             "points": points,
         }
     )
+
+
+@router.get(
+    "/correlations/compare",
+    dependencies=[Depends(require_permissions("dashboard:view"))],
+)
+def correlations_compare(
+    db: Session = Depends(get_read_db),
+    scope: DataScope = Depends(get_data_scope),
+    start_a: datetime = Query(..., description="窗口A开始(ISO8601；缺时区按业务时区Asia/Shanghai)"),
+    end_a: datetime = Query(..., description="窗口A结束(ISO8601；缺时区按业务时区Asia/Shanghai)"),
+    start_b: datetime = Query(..., description="窗口B开始(ISO8601；缺时区按业务时区Asia/Shanghai)"),
+    end_b: datetime = Query(..., description="窗口B结束(ISO8601；缺时区按业务时区Asia/Shanghai)"),
+    only_cross_device: bool = Query(True, description="仅统计跨设备共因"),
+    project_id: int | None = Query(None, description="可选：限定单个项目（须落在数据范围内）"),
+    limit: int = Query(500, ge=1, le=2000, description="单窗热力点上限"),
+    gap_minutes: int = Query(30, ge=1, le=1440, description="时间窗聚类间隔(分钟)"),
+):
+    """对比两个时间窗的关联热力：返回两窗各自热力点 + 变化摘要（新增/消失/增强减弱）。
+
+    用于「对比大屏关联热力」：在任意两个历史时间窗内重算跨设备共因聚类并对比，揭示
+    共因热点的迁移（如某围栏本周告警激增、某区域上周有而本周消失）。
+    匹配键 ``project_id|spatial_type|scope_key`` 用于跨窗识别同一空间热点。
+    """
+    proj_stmt = apply_data_scope(
+        select(Project.id).where(Project.is_deleted.is_(False)), Project, scope
+    )
+    allowed = {row[0] for row in db.execute(proj_stmt).all()}
+
+    # 规整化与校验四个时间边界
+    sa, ea = ensure_aware_local(start_a), ensure_aware_local(end_a)
+    sb, eb = ensure_aware_local(start_b), ensure_aware_local(end_b)
+    for nm, s, e in [("A", sa, ea), ("B", sb, eb)]:
+        if e < s:
+            raise BusinessError(f"窗口{nm} 结束时间须晚于开始时间", code=400)
+        if (e - s).days > settings.correlation_compare_max_days:
+            raise BusinessError(
+                f"对比窗口跨度不得超过 {settings.correlation_compare_max_days} 天", code=400
+            )
+
+    if not allowed:
+        empty = {
+            "start": "",
+            "end": "",
+            "total": 0,
+            "cross_device_total": 0,
+            "alarm_total": 0,
+            "points": [],
+        }
+        return ApiResponse.success(
+            data={
+                "window_a": {**empty, "start": sa.isoformat(), "end": ea.isoformat()},
+                "window_b": {**empty, "start": sb.isoformat(), "end": eb.isoformat()},
+                "diff": {"new": [], "removed": [], "changed": []},
+            }
+        )
+    # 单项目下钻：与数据范围求交，越权项目返回空对比
+    if project_id is not None:
+        if project_id not in allowed:
+            empty = {
+                "start": sa.isoformat(),
+                "end": ea.isoformat(),
+                "total": 0,
+                "cross_device_total": 0,
+                "alarm_total": 0,
+                "points": [],
+            }
+            return ApiResponse.success(
+                data={
+                    "window_a": empty,
+                    "window_b": {
+                        "start": sb.isoformat(),
+                        "end": eb.isoformat(),
+                        "total": 0,
+                        "cross_device_total": 0,
+                        "alarm_total": 0,
+                        "points": [],
+                    },
+                    "diff": {"new": [], "removed": [], "changed": []},
+                }
+            )
+        allowed = {project_id}
+
+    result = corr_svc.compare_correlation_windows(
+        db,
+        allowed,
+        start_a=sa,
+        end_a=ea,
+        start_b=sb,
+        end_b=eb,
+        only_cross_device=only_cross_device,
+        limit=limit,
+        gap_minutes=gap_minutes,
+    )
+    # 两窗热力点补充 gcj02（与 heatmap 端点一致）
+    for wkey in ("window_a", "window_b"):
+        for p in result[wkey]["points"]:
+            glng, glat = wgs84_to_gcj02(p["lng"], p["lat"])
+            p["gcj02"] = {"lng": glng, "lat": glat}
+    return ApiResponse.success(data=result)
 
 
 @router.get("/alarm-storm", dependencies=[Depends(require_permissions("dashboard:view"))])

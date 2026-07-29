@@ -19,6 +19,7 @@ from app.core.database import SessionLocal
 from app.model.alarm import Alarm
 from app.model.correlation import CorrelatedEventGroup
 from app.model.project import Project
+from app.model.realtime import DeviceLocation
 
 
 @pytest.fixture
@@ -433,6 +434,175 @@ def test_correlation_heatmap_endpoint(client: TestClient, admin_token: str, wipe
     db = SessionLocal()
     try:
         db.execute(delete(DeviceLocation).where(DeviceLocation.device_no.in_(dev_nos)))
+        db.commit()
+    finally:
+        db.close()
+
+
+# ---------------------------------------------------------------------------
+# 窗口化热力 + 双时间窗对比（对比大屏关联热力）
+# ---------------------------------------------------------------------------
+
+
+def _add_raw_alarm(db, project_id, device_no, when, loc, level="警告", fence=None):
+    """插入一条原始告警 + 设备最新定位（确保 geo 分组可解析坐标，且不污染既有数据）。"""
+    from app.model.realtime import DeviceLocation
+
+    a = Alarm(
+        project_id=project_id,
+        device_no=device_no,
+        device_name=f"设备{device_no[-4:]}",
+        fence_name=fence,
+        alarm_type="防侵限",
+        alarm_level=level,
+        alarm_status="告警开始",
+        handle_status="待处理",
+        alarm_time=when,
+        alarm_info="对比测试告警",
+    )
+    db.add(a)
+    db.execute(delete(DeviceLocation).where(DeviceLocation.device_no == device_no))
+    db.add(
+        DeviceLocation(
+            device_no=device_no,
+            project_id=project_id,
+            longitude=loc[0],
+            latitude=loc[1],
+            report_time=when,
+            status="在线",
+        )
+    )
+    return a
+
+
+def test_correlation_heatmap_windowed(client: TestClient, admin_token: str, wipe):
+    """heatmap 提供 start/end 时，仅窗口内的原始告警参与聚类；窗口外告警被排除。"""
+    h = {"Authorization": f"Bearer {admin_token}"}
+    dev = "WIN-A-1001"
+    loc = (121.4737, 31.2304)  # 上海坐标，网格 3123,12147
+    db = SessionLocal()
+    try:
+        pid = db.scalar(select(Project.id).where(Project.is_deleted.is_(False)))
+        now = datetime.now(timezone.utc)
+        win_start = now - timedelta(days=2)
+        win_end = now - timedelta(days=1)
+        # 清空目标窗口内既有告警 + 本设备残留，保证窗口内仅有本次注入的数据（共享库隔离）
+        db.execute(delete(Alarm).where(Alarm.alarm_time >= win_start, Alarm.alarm_time <= win_end))
+        db.execute(delete(Alarm).where(Alarm.device_no == dev))
+        db.execute(delete(DeviceLocation).where(DeviceLocation.device_no == dev))
+        db.commit()
+        in_win = now - timedelta(days=1, hours=12)  # 落在窗口内
+        out_win = now - timedelta(days=20)  # 窗口外
+        _add_raw_alarm(db, pid, dev, in_win, loc, level="严重")
+        _add_raw_alarm(db, pid, dev, out_win, loc, level="提示")
+        db.commit()
+    finally:
+        db.close()
+
+    # 默认滚动表此刻为空 → 0 点
+    r0 = client.get("/api/v1/metrics/correlations/heatmap", headers=h)
+    assert r0.status_code == 200, r0.text
+    assert r0.json()["data"]["total"] == 0
+
+    # 窗口化：仅窗口内告警形成 1 个 geo 点（窗口外告警被排除）
+    params = {
+        "start": win_start.isoformat(),
+        "end": win_end.isoformat(),
+        "only_cross_device": "false",
+    }
+    r = client.get("/api/v1/metrics/correlations/heatmap", params=params, headers=h)
+    assert r.status_code == 200, r.text
+    d = r.json()["data"]
+    assert d["window"] == "custom"
+    assert d["total"] == 1, d
+    pt = d["points"][0]
+    assert pt["grid_cell"] == "3123,12147"
+    assert pt["spatial_type"] == "geo"
+    # geo 组使用网格中心作为代表坐标（与滚动表一致），12147*0.01=121.47 / 3123*0.01=31.23
+    assert abs(pt["lng"] - 121.47) < 1e-6
+    assert abs(pt["lat"] - 31.23) < 1e-6
+    assert pt["gcj02"]["lng"] != pt["lng"]
+
+    # 清理
+    db = SessionLocal()
+    try:
+        db.execute(delete(Alarm).where(Alarm.device_no == dev))
+        db.execute(delete(DeviceLocation).where(DeviceLocation.device_no == dev))
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_correlation_compare(client: TestClient, admin_token: str, wipe):
+    """双时间窗对比：同网格 A→B 变化(changed)、仅 B 出现(new)、仅 A 出现(removed)。"""
+    h = {"Authorization": f"Bearer {admin_token}"}
+    db = SessionLocal()
+    try:
+        pid = db.scalar(select(Project.id).where(Project.is_deleted.is_(False)))
+        now = datetime.now(timezone.utc)
+        # 三个设备，分布到不同地理网格（上海坐标，网格唯一）
+        d1 = ("CMP-X-1", (121.4737, 31.2304))  # 窗A与窗B共有 → changed（网格 3123,12147）
+        d2 = ("CMP-Y-2", (121.4837, 31.2404))  # 仅窗B → new（网格 3124,12148）
+        d3 = ("CMP-Z-3", (121.4637, 31.2204))  # 仅窗A → removed（网格 3122,12146）
+
+        win_a_start, win_a_end = now - timedelta(days=9), now - timedelta(days=8)
+        win_b_start, win_b_end = now - timedelta(days=2), now - timedelta(days=1)
+        # 清空两个目标窗口 + 本测试设备的既有告警，保证窗口内仅有本次注入（共享库隔离）
+        db.execute(
+            delete(Alarm).where(Alarm.alarm_time >= win_a_start, Alarm.alarm_time <= win_a_end)
+        )
+        db.execute(
+            delete(Alarm).where(Alarm.alarm_time >= win_b_start, Alarm.alarm_time <= win_b_end)
+        )
+        for dev in (d1[0], d2[0], d3[0]):
+            db.execute(delete(Alarm).where(Alarm.device_no == dev))
+            db.execute(delete(DeviceLocation).where(DeviceLocation.device_no == dev))
+        db.commit()
+
+        t_a = now - timedelta(days=8, hours=12)
+        t_b = now - timedelta(days=1, hours=12)
+
+        # 窗A：d1 ×3, d3 ×4
+        for _ in range(3):
+            _add_raw_alarm(db, pid, d1[0], t_a, d1[1], level="严重")
+        for _ in range(4):
+            _add_raw_alarm(db, pid, d3[0], t_a, d3[1], level="警告")
+        # 窗B：d1 ×5, d2 ×2
+        for _ in range(5):
+            _add_raw_alarm(db, pid, d1[0], t_b, d1[1], level="严重")
+        for _ in range(2):
+            _add_raw_alarm(db, pid, d2[0], t_b, d2[1], level="提示")
+        db.commit()
+    finally:
+        db.close()
+
+    params = {
+        "start_a": win_a_start.isoformat(),
+        "end_a": win_a_end.isoformat(),
+        "start_b": win_b_start.isoformat(),
+        "end_b": win_b_end.isoformat(),
+        "only_cross_device": "false",
+    }
+    r = client.get("/api/v1/metrics/correlations/compare", params=params, headers=h)
+    assert r.status_code == 200, r.text
+    d = r.json()["data"]
+    assert d["window_a"]["total"] == 2  # d1 + d3
+    assert d["window_b"]["total"] == 2  # d1 + d2
+    assert len(d["diff"]["new"]) == 1
+    assert len(d["diff"]["removed"]) == 1
+    assert len(d["diff"]["changed"]) == 1
+
+    ch = d["diff"]["changed"][0]
+    assert ch["a_weight"] == 3 and ch["b_weight"] == 5 and ch["delta"] == 2
+    assert d["diff"]["new"][0]["weight"] == 2
+    assert d["diff"]["removed"][0]["weight"] == 4
+
+    # 清理
+    db = SessionLocal()
+    try:
+        for dev in (d1[0], d2[0], d3[0]):
+            db.execute(delete(Alarm).where(Alarm.device_no == dev))
+            db.execute(delete(DeviceLocation).where(DeviceLocation.device_no == dev))
         db.commit()
     finally:
         db.close()

@@ -70,6 +70,8 @@ class Settings(BaseSettings):
     correlation_window_hours: int = 24
     # 时间窗聚类间隔（分钟）：相邻告警间隔超过该值即拆分为新的事件组。
     correlation_gap_minutes: int = 30
+    # 对比大屏关联热力：单次对比允许的最大时间窗跨度（天），防止超大窗口重算拖垮查询。
+    correlation_compare_max_days: int = 180
     # 跨设备共因事件的 WebSocket 实时推送开关（Redis Pub/Sub 桥接，见 app/ws/correlation_pubsub）。
     ws_correlation_enabled: bool = True
     # 跨设备共因事件 WS 推送指纹去重 TTL（秒）：同一共因在该窗口内只推送一次，

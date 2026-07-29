@@ -221,7 +221,49 @@ export interface CorrelationHeatmapResp {
   total: number;
   only_cross_device: boolean;
   project_id: number | null;
+  window?: "rolling" | "custom";
   points: CorrelationHeatPoint[];
+}
+
+// 关联热力对比（时间窗 A vs B）
+export interface CorrelationCompareWindow {
+  start: string;
+  end: string;
+  total: number;
+  cross_device_total: number;
+  alarm_total: number;
+  points: CorrelationHeatPoint[];
+}
+
+export interface CorrelationCompareDiffItem {
+  key: string;
+  project_id: number | null;
+  project_name: string | null;
+  spatial_type: "fence" | "geo" | "device";
+  scope_text: string;
+  fence_name: string | null;
+  grid_cell: string | null;
+  weight?: number;
+  alarm_count?: number;
+  device_count?: number;
+  max_level?: string | null;
+  a_weight?: number;
+  b_weight?: number;
+  delta?: number;
+  a_max_level?: string | null;
+  b_max_level?: string | null;
+  a_device_count?: number;
+  b_device_count?: number;
+}
+
+export interface CorrelationCompareResp {
+  window_a: CorrelationCompareWindow;
+  window_b: CorrelationCompareWindow;
+  diff: {
+    new: CorrelationCompareDiffItem[];
+    removed: CorrelationCompareDiffItem[];
+    changed: CorrelationCompareDiffItem[];
+  };
 }
 
 // 跨设备共因空间热力点（受数据范围约束）
@@ -235,6 +277,34 @@ export function getCorrelationHeatmap(
     url: "/v1/metrics/correlations/heatmap",
     method: "GET",
     params: { only_cross_device: onlyCrossDevice, limit, project_id: projectId ?? undefined },
+  });
+}
+
+// 关联热力时间窗对比（受数据范围约束）：A 窗 vs B 窗，返回两窗热力点 + 变化摘要
+// start_a/end_a/start_b/end_b 为本地墙钟 ISO（无时区后缀，后端按业务时区 Asia/Shanghai 处理）
+export function getCorrelationCompare(params: {
+  start_a: string;
+  end_a: string;
+  start_b: string;
+  end_b: string;
+  only_cross_device?: boolean;
+  project_id?: number | null;
+  limit?: number;
+  gap_minutes?: number;
+}): Promise<CorrelationCompareResp> {
+  return http<CorrelationCompareResp>({
+    url: "/v1/metrics/correlations/compare",
+    method: "GET",
+    params: {
+      start_a: params.start_a,
+      end_a: params.end_a,
+      start_b: params.start_b,
+      end_b: params.end_b,
+      only_cross_device: params.only_cross_device ?? true,
+      project_id: params.project_id ?? undefined,
+      limit: params.limit ?? 500,
+      gap_minutes: params.gap_minutes ?? 30,
+    },
   });
 }
 

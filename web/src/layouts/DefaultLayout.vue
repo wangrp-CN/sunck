@@ -18,6 +18,7 @@ import {
   TrendCharts,
   Promotion,
   MagicStick,
+  Histogram,
 } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
@@ -207,6 +208,10 @@ onUnmounted(() => {
           <el-menu-item index="/intelligence/correlation">
             <el-icon><Connection /></el-icon>
             <span>跨设备根因关联</span>
+          </el-menu-item>
+          <el-menu-item index="/intelligence/correlation-compare">
+            <el-icon><Histogram /></el-icon>
+            <span>关联热力对比</span>
           </el-menu-item>
         </el-sub-menu>
         <el-sub-menu index="/devices-group">

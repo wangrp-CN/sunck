@@ -115,6 +115,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "跨设备根因关联" },
       },
       {
+        path: "intelligence/correlation-compare",
+        name: "intelligence-correlation-compare",
+        component: () => import("@/views/CorrelationCompareView.vue"),
+        meta: { title: "关联热力对比" },
+      },
+      {
         path: "intelligence/threshold",
         name: "intelligence-threshold",
         component: () => import("@/views/ThresholdAutoLearningView.vue"),

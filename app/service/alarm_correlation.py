@@ -94,6 +94,101 @@ def _build_hint(group: dict[str, Any]) -> str:
     return f"设备 {dev} 持续告警（{n_al} 条 / {span}），建议排查设备本身或链路"
 
 
+def _build_groups(
+    db: Session,
+    alarms: list[Alarm],
+    cluster_gap_minutes: int = 30,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    """把告警按「项目 + 空间范围 + 时间近邻」聚合成事件组中间字典（不落库）。
+
+    返回每个事件组的字典（含 ``project_name``、``device_nos`` 为列表等），供
+    ``compute_correlations`` 落库，或 ``get_correlation_heatmap_windowed`` /
+    ``compare_correlation_windows`` 做任意历史时间窗的窗口化重算复用。
+    """
+    if not alarms:
+        return []
+    now = now or datetime.now(timezone.utc)
+
+    # 设备最新定位（DISTINCT ON device_no，取 report_time 最近一条；Postgres 支持）
+    device_nos = [a.device_no for a in alarms if a.device_no]
+    dev_loc: dict[str, tuple[float, float]] = {}
+    if device_nos:
+        loc_rows = db.execute(
+            select(
+                DeviceLocation.device_no,
+                DeviceLocation.longitude,
+                DeviceLocation.latitude,
+            )
+            .where(DeviceLocation.device_no.in_(device_nos))
+            .distinct(DeviceLocation.device_no)
+            .order_by(DeviceLocation.device_no, DeviceLocation.report_time.desc())
+        ).all()
+        for dno, lng, lat in loc_rows:
+            dev_loc[dno] = (lng, lat)
+
+    # 项目名映射（含已软删项目也保留，因告警可能归属历史项目）
+    proj_names = {pid: pname for pid, pname in db.execute(select(Project.id, Project.name)).all()}
+
+    # 分桶：(project_id, spatial_type, scope_value) -> [alarm, ...]
+    buckets: dict[tuple, list[Alarm]] = defaultdict(list)
+    for a in alarms:
+        st, sv = _scope_of(a, dev_loc)
+        buckets[(a.project_id, st, sv)].append(a)
+
+    gap = timedelta(minutes=cluster_gap_minutes)
+    groups: list[dict[str, Any]] = []
+
+    for (project_id, st, sv), items in buckets.items():
+        items.sort(key=lambda x: (x.alarm_time or datetime.min.replace(tzinfo=timezone.utc)))
+        # 时间窗切分
+        clusters: list[list[Alarm]] = []
+        cur: list[Alarm] = []
+        last_t: datetime | None = None
+        for a in items:
+            t = a.alarm_time or datetime.min.replace(tzinfo=timezone.utc)
+            if last_t is not None and (t - last_t) > gap:
+                clusters.append(cur)
+                cur = []
+            cur.append(a)
+            last_t = t
+        if cur:
+            clusters.append(cur)
+
+        for cl in clusters:
+            dev_nos = sorted({a.device_no for a in cl if a.device_no})
+            levels = [a.alarm_level for a in cl if a.alarm_level]
+            types = [a.alarm_type for a in cl if a.alarm_type]
+            ids = [a.id for a in cl]
+            max_rank = max((LEVEL_ORDER.get(lv, 0) for lv in levels), default=0)
+            max_level = LEVEL_RANK.get(max_rank)
+            started = min((a.alarm_time for a in cl if a.alarm_time), default=None)
+            ended = max((a.alarm_time for a in cl if a.alarm_time), default=None)
+
+            grp: dict[str, Any] = {
+                "project_id": project_id,
+                "project_name": proj_names.get(project_id),
+                "spatial_type": st,
+                "scope_key": sv,
+                "fence_name": sv if st == "fence" else None,
+                "grid_cell": sv if st == "geo" else None,
+                "started_at": started,
+                "ended_at": ended,
+                "alarm_count": len(cl),
+                "device_count": len(dev_nos),
+                "is_cross_device": len(dev_nos) >= 2,
+                "max_level": max_level,
+                "device_nos": dev_nos,
+                "levels": levels,
+                "alarm_types": types,
+                "alarm_ids": ids,
+            }
+            grp["root_cause_hint"] = _build_hint(grp)
+            groups.append(grp)
+
+    return groups
+
+
 def compute_correlations(
     db: Session,
     window_hours: int = 24,
@@ -123,104 +218,32 @@ def compute_correlations(
             "computed_at": now.isoformat(),
         }
 
-    # 设备最新定位（DISTINCT ON device_no，取 report_time 最近一条；Postgres 支持）
-    device_nos = [a.device_no for a in alarms if a.device_no]
-    dev_loc: dict[str, tuple[float, float]] = {}
-    if device_nos:
-        loc_rows = db.execute(
-            select(
-                DeviceLocation.device_no,
-                DeviceLocation.longitude,
-                DeviceLocation.latitude,
-            )
-            .where(DeviceLocation.device_no.in_(device_nos))
-            .distinct(DeviceLocation.device_no)
-            .order_by(DeviceLocation.device_no, DeviceLocation.report_time.desc())
-        ).all()
-        for dno, lng, lat in loc_rows:
-            dev_loc[dno] = (lng, lat)
-
-    # 项目名映射（含已软删项目也保留，因告警可能归属历史项目）
-    proj_names = {pid: pname for pid, pname in db.execute(select(Project.id, Project.name)).all()}
-
-    # 分桶：(project_id, spatial_type, scope_value) -> [alarm, ...]
-    buckets: dict[tuple, list[Alarm]] = defaultdict(list)
-    for a in alarms:
-        st, sv = _scope_of(a, dev_loc)
-        buckets[(a.project_id, st, sv)].append(a)
-
-    gap = timedelta(minutes=cluster_gap_minutes)
-    rows: list[CorrelatedEventGroup] = []
-
-    for (project_id, st, sv), items in buckets.items():
-        items.sort(key=lambda x: (x.alarm_time or datetime.min.replace(tzinfo=timezone.utc)))
-        # 时间窗切分
-        clusters: list[list[Alarm]] = []
-        cur: list[Alarm] = []
-        last_t: datetime | None = None
-        for a in items:
-            t = a.alarm_time or datetime.min.replace(tzinfo=timezone.utc)
-            if last_t is not None and (t - last_t) > gap:
-                clusters.append(cur)
-                cur = []
-            cur.append(a)
-            last_t = t
-        if cur:
-            clusters.append(cur)
-
-        for cl in clusters:
-            dev_nos = sorted({a.device_no for a in cl if a.device_no})
-            levels = [a.alarm_level for a in cl if a.alarm_level]
-            types = [a.alarm_type for a in cl if a.alarm_type]
-            ids = [a.id for a in cl]
-            max_rank = max((LEVEL_ORDER.get(lv, 0) for lv in levels), default=0)
-            max_level = LEVEL_RANK.get(max_rank)
-            started = min((a.alarm_time for a in cl if a.alarm_time), default=None)
-            ended = max((a.alarm_time for a in cl if a.alarm_time), default=None)
-
-            grp = {
-                "project_id": project_id,
-                "spatial_type": st,
-                "scope_key": sv,
-                "fence_name": sv if st == "fence" else None,
-                "grid_cell": sv if st == "geo" else None,
-                "started_at": started,
-                "ended_at": ended,
-                "alarm_count": len(cl),
-                "device_count": len(dev_nos),
-                "is_cross_device": len(dev_nos) >= 2,
-                "max_level": max_level,
-                "device_nos": dev_nos,
-                "levels": levels,
-                "alarm_types": types,
-                "alarm_ids": ids,
-            }
-            grp["root_cause_hint"] = _build_hint(grp)
-
-            rows.append(
-                CorrelatedEventGroup(
-                    project_id=project_id,
-                    project_name=proj_names.get(project_id),
-                    spatial_type=st,
-                    scope_key=sv,
-                    fence_name=grp["fence_name"],
-                    grid_cell=grp["grid_cell"],
-                    started_at=started,
-                    ended_at=ended,
-                    alarm_count=grp["alarm_count"],
-                    device_count=grp["device_count"],
-                    is_cross_device=grp["is_cross_device"],
-                    max_level=max_level,
-                    device_nos=json.dumps(dev_nos, ensure_ascii=False),
-                    levels=json.dumps(levels, ensure_ascii=False),
-                    alarm_types=json.dumps(types, ensure_ascii=False),
-                    alarm_ids=json.dumps(ids, ensure_ascii=False),
-                    root_cause_hint=grp["root_cause_hint"],
-                    computed_at=now,
-                )
-            )
+    groups = _build_groups(db, alarms, cluster_gap_minutes, now=now)
 
     # 全量重算：先清后插（派生滚动表语义）
+    rows = [
+        CorrelatedEventGroup(
+            project_id=g["project_id"],
+            project_name=g["project_name"],
+            spatial_type=g["spatial_type"],
+            scope_key=g["scope_key"],
+            fence_name=g["fence_name"],
+            grid_cell=g["grid_cell"],
+            started_at=g["started_at"],
+            ended_at=g["ended_at"],
+            alarm_count=g["alarm_count"],
+            device_count=g["device_count"],
+            is_cross_device=g["is_cross_device"],
+            max_level=g["max_level"],
+            device_nos=json.dumps(g["device_nos"], ensure_ascii=False),
+            levels=json.dumps(g["levels"], ensure_ascii=False),
+            alarm_types=json.dumps(g["alarm_types"], ensure_ascii=False),
+            alarm_ids=json.dumps(g["alarm_ids"], ensure_ascii=False),
+            root_cause_hint=g["root_cause_hint"],
+            computed_at=now,
+        )
+        for g in groups
+    ]
     db.execute(delete(CorrelatedEventGroup))
     db.add_all(rows)
     db.commit()
@@ -378,6 +401,24 @@ def _decode_grid_cell(cell: str | None) -> tuple[float, float] | None:
         return None
 
 
+def _orm_to_norm(g: CorrelatedEventGroup) -> dict[str, Any]:
+    """把 ORM 事件组行转为 ``_points_from_groups`` 需要的中间字典。"""
+    return {
+        "id": g.id,
+        "project_id": g.project_id,
+        "project_name": g.project_name,
+        "spatial_type": g.spatial_type,
+        "fence_name": g.fence_name,
+        "grid_cell": g.grid_cell,
+        "device_nos": _json_list(g.device_nos),
+        "alarm_count": g.alarm_count,
+        "device_count": g.device_count,
+        "is_cross_device": g.is_cross_device,
+        "max_level": g.max_level,
+        "root_cause_hint": g.root_cause_hint,
+    }
+
+
 def get_correlation_heatmap(
     db: Session,
     allowed_project_ids: set[int],
@@ -404,14 +445,28 @@ def get_correlation_heatmap(
     if limit:
         stmt = stmt.limit(limit)
     groups = db.scalars(stmt).all()
-    if not groups:
+    return _points_from_groups(db, [_orm_to_norm(g) for g in groups], limit)
+
+
+def _points_from_groups(
+    db: Session,
+    norm_groups: list[dict[str, Any]],
+    limit: int = 500,
+) -> list[dict[str, Any]]:
+    """把事件组中间字典解析为空间热力点（WGS-84，不含 gcj02）。
+
+    ``norm_groups`` 元素键：``id`` / ``project_id`` / ``project_name`` /
+    ``spatial_type`` / ``fence_name`` / ``grid_cell`` / ``device_nos``(list) /
+    ``alarm_count`` / ``device_count`` / ``is_cross_device`` / ``max_level`` /
+    ``root_cause_hint``。供滚动表热力与窗口化/对比重算复用，避免坐标解析逻辑重复。
+    """
+    if not norm_groups:
         return []
 
-    # 收集需按设备定位解析坐标的设备编号（fence / device 组）
     need_devices: set[str] = set()
-    for g in groups:
-        if g.spatial_type != "geo":
-            for dno in _json_list(g.device_nos):
+    for g in norm_groups:
+        if g["spatial_type"] != "geo":
+            for dno in g.get("device_nos") or []:
                 if dno:
                     need_devices.add(dno)
     dev_loc: dict[str, tuple[float, float]] = {}
@@ -431,15 +486,15 @@ def get_correlation_heatmap(
                 dev_loc[dno] = (lng, lat)
 
     points: list[dict[str, Any]] = []
-    for g in groups:
+    for g in norm_groups:
         lng: float | None = None
         lat: float | None = None
-        if g.spatial_type == "geo":
-            coord = _decode_grid_cell(g.grid_cell)
+        if g["spatial_type"] == "geo":
+            coord = _decode_grid_cell(g["grid_cell"])
             if coord:
                 lng, lat = coord
         else:
-            dnos = [d for d in _json_list(g.device_nos) if d in dev_loc]
+            dnos = [d for d in (g.get("device_nos") or []) if d in dev_loc]
             if dnos:
                 lng = sum(dev_loc[d][0] for d in dnos) / len(dnos)
                 lat = sum(dev_loc[d][1] for d in dnos) / len(dnos)
@@ -447,23 +502,184 @@ def get_correlation_heatmap(
             continue
         points.append(
             {
-                "id": g.id,
-                "project_id": g.project_id,
-                "project_name": g.project_name,
-                "spatial_type": g.spatial_type,
-                "fence_name": g.fence_name,
-                "grid_cell": g.grid_cell,
+                "id": g["id"],
+                "project_id": g["project_id"],
+                "project_name": g["project_name"],
+                "spatial_type": g["spatial_type"],
+                "fence_name": g["fence_name"],
+                "grid_cell": g["grid_cell"],
                 "lng": lng,
                 "lat": lat,
-                "weight": g.alarm_count,
-                "alarm_count": g.alarm_count,
-                "device_count": g.device_count,
-                "max_level": g.max_level,
-                "is_cross_device": g.is_cross_device,
-                "root_cause_hint": g.root_cause_hint,
+                "weight": g["alarm_count"],
+                "alarm_count": g["alarm_count"],
+                "device_count": g["device_count"],
+                "max_level": g["max_level"],
+                "is_cross_device": g["is_cross_device"],
+                "root_cause_hint": g["root_cause_hint"],
             }
         )
     return points
+
+
+def get_correlation_heatmap_windowed(
+    db: Session,
+    allowed_project_ids: set[int],
+    start: datetime,
+    end: datetime,
+    only_cross_device: bool = True,
+    limit: int = 500,
+    gap_minutes: int = 30,
+) -> list[dict[str, Any]]:
+    """在指定 ``[start, end]`` 窗口内对原始告警重算聚类，返回空间热力点（不落库）。
+
+    用于「对比大屏关联热力」：可在任意历史时间窗内重算跨设备共因热力，不受派生
+    滚动表（仅保留最近 ``correlation_window_hours``）的限制。
+    """
+    if not allowed_project_ids:
+        return []
+    alarms = db.scalars(
+        select(Alarm).where(
+            Alarm.project_id.in_(allowed_project_ids),
+            Alarm.alarm_time >= start,
+            Alarm.alarm_time <= end,
+        )
+    ).all()
+    groups = _build_groups(db, list(alarms), gap_minutes)
+    norm: list[dict[str, Any]] = []
+    for i, g in enumerate(groups):
+        if only_cross_device and not g["is_cross_device"]:
+            continue
+        norm.append({**g, "id": -(i + 1)})  # 合成 id（负数避免与 ORM id 冲突）
+    return _points_from_groups(db, norm, limit)
+
+
+def compare_correlation_windows(
+    db: Session,
+    allowed_project_ids: set[int],
+    start_a: datetime,
+    end_a: datetime,
+    start_b: datetime,
+    end_b: datetime,
+    only_cross_device: bool = True,
+    limit: int = 500,
+    gap_minutes: int = 30,
+) -> dict[str, Any]:
+    """对比两个时间窗的关联热力：返回两窗各自热力点 + 变化摘要（新增/消失/增强减弱）。
+
+    匹配键 = ``project_id|spatial_type|scope_key``，用于跨窗识别同一空间热点的演变。
+    """
+    if not allowed_project_ids:
+        empty = {
+            "start": "",
+            "end": "",
+            "total": 0,
+            "cross_device_total": 0,
+            "alarm_total": 0,
+            "points": [],
+        }
+        return {
+            "window_a": {**empty, "start": start_a.isoformat(), "end": end_a.isoformat()},
+            "window_b": {**empty, "start": start_b.isoformat(), "end": end_b.isoformat()},
+            "diff": {"new": [], "removed": [], "changed": []},
+        }
+
+    def _window(s: datetime, e: datetime) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        alarms = db.scalars(
+            select(Alarm).where(
+                Alarm.project_id.in_(allowed_project_ids),
+                Alarm.alarm_time >= s,
+                Alarm.alarm_time <= e,
+            )
+        ).all()
+        groups = _build_groups(db, list(alarms), gap_minutes)
+        norm: list[dict[str, Any]] = []
+        for i, g in enumerate(groups):
+            if only_cross_device and not g["is_cross_device"]:
+                continue
+            norm.append(
+                {
+                    **g,
+                    "id": -(i + 1),
+                    "key": f"{g['project_id']}|{g['spatial_type']}|{g['scope_key']}",
+                }
+            )
+        return norm, _points_from_groups(db, norm, limit)
+
+    def _scope_text(g: dict[str, Any]) -> str:
+        if g["spatial_type"] == "fence":
+            return g["fence_name"] or "围栏"
+        if g["spatial_type"] == "geo":
+            return f"地理网格 {g['grid_cell'] or ''}".strip()
+        return "单机"
+
+    def _summary(norm: list[dict[str, Any]]) -> dict[str, int]:
+        return {
+            "total": len(norm),
+            "cross_device_total": sum(1 for g in norm if g["is_cross_device"]),
+            "alarm_total": sum(g["alarm_count"] for g in norm),
+        }
+
+    def _to_diff(g: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "key": g["key"],
+            "project_id": g["project_id"],
+            "project_name": g["project_name"],
+            "spatial_type": g["spatial_type"],
+            "scope_text": _scope_text(g),
+            "fence_name": g["fence_name"],
+            "grid_cell": g["grid_cell"],
+            "weight": g["alarm_count"],
+            "alarm_count": g["alarm_count"],
+            "device_count": g["device_count"],
+            "max_level": g["max_level"],
+        }
+
+    norm_a, points_a = _window(start_a, end_a)
+    norm_b, points_b = _window(start_b, end_b)
+
+    map_a = {g["key"]: g for g in norm_a}
+    map_b = {g["key"]: g for g in norm_b}
+    keys_a = set(map_a)
+    keys_b = set(map_b)
+
+    new_items = [_to_diff(map_b[k]) for k in keys_b - keys_a]
+    removed_items = [_to_diff(map_a[k]) for k in keys_a - keys_b]
+    changed_items = []
+    for k in keys_a & keys_b:
+        ga, gb = map_a[k], map_b[k]
+        delta = gb["alarm_count"] - ga["alarm_count"]
+        changed_items.append(
+            {
+                **_to_diff(gb),
+                "a_weight": ga["alarm_count"],
+                "b_weight": gb["alarm_count"],
+                "delta": delta,
+                "a_max_level": ga["max_level"],
+                "b_max_level": gb["max_level"],
+                "a_device_count": ga["device_count"],
+                "b_device_count": gb["device_count"],
+            }
+        )
+
+    return {
+        "window_a": {
+            "start": start_a.isoformat(),
+            "end": end_a.isoformat(),
+            "points": points_a,
+            **_summary(norm_a),
+        },
+        "window_b": {
+            "start": start_b.isoformat(),
+            "end": end_b.isoformat(),
+            "points": points_b,
+            **_summary(norm_b),
+        },
+        "diff": {
+            "new": new_items,
+            "removed": removed_items,
+            "changed": changed_items,
+        },
+    }
 
 
 def get_correlation_trend(
