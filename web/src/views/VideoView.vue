@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import ResponsiveTable from "@/components/ResponsiveTable.vue";
+import VideoPlayer from "@/components/VideoPlayer.vue";
 import {
   fetchVideoChannels,
   createVideoChannel,
@@ -11,9 +12,11 @@ import {
   fetchVideoEvents,
   handleVideoEvent,
   escalateVideoEvent,
+  fetchVideoAiCapabilities,
+  analyzeVideo,
 } from "@/api/video";
 import { fetchProjects } from "@/api/project";
-import type { VideoChannel, VideoEvent, Project } from "@/types";
+import type { VideoChannel, VideoEvent, Project, VideoAiAnalyzeResult } from "@/types";
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -204,6 +207,58 @@ async function handleDelete(row: VideoChannel) {
     ElMessage.error(e?.message || "删除失败");
   }
 }
+
+// 实时预览（深化⑧）：用 VideoPlayer 拉流播放 stream_url
+const previewVisible = ref(false);
+const previewUrl = ref<string | null>(null);
+const previewName = ref("");
+function openPreview(row: VideoChannel) {
+  previewUrl.value = row.stream_url ?? null;
+  previewName.value = row.name;
+  previewVisible.value = true;
+}
+
+// 视频 AI 分析（深化⑧）：能力清单 + 发起分析并显示 findings
+const aiVisible = ref(false);
+const aiChannelNo = ref<string | null>(null);
+const aiLoading = ref(false);
+const aiResult = ref<VideoAiAnalyzeResult | null>(null);
+const capabilities = ref<string[]>([]);
+
+async function loadCapabilities() {
+  try {
+    const r = await fetchVideoAiCapabilities();
+    capabilities.value = r.capabilities || [];
+  } catch {
+    /* ignore */
+  }
+}
+function openAi(row: VideoChannel) {
+  aiChannelNo.value = row.channel_no;
+  aiResult.value = null;
+  aiVisible.value = true;
+  loadCapabilities();
+}
+async function runAnalyze() {
+  if (!aiChannelNo.value) return;
+  aiLoading.value = true;
+  aiResult.value = null;
+  try {
+    const res = await analyzeVideo({ channel_no: aiChannelNo.value });
+    aiResult.value = res;
+    if (res.status === "done") {
+      ElMessage.success(`识别完成，共 ${res.findings?.length ?? 0} 项异常`);
+    } else if (res.status === "pending_capability") {
+      ElMessage.info("视频 AI 识别能力尚未启用");
+    } else {
+      ElMessage.warning("推理服务未接入或调用失败，已返回占位结果");
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || "分析失败");
+  } finally {
+    aiLoading.value = false;
+  }
+}
 async function doHandle(row: VideoEvent) {
   try {
     await handleVideoEvent(row.id);
@@ -258,8 +313,10 @@ onMounted(async () => {
                 <el-tag :type="row.status === '在线' ? 'success' : 'danger'" size="small">{{ row.status }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="120" fixed="right">
+            <el-table-column label="操作" width="200" fixed="right">
               <template #default="{ row }">
+                <el-button link type="primary" @click="openPreview(row)">预览</el-button>
+                <el-button v-if="canManage" link type="success" @click="openAi(row)">AI分析</el-button>
                 <el-button v-if="canManage" link type="primary" @click="openEdit(row)">编辑</el-button>
                 <el-button v-if="canManage" link type="danger" @click="handleDelete(row)">删除</el-button>
               </template>
@@ -405,6 +462,42 @@ onMounted(async () => {
         <el-button type="primary" :loading="saving" @click="submit">提交</el-button>
       </template>
     </el-dialog>
+
+    <!-- 实时预览（深化⑧）：拉流播放 -->
+    <el-dialog v-model="previewVisible" :title="`实时预览 · ${previewName}`" width="720px">
+      <VideoPlayer :url="previewUrl" />
+    </el-dialog>
+
+    <!-- 视频 AI 分析（深化⑧）：能力清单 + 发起分析 + 结果 -->
+    <el-dialog v-model="aiVisible" title="视频 AI 分析" width="560px">
+      <div class="cap-row">
+        <span class="cap-label">可识别能力：</span>
+        <el-tag v-for="c in capabilities" :key="c" size="small" effect="plain" class="cap-tag">{{ c }}</el-tag>
+      </div>
+      <el-button type="primary" :loading="aiLoading" @click="runAnalyze">发起分析</el-button>
+      <div v-if="aiResult" class="ai-result">
+        <el-alert
+          :type="aiResult.status === 'done' ? 'success' : aiResult.status === 'pending_capability' ? 'info' : 'warning'"
+          :closable="false"
+          :title="aiResult.message"
+        />
+        <ResponsiveTable
+          v-if="aiResult.status === 'done' && aiResult.findings && aiResult.findings.length"
+          :data="aiResult.findings"
+          size="small"
+          border
+          stripe
+          style="margin-top: 10px"
+        >
+          <el-table-column prop="label" label="类型" min-width="120" />
+          <el-table-column label="置信度" width="120">
+            <template #default="{ row }">
+              {{ row.confidence != null ? (row.confidence * 100).toFixed(0) + "%" : "—" }}
+            </template>
+          </el-table-column>
+        </ResponsiveTable>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -431,6 +524,10 @@ onMounted(async () => {
   background: #f5f7fa;
 }
 .muted { color: #c0c4cc; }
+.cap-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; }
+.cap-label { font-size: 13px; color: #606266; }
+.cap-tag { margin-right: 4px; }
+.ai-result { margin-top: 12px; }
 
 /* 移动端：缩小留白、统计与筛选工具自动换行 */
 @media (max-width: 768px) {

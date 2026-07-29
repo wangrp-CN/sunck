@@ -96,3 +96,24 @@ export function escalateVideoEvent(
     method: "POST",
   });
 }
+
+// 视频 AI 可识别能力清单（深化⑧）
+export function fetchVideoAiCapabilities(): Promise<{ capabilities: string[] }> {
+  return http<{ capabilities: string[] }>({
+    url: "/v1/videos/ai/capabilities",
+    method: "GET",
+  });
+}
+
+// 视频 AI 异常识别（深化⑧）：对指定通道/帧发起分析，支持外部推理服务返回 findings
+export function analyzeVideo(req: {
+  channel_no?: string | null;
+  frame_url?: string | null;
+  model?: string | null;
+}): Promise<VideoAiAnalyzeResult> {
+  return http<VideoAiAnalyzeResult>({
+    url: "/v1/videos/ai/analyze",
+    method: "POST",
+    data: req,
+  });
+}

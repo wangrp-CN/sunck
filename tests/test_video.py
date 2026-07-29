@@ -163,3 +163,81 @@ def test_escalate_missing_event_404(client, auth_headers):
     r = client.post("/api/v1/videos/events/999999/escalate", headers=auth_headers)
     assert r.status_code == 200
     assert r.json()["code"] == 404
+
+
+# ----------------------- 深化⑧：AI 识别能力（analyze / capabilities） -----------------------
+
+
+def test_ai_analyze_disabled_returns_pending(client, auth_headers):
+    r = client.post("/api/v1/videos/ai/analyze", headers=auth_headers, json={"channel_no": "CAM-1"})
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["status"] == "pending_capability"
+    # 能力清单与回推事件类型对齐（intrusion/no_helmet/smoke_fire）
+    assert "intrusion" in data["expected_capabilities"]
+    assert "no_helmet" in data["expected_capabilities"]
+
+
+def test_ai_analyze_enabled_no_endpoint_not_implemented(client, auth_headers, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "video_ai_enabled", True)
+    monkeypatch.setattr(settings, "video_ai_endpoint", None)
+    r = client.post("/api/v1/videos/ai/analyze", headers=auth_headers, json={"channel_no": "CAM-1"})
+    assert r.status_code == 200
+    assert r.json()["data"]["status"] == "not_implemented"
+
+
+def test_ai_analyze_enabled_with_endpoint_done(client, auth_headers, monkeypatch):
+    from app.config import settings
+    from app.service import video_ai as video_ai_svc
+
+    monkeypatch.setattr(settings, "video_ai_enabled", True)
+    monkeypatch.setattr(settings, "video_ai_endpoint", "http://ai-box/infer")
+    monkeypatch.setattr(
+        video_ai_svc,
+        "_call_inference",
+        lambda payload, endpoint, timeout: {
+            "model": "yolo-v8",
+            "findings": [{"type": "intrusion", "confidence": 0.93, "bbox": [1, 2, 3, 4]}],
+        },
+    )
+    r = client.post(
+        "/api/v1/videos/ai/analyze",
+        headers=auth_headers,
+        json={"channel_no": "CAM-1", "frame_url": "http://x/f.jpg"},
+    )
+    assert r.status_code == 200
+    data = r.json()["data"]
+    assert data["status"] == "done"
+    assert data["model"] == "yolo-v8"
+    assert data["findings"][0]["type"] == "intrusion"
+    assert data["findings"][0]["confidence"] == 0.93
+    assert data["findings"][0]["label"] == "区域入侵"
+    assert data["findings"][0]["bbox"] == [1, 2, 3, 4]
+
+
+def test_ai_analyze_endpoint_failure_degrades(client, auth_headers, monkeypatch):
+    from app.config import settings
+    from app.service import video_ai as video_ai_svc
+
+    monkeypatch.setattr(settings, "video_ai_enabled", True)
+    monkeypatch.setattr(settings, "video_ai_endpoint", "http://ai-box/infer")
+
+    def _boom(*_a, **_k):
+        raise TimeoutError("boom")
+
+    monkeypatch.setattr(video_ai_svc, "_call_inference", _boom)
+    r = client.post("/api/v1/videos/ai/analyze", headers=auth_headers, json={"channel_no": "CAM-1"})
+    assert r.status_code == 200
+    # 调用失败应优雅降级为 not_implemented，不抛 5xx
+    assert r.json()["data"]["status"] == "not_implemented"
+
+
+def test_ai_capabilities_endpoint(client, auth_headers):
+    r = client.get("/api/v1/videos/ai/capabilities", headers=auth_headers)
+    assert r.status_code == 200
+    caps = r.json()["data"]["capabilities"]
+    assert "intrusion" in caps
+    assert "no_helmet" in caps
+    assert "smoke_fire" in caps

@@ -225,3 +225,14 @@ def ai_analyze(req: VideoAiAnalyzeReq) -> ApiResponse:
     """
     result = video_ai_svc.analyze(req.model_dump(exclude_none=True))
     return ApiResponse.success(data=result)
+
+
+@router.get(
+    "/ai/capabilities",
+    summary="视频 AI 可识别能力清单",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("video:list"))],
+)
+def ai_capabilities() -> ApiResponse:
+    """返回平台支持的视频 AI 识别能力（与回推事件类型对齐），供前端渲染分析选项。"""
+    return ApiResponse.success(data={"capabilities": list(video_ai_svc.EXPECTED_CAPABILITIES)})

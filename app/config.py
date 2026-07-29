@@ -88,6 +88,11 @@ class Settings(BaseSettings):
     # 回推。video_ai_enabled 仅作为"能力就绪"开关；能力接入前 /videos/ai/analyze 返回
     # pending_capability 占位，便于前端/编排层提前对接接口契约。
     video_ai_enabled: bool = False
+    # 外部推理服务地址（深化⑧）：配置后 /videos/ai/analyze 将转发分析请求并返回真实识别结果；
+    # 为空则能力启用但保持 not_implemented 占位。建议使用内网/服务账号鉴权的 AI 盒子地址。
+    video_ai_endpoint: str | None = None
+    # 推理服务调用超时（秒）：超时即优雅降级为占位，不阻塞主流程。
+    video_ai_timeout_seconds: float = 5.0
 
     # 视频 AI 事件自动升级为平台告警（深化⑧）：外部推理回推的高危/高置信事件在
     # ingest 时自动建一条平台告警并回填 video_event.alarm_id，闭合「监测→异常→告警」

@@ -8,6 +8,8 @@ const hoisted = vi.hoisted(() => ({
   fetchVideoEvents: vi.fn(),
   handleVideoEvent: vi.fn(),
   escalateVideoEvent: vi.fn(),
+  fetchVideoAiCapabilities: vi.fn(),
+  analyzeVideo: vi.fn(),
   fetchProjects: vi.fn(),
   authUser: { is_superuser: true, permission_codes: [] as string[] },
 }));
@@ -17,6 +19,8 @@ vi.mock("@/api/video", () => ({
   fetchVideoEvents: (...a: any[]) => hoisted.fetchVideoEvents(...a),
   handleVideoEvent: (...a: any[]) => hoisted.handleVideoEvent(...a),
   escalateVideoEvent: (...a: any[]) => hoisted.escalateVideoEvent(...a),
+  fetchVideoAiCapabilities: (...a: any[]) => hoisted.fetchVideoAiCapabilities(...a),
+  analyzeVideo: (...a: any[]) => hoisted.analyzeVideo(...a),
   createVideoChannel: vi.fn(),
   updateVideoChannel: vi.fn(),
   deleteVideoChannel: vi.fn(),
@@ -96,6 +100,22 @@ const EVENTS = [
   },
 ];
 
+const CHANNELS = [
+  {
+    id: 1,
+    project_id: 100,
+    name: "1#球机",
+    channel_no: "CAM-1",
+    stream_url: "http://x/stream.m3u8",
+    vendor: null,
+    location_desc: null,
+    lng: null,
+    lat: null,
+    status: "在线",
+    ai_enabled: true,
+  },
+];
+
 afterEach(() => {
   vi.clearAllMocks();
 });
@@ -168,5 +188,54 @@ describe("VideoView (深化⑧ 闭环联动)", () => {
     expect(hoisted.fetchVideoEvents).toHaveBeenCalledWith(
       expect.objectContaining({ event_type: "intrusion" }),
     );
+  });
+
+  it("预览按钮打开实时预览对话框并透传拉流地址", async () => {
+    hoisted.fetchVideoChannels.mockResolvedValue(CHANNELS);
+    hoisted.fetchVideoEvents.mockResolvedValue([]);
+    hoisted.fetchProjects.mockResolvedValue({ items: [] });
+
+    const wrapper = mount(VideoView, {
+      global: { stubs: { VideoPlayer: { template: "<div class='vp' />" } } },
+    });
+    await flushPromises();
+
+    const btn = wrapper.findAll("button").find((b) => (b.text() as string).includes("预览"));
+    expect(btn).toBeTruthy();
+    await btn!.trigger("click");
+    await flushPromises();
+
+    expect((wrapper.vm as any).previewVisible).toBe(true);
+    expect((wrapper.vm as any).previewUrl).toBe(CHANNELS[0].stream_url);
+  });
+
+  it("AI分析按钮打开对话框并发起分析得到 findings", async () => {
+    hoisted.fetchVideoChannels.mockResolvedValue(CHANNELS);
+    hoisted.fetchVideoEvents.mockResolvedValue([]);
+    hoisted.fetchProjects.mockResolvedValue({ items: [] });
+    hoisted.fetchVideoAiCapabilities.mockResolvedValue({ capabilities: ["intrusion", "no_helmet"] });
+    hoisted.analyzeVideo.mockResolvedValue({
+      status: "done",
+      findings: [{ type: "intrusion", label: "区域入侵", confidence: 0.9 }],
+    });
+
+    const wrapper = mount(VideoView, {
+      global: { stubs: { VideoPlayer: { template: "<div class='vp' />" } } },
+    });
+    await flushPromises();
+
+    const aiBtn = wrapper.findAll("button").find((b) => (b.text() as string).includes("AI分析"));
+    expect(aiBtn).toBeTruthy();
+    await aiBtn!.trigger("click");
+    await flushPromises();
+    expect((wrapper.vm as any).aiVisible).toBe(true);
+
+    const runBtn = wrapper.findAll("button").find((b) => (b.text() as string).includes("发起分析"));
+    await runBtn!.trigger("click");
+    await flushPromises();
+
+    expect(hoisted.analyzeVideo).toHaveBeenCalledWith({ channel_no: "CAM-1" });
+    expect((wrapper.vm as any).aiResult.status).toBe("done");
+    expect((wrapper.vm as any).aiResult.findings.length).toBe(1);
   });
 });

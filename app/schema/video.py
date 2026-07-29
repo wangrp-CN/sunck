@@ -14,6 +14,19 @@ VIDEO_EVENT_TYPE_LABELS = {
     "other": "其他",
 }
 
+# 视频 AI 可识别能力清单（与前端分析选项/推理服务对齐，单一事实来源）。
+# 其中 intrusion/no_helmet/smoke_fire 与回推事件类型一一对应；idle_person/region_breach
+# 为更细的算法能力，回推时若带此类 event_type 将归入「其他」标签（见 VIDEO_EVENT_TYPE_LABELS 兜底）。
+VIDEO_AI_CAPABILITIES = (
+    {"type": "intrusion", "label": "区域入侵"},
+    {"type": "no_helmet", "label": "未戴安全帽"},
+    {"type": "smoke_fire", "label": "烟火"},
+    {"type": "idle_person", "label": "人员滞留"},
+    {"type": "region_breach", "label": "越界离开"},
+)
+VIDEO_AI_CAPABILITY_TYPES = tuple(c["type"] for c in VIDEO_AI_CAPABILITIES)
+VIDEO_AI_CAPABILITY_LABELS = {c["type"]: c["label"] for c in VIDEO_AI_CAPABILITIES}
+
 
 class VideoChannelCreate(BaseModel):
     project_id: int | None = None

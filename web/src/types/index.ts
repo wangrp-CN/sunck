@@ -533,6 +533,29 @@ export interface VideoEvent {
   created_at?: string | null;
 }
 
+// 视频 AI 分析结果（深化⑧）：与后端 /v1/videos/ai/analyze 对齐
+export interface VideoAiFinding {
+  type: string;
+  label?: string | null;
+  confidence?: number | null;
+  bbox?: number[] | null;
+}
+
+export interface VideoAiAnalyzeResult {
+  status: "pending_capability" | "not_implemented" | "done";
+  message?: string;
+  requested?: Record<string, unknown>;
+  capabilities?: { type: string; label: string }[];
+  expected_capabilities?: string[];
+  findings?: VideoAiFinding[];
+  model?: string | null;
+  checked_at?: string;
+}
+
+export interface VideoAiCapabilities {
+  capabilities: string[];
+}
+
 // ===================== 设备指令下发记录（闭环追踪） =====================
 export interface DeviceCommand {
   id: number;
