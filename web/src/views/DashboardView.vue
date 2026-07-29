@@ -37,6 +37,7 @@ import { wgs84ToGcj02 } from "@/utils/geo";
 import { pct, tc, previewToTSV, snapTrendMaxOf } from "@/utils/snapshot";
 import MapPanel from "@/components/MapPanel.vue";
 import WorkPlanPopup from "@/components/WorkPlanPopup.vue";
+import DashboardCorrelationCompareCard from "@/components/DashboardCorrelationCompareCard.vue";
 import type { AnomalyParams, DashboardStats, MapDevice, MapFence, RecentAlarm, Effectiveness, ByProjectRow, EffTrend } from "@/types";
 
 const router = useRouter();
@@ -1399,6 +1400,13 @@ onUnmounted(() => {
           </div>
           <el-empty v-if="trendPeriod.length === 0" description="该时间范围内暂无告警" :image-size="50" />
         </el-card>
+      </el-col>
+    </el-row>
+
+    <!-- 智能核心 v2：关联热力时间窗对比（复用 /correlations/compare，自带 60s 刷新） -->
+    <el-row :gutter="16" class="compare-row">
+      <el-col :span="24">
+        <DashboardCorrelationCompareCard />
       </el-col>
     </el-row>
 
