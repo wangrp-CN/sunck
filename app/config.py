@@ -140,6 +140,14 @@ class Settings(BaseSettings):
     # 定时检测回看窗口（天）：每日定时对近 N 天的日序列做异常检测（须 > window+min_points）。
     anomaly_lookback_days: int = 30
 
+    # ---------- 智能核心 / 风险预测（Phase 5 预测基座） ----------
+    # 预测跨度（天）：对快照序列外推未来 N 天。
+    forecast_horizon_days: int = 7
+    # 拟合回看窗口（天）：取近 N 天快照序列做 OLS 拟合。
+    forecast_history_days: int = 30
+    # 最少样本数：序列点数低于此不出预测（防 1~2 点直线误导）。
+    forecast_min_points: int = 3
+
     # ---------- PostgreSQL ----------
     postgres_host: str = "127.0.0.1"
     postgres_port: int = 5432

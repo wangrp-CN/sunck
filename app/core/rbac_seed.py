@@ -22,6 +22,7 @@ _MODULES = [
     ("dashboard", "监控大屏", "/dashboard", "dashboard"),
     ("dispatch", "根因派单", "/dispatch", "dispatch"),
     ("duty", "值班体系", "/duty", "duty"),
+    ("forecast", "风险预测", "/forecast", "forecast"),
 ]
 
 # 各模块下的按钮/接口权限（type=3）
@@ -59,6 +60,7 @@ _CHILDREN = {
     "dashboard": ["dashboard:view"],
     "dispatch": ["dispatch:list", "dispatch:create", "dispatch:handle"],
     "duty": ["duty:list", "duty:manage"],
+    "forecast": ["forecast:view"],
 }
 
 # 角色 -> 权限编码集合
@@ -109,6 +111,7 @@ _ROLES = {
             "dispatch:handle",
             "duty:list",
             "duty:manage",
+            "forecast:view",
         },
         # 自定义数据范围（data_scope=2）绑定的部门编码；空表示不限定（看不到数据）
         "dept_codes": ["SECTION"],
@@ -135,6 +138,7 @@ _ROLES = {
             "dispatch:handle",
             "duty:list",
             "duty:manage",
+            "forecast:view",
         },
     },
     "operator": {

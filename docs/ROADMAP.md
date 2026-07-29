@@ -88,7 +88,11 @@
 - **M4 告警收敛/抑制/升级策略（🔲 待做）**：`AlarmPolicy` 模型（按项目/类型/等级配置风暴抑制窗口、去重、静默、升级时限）→ `create_alarm` 集成；前端策略配置页。
 - **M5 处置预案/知识库联动（🔲 可后置）**：`Playbook` 模型 + 告警关联预案 + 前端联动，闭环处置指导。
 - **🅰 双厂商抽象代码（✅ 2026-07-29）**：`RealSms/VoiceGateway` 已实现**双厂商（阿里云/腾讯云）SDK 适配**——按 `sms_provider`/`voice_provider`(`aliyun|tencent`) 分派 `_aliyun_*`/`_tencent_*` 真实调用，回执映射为统一 `GatewayResult`；厂商 SDK **懒加载导入**（模块导入期不依赖任何第三方库，无 SDK 也能启动，仅真实下发不可用，返回 `SDK_MISSING`）；凭据缺失/厂商未配→`not_configured`，调用异常→`error`，绝不中断业务。配置新增 `sms_app_id/sms_template_id/tencent_region/voice_template_code/voice_app_id/voice_template_id/voice_called_show_number` 及 `.env.example` 双厂商段；`tests/test_notifications_gateway.py` 增 4 用例（SDK 缺失优雅降级/厂商未配/BAD_PROVIDER/缺模板）共 12 绿。切真实网关=配 `SMS_MODE=real`+凭据+`pip install` 对应 SDK，业务零改动。
-- **Phase 5 · 智能化预测（🔲 规划中）**：从"阈值告警"升级到"预测性预警"——`forecast_service` 挂快照基座，对趋势/健康分做短期预测，命中预测阈值即回灌告警流；关联增强 + 驾驶舱预测卡。
+- **Phase 5 · 智能化预测（🟡 进行中，M1 ✅）**：从"阈值告警"升级到"预测性预警"。
+  - **M1 预测基座（✅ 2026-07-29）**：`Forecast` 模型（唯一键 scope_type+ref_id+metric+horizon_days，upsert 只留最新；VIA_PROJECT 数据隔离）+ 迁移 `bb2c3d4e5f6a`；`forecast_service` 纯 Python OLS 对 `risk_index` 日序列外推（`forecast_horizon_days=7`/`forecast_history_days=30`/`forecast_min_points=3` 均入 config），预测值截断 0-100 并按 scoring 阈值给"高/中/低"预测级别；`GET /v1/forecasts` + `POST /v1/forecasts/recompute`（forecast:view，已入 rbac_seed 并授 project_manager/monitor）；`snapshot_job` 在异常检测后串联 `run_forecasts`；`tests/test_forecast.py` 6 用例（OLS 纯函数/上升序列/幂等 upsert/样本不足降级/端点）。样本 < 3 点自动跳过，每日快照跑满 3 天后自动出预测。
+  - **M2（🔲）**：多指标（health_score）+ 置信带 + 预览接口。
+  - **M3（🔲）**：预测性预警回灌告警流（`predictive_alert`，幂等去重，复用通知+派单）。
+  - **M4（🔲）**：驾驶舱预测卡（趋势线+预测点+置信带）。
 
 > 执行顺序（用户确认）：先 🅱 告警治理与值班体系 → 再 🅰 双厂商抽象代码 → 最后 Phase 5 智能化预测。
 

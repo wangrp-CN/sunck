@@ -26,12 +26,13 @@ try:
 except Exception:
     pass
 
+from app.config import settings
 from app.core.database import SessionLocal
-from app.service import metrics_snapshot as svc
-from app.service import risk_alert as alert_svc
 from app.service import alarm_correlation as corr_svc
 from app.service import anomaly_service as anomaly_svc
-from app.config import settings
+from app.service import forecast_service as forecast_svc
+from app.service import metrics_snapshot as svc
+from app.service import risk_alert as alert_svc
 
 
 def main() -> None:
@@ -78,6 +79,14 @@ def main() -> None:
         # （进既有告警流 + 可在告警管理页「一键派单」接入根因派单闭环）。
         anoms = anomaly_svc.run_anomaly_detection(db)
         print(f"[snapshot] anomaly alarms created={anoms['created']}", flush=True)
+
+        # 风险预测（Phase 5 M1）：对每个项目的 risk_index 日序列做 OLS 趋势
+        # 外推，upsert 落 forecast 表（供预测列表 / 预测性预警 / 驾驶舱预测卡）。
+        fc = forecast_svc.run_forecasts(db)
+        print(
+            f"[snapshot] forecasts computed={fc['computed']} skipped={fc['skipped']}",
+            flush=True,
+        )
         db.commit()
     finally:
         db.close()

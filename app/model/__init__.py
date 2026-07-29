@@ -17,6 +17,7 @@ from app.model import (  # noqa: F401
     dispatch,
     duty_roster,
     fence,
+    forecast,
     hazard,
     inspection,
     job,

@@ -26,6 +26,7 @@ from app.model.device import AntiIntrusionDevice, LocateDevice, TrainApproachDev
 from app.model.dispatch import DispatchOrder
 from app.model.duty_roster import DutyRoster
 from app.model.fence import ElectronicFence
+from app.model.forecast import Forecast
 from app.model.hazard import Hazard
 from app.model.inspection import InspectionTask
 from app.model.job import WorkPlan
@@ -143,6 +144,7 @@ _MODEL_DEPT_LINK: dict[type, str] = {
     VideoChannel: VIA_PROJECT,
     DispatchOrder: VIA_PROJECT,
     DutyRoster: VIA_PROJECT,
+    Forecast: VIA_PROJECT,
 }
 
 
