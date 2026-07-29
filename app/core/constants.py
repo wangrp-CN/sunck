@@ -35,6 +35,7 @@ ALARM_TYPE_DISTANCE = "distance_too_close"  # 间距过近
 ALARM_TYPE_DEVICE = "device_alarm"  # 设备自上报告警（大机/列车等通用自报）
 ALARM_TYPE_TRAIN = "train_approach"  # 列车接近预警（train_approach 设备专项）
 ALARM_TYPE_ANOMALY = "trend_anomaly"  # 趋势异常检测告警（智能核心：四类序列统计基线法异常）
+ALARM_TYPE_FORECAST = "predictive_alert"  # 预测性预警（Phase 5 M3：越阈预测回灌告警流）
 
 # 设备状态
 DEVICE_STATUS_ONLINE = "在线"

@@ -1,10 +1,12 @@
-"""风险预测服务（Phase 5 智能化预测 M1 预测基座 + M2 增强）。
+"""风险预测服务（Phase 5 智能化预测 M1 预测基座 + M2 增强 + M3 预测性预警回灌）。
 
 对 ``RiskHealthSnapshot`` 时序做**纯 Python OLS（最小二乘）线性趋势外推**：
 
 - M1：项目 ``risk_index`` 日序列 → 未来 N 天风险指数预测，upsert 落 ``forecast`` 表；
 - M2：新增设备 ``health_score`` 多指标预测、残差 95% 置信带
-  （``forecast_lower/upper``）、以及供前端画图的序列预览（历史点+预测点+置信带）。
+  （``forecast_lower/upper``）、以及供前端画图的序列预览（历史点+预测点+置信带）；
+- M3：越阈预测自动回灌 ``predictive_alert`` 告警（``run_predictive_alerts``），
+  复用既有告警流（站内信通知 + 告警管理页一键派单闭环），幂等不重复派警。
 
 设计要点：
 - 无第三方依赖（不引 numpy/sklearn），样本量小（≤ 数十点）用解析解即可；
@@ -22,12 +24,15 @@ from __future__ import annotations
 import math
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.core.constants import ALARM_TYPE_FORECAST
 from app.core.scoring import RISK_LEVEL_HIGH, RISK_LEVEL_MID, device_health_level
+from app.model.alarm import Alarm
 from app.model.device import AntiIntrusionDevice, LocateDevice, TrainApproachDevice
 from app.model.forecast import Forecast
 from app.model.project import Project
@@ -331,3 +336,87 @@ def run_forecasts(db: Session, horizon_days: int | None = None) -> dict:
         "projects": len(projects),
         "devices": len(devices),
     }
+
+
+# ---------------------------------------------------------------------------
+# M3：预测性预警回灌告警流
+# ---------------------------------------------------------------------------
+
+
+#: 越阈判据 → 告警级别。risk_index 仅「高」触发；health_score「中」→警告、「差」→严重。
+def _predictive_breach(fc: Forecast) -> tuple[bool, str | None]:
+    """判断预测是否越阈，并返回应生成的告警级别。
+
+    - risk_index：预测级别「高」（forecast_value >= RISK_LEVEL_HIGH=60）触发，级别「警告」；
+    - health_score：预测级别「中」→「警告」、「差」→「严重」；优/良不触发。
+    """
+    if fc.metric == METRIC_RISK_INDEX:
+        if fc.forecast_level == "高":
+            return True, "警告"
+        return False, None
+    if fc.metric == METRIC_HEALTH_SCORE:
+        if fc.forecast_level == "差":
+            return True, "严重"
+        if fc.forecast_level == "中":
+            return True, "警告"
+        return False, None
+    return False, None
+
+
+def run_predictive_alerts(db: Session) -> dict[str, Any]:
+    """预测性预警回灌（M3）：遍历 forecast 表，对越阈预测生成 ``predictive_alert`` 告警。
+
+    越阈判据见 :func:`_predictive_breach`。幂等：以
+    ``device_no = predictive:{metric}:{ref_id}:{horizon_days}`` 编码唯一键，
+    同键已存在告警则跳过（与 ``trend_anomaly`` 同范式，跨日定时运行不重复派警）。
+
+    复用既有告警流：``alarm_service.create_alarm`` 落库 + 站内信通知 +
+    告警管理页「一键派单」接入根因派单闭环。
+
+    不 commit，由 ``scripts/snapshot_job.py`` 统一提交。返回 ``{"created", "alarm_ids"}``。
+    """
+    from app.service import alarm_service
+
+    rows = db.scalars(select(Forecast)).all()
+    created_ids: list[int] = []
+    for fc in rows:
+        if fc.forecast_value is None or fc.forecast_level is None:
+            continue
+        breach, level = _predictive_breach(fc)
+        if not breach:
+            continue
+        device_no = f"predictive:{fc.metric}:{fc.ref_id}:{fc.horizon_days}"
+        # 幂等：同 device_no 已存在告警则跳过（跨 Redis-TTL 仍生效）
+        existing = db.scalar(select(Alarm.id).where(Alarm.device_no == device_no).limit(1))
+        if existing is not None:
+            continue
+        horizon = fc.horizon_days
+        lower = fc.forecast_lower if fc.forecast_lower is not None else fc.forecast_value
+        upper = fc.forecast_upper if fc.forecast_upper is not None else fc.forecast_value
+        fa_str = fc.forecast_at.strftime("%Y-%m-%d") if fc.forecast_at else "—"
+        if fc.metric == METRIC_RISK_INDEX:
+            info = (
+                f"风险预测预警：项目《{fc.name}》预测 {horizon} 天后风险指数将升至 "
+                f"{fc.forecast_value:.0f}（高，当前 {fc.last_value:.0f}），"
+                f"95% 置信区间 [{lower:.0f}, {upper:.0f}]，预计 {fa_str} 触及。"
+            )
+        else:
+            info = (
+                f"健康预测预警：设备《{fc.name}》预测 {horizon} 天后健康分将降至 "
+                f"{fc.forecast_value:.0f}（{fc.forecast_level}，当前 {fc.last_value:.0f}），"
+                f"95% 置信区间 [{lower:.0f}, {upper:.0f}]，预计 {fa_str} 触及。"
+            )
+        alarm = alarm_service.create_alarm(
+            db,
+            project_id=fc.project_id,
+            alarm_type=ALARM_TYPE_FORECAST,
+            device_no=device_no,
+            device_name=fc.name,
+            alarm_info=info,
+            alarm_level=level,
+            alarm_time=fc.computed_at,
+            handle_status="待处理",
+        )
+        if alarm is not None:
+            created_ids.append(alarm.id)
+    return {"created": len(created_ids), "alarm_ids": created_ids}

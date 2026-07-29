@@ -87,6 +87,12 @@ def main() -> None:
             f"[snapshot] forecasts computed={fc['computed']} skipped={fc['skipped']}",
             flush=True,
         )
+
+        # 预测性预警回灌（Phase 5 M3）：越阈预测自动生成 predictive_alert 告警，
+        # 进既有告警流（站内信通知 + 告警管理页一键派单闭环）。
+        alerts = forecast_svc.run_predictive_alerts(db)
+        print(f"[snapshot] predictive alerts created={alerts['created']}", flush=True)
+
         db.commit()
     finally:
         db.close()

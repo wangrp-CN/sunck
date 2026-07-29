@@ -106,6 +106,7 @@ const ALARM_TYPE_LABELS: Record<string, string> = {
   device_alarm: "设备告警",
   train_approach: "列车接近预警",
   trend_anomaly: "趋势异常",
+  predictive_alert: "预测预警",
 };
 const HANDLE_OPTIONS = ["待处理", "已处理", "已忽略", "已确认", "已消警"];
 const STATUS_OPTIONS = ["告警开始", "告警结束", "已消警"];
@@ -775,6 +776,7 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
             <el-option label="设备告警" value="device_alarm" />
             <el-option label="列车接近预警" value="train_approach" />
             <el-option label="趋势异常" value="trend_anomaly" />
+            <el-option label="预测预警" value="predictive_alert" />
           </el-select>
         </el-form-item>
         <el-form-item label="处理状态">
