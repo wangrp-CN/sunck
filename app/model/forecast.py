@@ -48,7 +48,18 @@ class Forecast(Base, TimestampMixin):
         Float, nullable=False, comment="外推预测值(截断到 0-100)"
     )
     forecast_level: Mapped[str | None] = mapped_column(
-        String(8), nullable=True, comment="预测风险级别(高/中/低)"
+        String(8), nullable=True, comment="预测级别(risk:高/中/低; health:优/良/中/差)"
+    )
+
+    # 置信带（M2）：残差标准差 + 95% 置信上下界（均截断 0-100）
+    std_resid: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="OLS 残差标准差(样本≤2 时为 0)"
+    )
+    forecast_lower: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="95% 置信下界"
+    )
+    forecast_upper: Mapped[float | None] = mapped_column(
+        Float, nullable=True, comment="95% 置信上界"
     )
 
     forecast_at: Mapped[datetime] = mapped_column(

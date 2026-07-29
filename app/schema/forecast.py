@@ -32,6 +32,9 @@ class ForecastOut(BaseModel):
     intercept: float
     forecast_value: float
     forecast_level: str | None = None
+    std_resid: float | None = None
+    forecast_lower: float | None = None
+    forecast_upper: float | None = None
     forecast_at: datetime
     computed_at: datetime
 

@@ -142,6 +142,111 @@ def test_insufficient_samples_returns_none(client: TestClient, admin_token: str)
     assert r.json()["code"] == 1001
 
 
+def test_band_perfect_linear_zero_width(env):
+    """完美线性序列：残差为 0，置信带宽度为 0（上下界==预测值）。"""
+    db = SessionLocal()
+    try:
+        data = svc.compute_forecast(db, env["pid"], horizon_days=7)
+        assert data is not None
+        assert data["std_resid"] == 0.0
+        assert data["forecast_lower"] == data["forecast_value"] == data["forecast_upper"]
+    finally:
+        db.close()
+
+
+def test_band_noisy_series(env):
+    """带噪声序列：std_resid>0，上界>预测值>下界。"""
+    db = SessionLocal()
+    try:
+        # 在既有 10 点线性序列上叠一个偏离点制造残差
+        now = datetime.now(timezone.utc)
+        db.add(
+            RiskHealthSnapshot(
+                scope_type="project",
+                ref_id=str(env["pid"]),
+                name="预测测试项目",
+                risk_index=80,  # 明显偏离线性趋势
+                risk_level="高",
+                raw_score=80,
+                snapshot_at=now - timedelta(hours=12),
+            )
+        )
+        db.commit()
+        data = svc.compute_forecast(db, env["pid"], horizon_days=7)
+        assert data is not None
+        assert data["std_resid"] > 0
+        assert data["forecast_lower"] < data["forecast_value"] < data["forecast_upper"]
+        assert 0 <= data["forecast_lower"] and data["forecast_upper"] <= 100
+    finally:
+        db.close()
+
+
+def test_device_health_forecast(env):
+    """设备 health_score 序列（M2 多指标）：预测级别按健康分档（优/良/中/差）。"""
+    db = SessionLocal()
+    dno = f"FC-TEST-{env['pid']}"
+    try:
+        now = datetime.now(timezone.utc)
+        # 10 天健康分缓慢下降：95 → 77（斜率 -2/天）
+        for i in range(10):
+            db.add(
+                RiskHealthSnapshot(
+                    scope_type="device",
+                    ref_id=dno,
+                    name="预测测试设备",
+                    health_score=95 - i * 2,
+                    health_level="优",
+                    online_state="fresh",
+                    snapshot_at=now - timedelta(days=9 - i),
+                )
+            )
+        db.commit()
+        data = svc.compute_device_forecast(db, dno, horizon_days=7)
+        assert data is not None
+        assert data["metric"] == "health_score"
+        assert data["scope_type"] == "device" and data["ref_id"] == dno
+        # 77 - 7*2 = 63 → 「中」（health 分档，而非 risk 分档）
+        assert data["forecast_value"] < data["last_value"]
+        assert data["forecast_level"] == "中"
+    finally:
+        db2 = SessionLocal()
+        try:
+            db2.execute(delete(RiskHealthSnapshot).where(RiskHealthSnapshot.ref_id == dno))
+            db2.execute(delete(Forecast).where(Forecast.ref_id == dno))
+            db2.commit()
+        finally:
+            db2.close()
+        db.close()
+
+
+def test_api_preview(env, client: TestClient):
+    """预览端点：series + forecast(含置信带)；样本不足时 forecast 为 null。"""
+    c, tok = client, env["admin_token"]
+    r = c.get(
+        f"/api/v1/forecasts/preview?scope_type=project&ref_id={env['pid']}",
+        headers=_h(tok),
+    )
+    assert r.status_code == 200, r.text
+    data = r.json()["data"]
+    assert len(data["series"]) == 10
+    fc = data["forecast"]
+    assert fc is not None
+    assert fc["forecast_lower"] <= fc["forecast_value"] <= fc["forecast_upper"]
+    assert fc["forecast_at"] and fc["sample_count"] == 10
+
+    # 非法 scope_type
+    r = c.get("/api/v1/forecasts/preview?scope_type=bad&ref_id=1", headers=_h(tok))
+    assert r.json()["code"] == 400
+
+    # 不存在的设备：admin 超管 is_all 放行，返回空序列 + forecast null
+    r = c.get(
+        "/api/v1/forecasts/preview?scope_type=device&ref_id=NO-SUCH-DEV",
+        headers=_h(tok),
+    )
+    data = r.json()["data"]
+    assert data["series"] == [] and data["forecast"] is None
+
+
 def test_api_recompute_and_list(env, client: TestClient):
     c, tok = client, env["admin_token"]
     # 单项目重算
