@@ -98,6 +98,59 @@ def test_real_mode_without_creds_not_configured(monkeypatch):
     assert r.status == "not_configured"
 
 
+def test_real_sms_aliyun_without_sdk_graceful_error(monkeypatch):
+    """real+aliyun 但未安装阿里云 SDK 时应优雅降级为 error/SDK_MISSING，绝不抛异常中断业务。"""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "sms_mode", "real")
+    monkeypatch.setattr(settings, "sms_provider", "aliyun")
+    monkeypatch.setattr(settings, "sms_api_key", "fake-ak")
+    monkeypatch.setattr(settings, "sms_api_secret", "fake-sk")
+    monkeypatch.setattr(settings, "sms_template_code", "SMS_xxx")
+    r = send_via_gateway("sms", "13800000000", "告警内容")
+    assert r.status == "error"
+    assert r.code == "SDK_MISSING"
+
+
+def test_real_sms_bad_provider_not_configured(monkeypatch):
+    """real 模式但 provider 仍为 mock：视为未正确配置，返回 not_configured/BAD_PROVIDER。"""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "sms_mode", "real")
+    monkeypatch.setattr(settings, "sms_provider", "mock")
+    monkeypatch.setattr(settings, "sms_api_key", "fake-ak")
+    r = send_via_gateway("sms", "13800000000", "x")
+    assert r.status == "not_configured"
+    assert r.code == "BAD_PROVIDER"
+
+
+def test_real_voice_tencent_without_sdk_graceful_error(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "voice_mode", "real")
+    monkeypatch.setattr(settings, "voice_provider", "tencent")
+    monkeypatch.setattr(settings, "voice_api_key", "fake-ak")
+    monkeypatch.setattr(settings, "voice_api_secret", "fake-sk")
+    monkeypatch.setattr(settings, "voice_app_id", "appid")
+    monkeypatch.setattr(settings, "voice_template_id", "tpl")
+    r = send_via_gateway("voice", "13800000000", "语音告警")
+    assert r.status == "error"
+    assert r.code == "SDK_MISSING"
+
+
+def test_real_voice_aliyun_without_template_not_configured(monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "voice_mode", "real")
+    monkeypatch.setattr(settings, "voice_provider", "aliyun")
+    monkeypatch.setattr(settings, "voice_api_key", "fake-ak")
+    monkeypatch.setattr(settings, "voice_api_secret", "fake-sk")
+    monkeypatch.setattr(settings, "voice_template_code", None)
+    r = send_via_gateway("voice", "13800000000", "语音告警")
+    assert r.status == "not_configured"
+    assert r.code == "NO_TEMPLATE"
+
+
 def test_test_send_api(client, auth_headers):
     r = client.post(
         "/api/v1/notifications/test-send",
