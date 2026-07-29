@@ -133,6 +133,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "报告订阅" },
       },
       {
+        path: "intelligence/report-center",
+        name: "intelligence-report-center",
+        component: () => import("@/views/ReportCenterView.vue"),
+        meta: { title: "报表中心" },
+      },
+      {
         path: "alarms",
         name: "alarms",
         component: () => import("@/views/AlarmView.vue"),

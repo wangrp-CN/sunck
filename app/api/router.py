@@ -28,6 +28,7 @@ from app.api.v1 import (
     persons,
     projects,
     realtime,
+    reports,
     subscriptions,
     videos,
 )
@@ -57,3 +58,4 @@ api_router.include_router(metrics.router, prefix="/v1/metrics", tags=["指标快
 api_router.include_router(commands.router, prefix="/v1/commands", tags=["指令下发"])
 api_router.include_router(intelligence.router, prefix="", tags=["智能核心"])
 api_router.include_router(subscriptions.router, prefix="", tags=["报告订阅"])
+api_router.include_router(reports.router, prefix="/v1", tags=["报表导出"])

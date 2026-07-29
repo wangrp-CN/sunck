@@ -19,6 +19,7 @@ import {
   Promotion,
   MagicStick,
   Histogram,
+  Document,
 } from "@element-plus/icons-vue";
 import { useRoute, useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
@@ -212,6 +213,10 @@ onUnmounted(() => {
           <el-menu-item index="/intelligence/correlation-compare">
             <el-icon><Histogram /></el-icon>
             <span>关联热力对比</span>
+          </el-menu-item>
+          <el-menu-item index="/intelligence/report-center">
+            <el-icon><Document /></el-icon>
+            <span>报表中心</span>
           </el-menu-item>
         </el-sub-menu>
         <el-sub-menu index="/devices-group">

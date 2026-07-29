@@ -122,12 +122,56 @@ def render_composite_sparkline_png(
     return buf.getvalue()
 
 
+def _write_detail_sheet(
+    ws, columns: list[Column], rows: list[dict], image_columns: list[ImageColumn] | None
+):
+    """把一列 columns/rows 写入一个明细 sheet（含表头样式 + 图片列嵌入）。
+
+    供 ``build_simple_excel`` 主明细与 ``extra_sheets`` 复用，避免重复。
+    """
+    from openpyxl.drawing.image import Image as XLImage
+
+    img_keys = {key for key, _l, _fn in (image_columns or [])}
+    all_cols: list[Column] = list(columns)
+    for key, label, _fn in image_columns or []:
+        all_cols.append((key, label, 34, 80))
+    for ci, (_, label, _w, _pw) in enumerate(all_cols, start=1):
+        c = ws.cell(row=1, column=ci, value=label)
+        c.fill = _HEADER_FILL
+        c.font = _HEADER_FONT
+        c.alignment = Alignment(horizontal="center")
+    for ri, row in enumerate(rows, start=2):
+        for ci, (key, _label, _w, _pw) in enumerate(all_cols, start=1):
+            if key in img_keys:
+                gen = next(fn for k, _l, fn in image_columns or [] if k == key)
+                try:
+                    png_bytes = gen(row)
+                except Exception:
+                    png_bytes = b""
+                if png_bytes:
+                    xl_img = XLImage(io.BytesIO(png_bytes))
+                    xl_img.width = 240
+                    xl_img.height = 70
+                    cell = ws.cell(row=ri, column=ci)
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    ws.add_image(xl_img, cell.coordinate)
+                    ws.row_dimensions[ri].height = 56
+            else:
+                ws.cell(row=ri, column=ci, value=_cell(row, key))
+    for ci, (_key, _label, w, _pw) in enumerate(all_cols, start=1):
+        ws.column_dimensions[get_column_letter(ci)].width = w
+    ws.freeze_panes = "A2"
+
+
 def build_simple_excel(
     columns: list[Column],
     rows: list[dict],
     meta: dict,
     summary_blocks: list[tuple[str, list[tuple[str, Any]]]] | None = None,
     image_columns: list[ImageColumn] | None = None,
+    extra_sheets: (
+        list[tuple[str, list[Column], list[dict], list[ImageColumn] | None]] | None
+    ) = None,
 ) -> bytes:
     from openpyxl import Workbook
 
@@ -157,38 +201,13 @@ def build_simple_excel(
 
     # --- Sheet2: 明细 ---
     ws2 = wb.create_sheet("明细")
-    img_keys = {key for key, _l, _fn in (image_columns or [])}
-    all_cols: list[Column] = list(columns)
-    for key, label, _fn in image_columns or []:
-        all_cols.append((key, label, 34, 80))
-    for ci, (_, label, _w, _pw) in enumerate(all_cols, start=1):
-        c = ws2.cell(row=1, column=ci, value=label)
-        c.fill = _HEADER_FILL
-        c.font = _HEADER_FONT
-        c.alignment = Alignment(horizontal="center")
-    for ri, row in enumerate(rows, start=2):
-        for ci, (key, _label, _w, _pw) in enumerate(all_cols, start=1):
-            if key in img_keys:
-                gen = next(fn for k, _l, fn in image_columns or [] if k == key)
-                try:
-                    png_bytes = gen(row)
-                except Exception:
-                    png_bytes = b""
-                if png_bytes:
-                    from openpyxl.drawing.image import Image as XLImage
+    _write_detail_sheet(ws2, columns, rows, image_columns)
 
-                    xl_img = XLImage(io.BytesIO(png_bytes))
-                    xl_img.width = 240
-                    xl_img.height = 70
-                    cell = ws2.cell(row=ri, column=ci)
-                    cell.alignment = Alignment(horizontal="center", vertical="center")
-                    ws2.add_image(xl_img, cell.coordinate)
-                    ws2.row_dimensions[ri].height = 56
-            else:
-                ws2.cell(row=ri, column=ci, value=_cell(row, key))
-    for ci, (_key, _label, w, _pw) in enumerate(all_cols, start=1):
-        ws2.column_dimensions[get_column_letter(ci)].width = w
-    ws2.freeze_panes = "A2"
+    # --- 额外明细 sheet（如风险健康报表的「设备健康」表）---
+    for idx, (title, cols, rws, img_cols) in enumerate(extra_sheets or [], start=1):
+        extra_ws = wb.create_sheet(f"明细{idx + 1}-{title}")
+        extra_ws.cell(row=1, column=1, value=title).font = Font(bold=True, size=13)
+        _write_detail_sheet(extra_ws, cols, rws, img_cols)
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -201,6 +220,7 @@ def build_simple_pdf(
     meta: dict,
     summary_blocks: list[tuple[str, list[tuple[str, Any]]]] | None = None,
     image_columns: list[ImageColumn] | None = None,
+    extra_tables: list[tuple[str, list[Column], list[dict]]] | None = None,
 ) -> bytes:
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4, landscape
@@ -296,6 +316,36 @@ def build_simple_pdf(
         )
     )
     elems.append(detail_tbl)
+
+    # --- 额外明细表（如风险健康报表的「设备健康」表）---
+    for title, cols, rws in extra_tables or []:
+        elems.append(Spacer(1, 6 * mm))
+        elems.append(Paragraph(title, normal))
+        elems.append(Spacer(1, 2 * mm))
+        h = [label for _k, label, _w, _pw in cols]
+        d = [h]
+        for row in rws[:_PDF_MAX_ROWS]:
+            d.append([Paragraph(str(_cell(row, k)), small) for k, _label, _w, _pw in cols])
+        t = Table(d, colWidths=[pw * mm for _k, _label, _w, pw in cols], repeatRows=1)
+        t.setStyle(
+            TableStyle(
+                [
+                    ("FONTNAME", (0, 0), (-1, -1), font),
+                    ("FONTSIZE", (0, 0), (-1, -1), 8),
+                    ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1F4E78")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.white, colors.HexColor("#F2F6FB")],
+                    ),
+                ]
+            )
+        )
+        elems.append(t)
 
     doc.build(elems)
     return buf.getvalue()

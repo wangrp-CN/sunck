@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { Location } from "@element-plus/icons-vue";
+import { ArrowDown, Document, Location } from "@element-plus/icons-vue";
 import { getDashboardStats, getRecentAlarms, getEffectiveness, exportEffectivenessReport, getProjectTrendImage } from "@/api/dashboard";
 import {
   getRiskAlerts,
@@ -25,6 +25,7 @@ import {
 import TrendLine from "@/components/TrendLine.vue";
 import { fetchFences } from "@/api/fence";
 import { fetchProjects } from "@/api/project";
+import { exportRiskHealthReport } from "@/api/reports";
 import {
   exportAlarmReport,
   fetchSnapshotPreview,
@@ -641,6 +642,29 @@ async function openSnapshotPreview() {
   }
 }
 
+// 一键出周报：直接导出上周风险健康报表（Excel/PDF），不进入预览弹层
+const weeklyExporting = ref<"" | "excel" | "pdf">("");
+async function exportWeeklyReport(fmt: "excel" | "pdf") {
+  weeklyExporting.value = fmt;
+  try {
+    const blob = await exportRiskHealthReport(fmt, { period_type: "weekly" });
+    const ext = fmt === "pdf" ? "pdf" : "xlsx";
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `风险健康报表_weekly.${ext}`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    ElMessage.success("周报已导出");
+  } catch (e: unknown) {
+    ElMessage.error(e instanceof Error ? e.message : "周报导出失败");
+  } finally {
+    weeklyExporting.value = "";
+  }
+}
+
 // 预览弹层内直接导出（复用当前趋势卡的粒度与范围）
 async function exportFromPreview(fmt: "excel" | "pdf") {
   if (!trendRange.value) {
@@ -785,6 +809,30 @@ onUnmounted(() => {
 
 <template>
   <div v-loading="loading" class="dashboard">
+    <!-- 顶部工具条：报表中心入口 + 一键出周报 -->
+    <div class="dash-toolbar">
+      <span class="dash-title">监控大屏</span>
+      <div class="spacer" />
+      <el-button text bg @click="router.push('/intelligence/report-center')">
+        <el-icon><Document /></el-icon>
+        <span style="margin-left: 4px">报表中心</span>
+      </el-button>
+      <el-dropdown @command="exportWeeklyReport" :disabled="weeklyExporting !== ''">
+        <el-button type="primary" :loading="weeklyExporting !== ''">
+          一键出周报<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+        </el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item command="excel" :disabled="weeklyExporting === 'excel'">
+              导出 Excel
+            </el-dropdown-item>
+            <el-dropdown-item command="pdf" :disabled="weeklyExporting === 'pdf'">
+              导出 PDF
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
+    </div>
     <!-- 统计卡片 -->
     <div class="stat-row">
       <div class="stat-card" v-if="counts">
@@ -1618,6 +1666,19 @@ onUnmounted(() => {
 <style scoped>
 .dashboard {
   padding: 8px;
+}
+.dash-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.dash-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+.spacer {
+  flex: 1;
 }
 .stat-row {
   display: grid;
