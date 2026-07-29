@@ -25,7 +25,7 @@
 | ④ | **设备指令下发 UI** | 纯前端 | P1 | ✅ 已完成 | 接 `POST /v1/realtime/command`，按设备类型动态动作 |
 | ② | **通知定向收敛（按项目/角色）** | 后端 | P2 | ✅ 已完成 | 复用 `data_scope`，修复广播与数据隔离冲突 |
 | ⑤ | **操作审计日志** | 全栈 | P2 | ✅ 已完成 | 中间件自动落库 + 受数据范围约束的查阅页 |
-| ① | **短信 / 语音真网关** | 后端（预留） | P2 | 🔲 待凭据 | `SmsNotifier/VoiceNotifier` 已留桩，待第三方凭据 |
+| ① | **短信 / 语音网关（模拟真实数据）** | 后端 | P2 | ✅ 已完成(模拟) | 网关适配层 `app/core/gateways.py`：simulate 模式生成阿里云风格真实形态回执并落 `notification_delivery` 触达表；real 模式凭据门控留接口，配 `SMS_MODE=real`+凭据即切换，业务调用不变 |
 | ⑥ | **报表导出对称化** | 后端 | P2 | ✅ 已完成 | 隐患/设备 Excel·PDF 导出补齐 |
 | ⑦ | **数据字典 / 枚举中心** | 全栈 | P3 | ✅ 已完成 | 设备类型、告警类型等枚举可视化维护 |
 | ⑧ | **视频 AI 分析** | 重 | P3 | ✅ 已完成(闭环) | 通道/事件模型·接口·回推端点；前端实时拉流播放(HLS/MP4)；`/ai/analyze` 接外部推理端点(超时容错)+能力清单对齐；**可运行参考推理服务 `services/video-ai`（FastAPI+像素级 ReferenceDetector，可插拔真实 YOLO）+ systemd/nginx/Docker 部署接入，端到端验证 `status=done`** |
@@ -37,7 +37,7 @@
 
 图例：✅ 已完成 · 🔲 尚未启动
 
-> **进度补记（2026-07-29）**：本表停留在 2026-07-24，期间已额外交付「智能核心 v2」整条链路（风险/健康快照 → 阈值预警 → 跨设备共因关联 → 趋势异常检测 → 异常进告警流 → 一键派单闭环），以及本轮「闭环效能度量」。上述能力均已在 `CHANGELOG` 与 `deploy/README.deploy.md` §13 记录，本表仅补充 ⑬ 与刷新日期。另：③移动端适配（响应式布局 / 侧栏抽屉化 / ResponsiveTable 横向滚动）、④视频AI深化（`VideoPlayer` 实时拉流、外部推理端点接入就绪 + 超时降级、能力清单对齐、前端 AI 分析对话框）已交付。**⑧ 视频AI 真实推理服务已部署闭环**：新增可运行参考推理服务 `services/video-ai`（FastAPI + 像素级 `ReferenceDetector`，可插拔真实 YOLO），配套 systemd/nginx(`/ai/`)反代/Docker 接入，端到端验证平台 `/v1/videos/ai/analyze` 经 `VIDEO_AI_ENDPOINT` 返回 `status=done` + 真实 `findings`。仍待外部依赖：①短信/语音真网关（凭据）。
+> **进度补记（2026-07-29）**：本表停留在 2026-07-24，期间已额外交付「智能核心 v2」整条链路（风险/健康快照 → 阈值预警 → 跨设备共因关联 → 趋势异常检测 → 异常进告警流 → 一键派单闭环），以及本轮「闭环效能度量」。上述能力均已在 `CHANGELOG` 与 `deploy/README.deploy.md` §13 记录，本表仅补充 ⑬ 与刷新日期。另：③移动端适配（响应式布局 / 侧栏抽屉化 / ResponsiveTable 横向滚动）、④视频AI深化（`VideoPlayer` 实时拉流、外部推理端点接入就绪 + 超时降级、能力清单对齐、前端 AI 分析对话框）已交付。**⑧ 视频AI 真实推理服务已部署闭环**：新增可运行参考推理服务 `services/video-ai`（FastAPI + 像素级 `ReferenceDetector`，可插拔真实 YOLO），配套 systemd/nginx(`/ai/`)反代/Docker 接入，端到端验证平台 `/v1/videos/ai/analyze` 经 `VIDEO_AI_ENDPOINT` 返回 `status=done` + 真实 `findings`。**① 短信/语音网关已按「模拟真实数据」模式交付**（触达记录落库 + 真实形态回执，真实厂商仅差凭据+SDK 调用一处），路线图全部条目闭环。
 
 ---
 
@@ -48,7 +48,7 @@
 - ③ 消息中心独立页（2026-07-23 前完成）
 - ④ 设备指令下发 UI（2026-07-23 前完成）
 
-### P2 · 后端正确性 / 合规 — 进行中
+### P2 · 后端正确性 / 合规 — 已完成（2026-07-29）
 目标：消除与数据隔离/监管要求的冲突，补齐强需求模块。
 - **② 通知定向收敛（✅ 2026-07-23）**
   - 问题：原 `notify_alarm_raised` 向**全部活跃用户广播**站内信，与部门数据隔离冲突（跨项目信息扩散）。
@@ -58,8 +58,12 @@
   - 方案：`AuditMiddleware` 对写请求（POST/PUT/PATCH/DELETE）自动落 `audit_log`（快照 user_id/username/dept_id）；查阅接口 `/v1/audit-logs` 受数据范围约束（本部门及以下可见）。
   - 模型/迁移/服务/接口/前端页齐备；`settings.audit_enabled` 总开关（测试默认关）。
   - 测试：`tests/test_audit_log.py`（服务层范围 + 中间件落库）。
-- ① 短信/语音真网关（🔲）：在 `app/core/notify.py` 适配器内补全真实发送，业务调用不变。
-- ⑥ 报表导出对称化（🔲）：为隐患、设备等列表补充 Excel/PDF 导出。
+- **① 短信/语音网关（✅ 2026-07-29，模拟真实数据）**
+  - 方案：新增网关适配层 `app/core/gateways.py`（`SimulatedSms/VoiceGateway` 生成阿里云风格回执 `Code/BizId/RequestId`，`RealSms/VoiceGateway` 凭据门控留接口）；`SmsNotifier/VoiceNotifier` 经 `send_via_gateway` 下发并落 `notification_delivery` 触达表（含 provider/biz_id/status/raw 原始回执）。
+  - 接口：`GET /v1/notifications/deliveries` 触达记录查询、`POST /v1/notifications/test-send` 链路验证（均 `dashboard:view` 鉴权）。
+  - 切换真实网关：`.env` 配 `SMS_MODE=real` + `SMS_API_KEY/SECRET`（voice 同理），在 `RealXxxGateway._call_provider` 内补厂商 SDK 调用即可，业务零改动；缺凭据自动 `not_configured`，异常兜底 `error` 不中断业务。
+  - 测试：`tests/test_notifications_gateway.py`（回执形态/落库/no_phone/双通道 fanout/凭据门控/两接口，8 用例）。
+- ⑥ 报表导出对称化（✅）：隐患、设备等列表 Excel/PDF 导出已补齐。
 
 ### P3 · 业务扩展 — 已完成（2026-07-24）
 目标：补齐监管与现场高频业务能力；⑧⑨⑪⑫ 以最小 PoC 形态落地，可随真实视频流/推理接入逐步深化。
@@ -95,5 +99,5 @@
 
 - **通知收敛**：若某业务通知无归属项目（project_id 为空），仅超级管理员接收——属预期的安全默认，不会越权扩散。
 - **审计中间件**：写库使用独立会话且全程容错，审计失败不影响业务；高频写场景会放大 `audit_log` 体量，建议后续按保留期归档/清理。
-- **短信/语音**：属外部依赖，落地前需确认网关凭据与计费；当前为留桩，不阻断业务。
+- **短信/语音**：当前默认 simulate 模式（模拟真实数据，回执/触达记录形态与真实网关一致）；切真实厂商需确认凭据与计费，配置切换即可，不阻断业务。
 - **压测结论**：落库率 100% 的甜点档已固化进 `app/config.py` 默认值；若上行规模翻倍（数千设备/更短间隔），再上调 `INGEST_WORKERS` 即可。

@@ -100,6 +100,20 @@ class Settings(BaseSettings):
     video_auto_escalate_enabled: bool = False
     video_auto_escalate_threshold: float = 0.8
 
+    # ---------- 短信 / 语音网关（P2① · 模拟真实数据，可切换真实网关） ----------
+    # mode: simulate(默认，模拟真实回执，无需任何第三方凭据) | real(需配置 provider 凭据)
+    # 真实模式仅当对应 *_api_key 配置后才发起真实调用；凭据缺失回执 status=not_configured。
+    sms_mode: str = "simulate"
+    sms_provider: str = "mock"
+    sms_api_key: str | None = None
+    sms_api_secret: str | None = None
+    sms_sign_name: str = "涉铁安全监控"
+    sms_template_code: str | None = None
+    voice_mode: str = "simulate"
+    voice_provider: str = "mock"
+    voice_api_key: str | None = None
+    voice_api_secret: str | None = None
+
     # ---------- 设备指令下发闭环（状态追踪 + 回执 + 重试） ----------
     # 平台向设备下发指令后等待回执的超时（秒）：超过该时长仍未回执视为可重试。
     command_ack_timeout_seconds: int = 60

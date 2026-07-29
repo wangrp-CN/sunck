@@ -4,16 +4,21 @@
 鉴权仅要求登录（get_current_user）。
 """
 
+from dataclasses import asdict
+
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
-from app.core.deps import get_current_user
+from app.core.deps import get_current_user, require_permissions
+from app.core.gateways import send_via_gateway
 from app.core.responses import ApiResponse
 from app.model.notification import Notification
+from app.model.notification_delivery import NotificationDelivery
 from app.model.system import User
-from app.schema.notification import NotificationOut, NotificationPage
+from app.schema.notification import NotificationDeliveryOut, NotificationOut, NotificationPage
 
 router = APIRouter(tags=["通知中心"])
 
@@ -120,3 +125,60 @@ def mark_all_read(
     )
     db.commit()
     return ApiResponse.success(data={"updated": updated})
+
+
+class TestSendReq(BaseModel):
+    channel: str  # sms | voice
+    phone: str
+    content: str = "测试通知：涉铁监控模拟网关触达校验"
+
+
+@router.get(
+    "/deliveries",
+    summary="短信/语音网关触达记录（模拟真实数据）",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("dashboard:view"))],
+)
+def list_deliveries(
+    db: Session = Depends(get_db),
+    channel: str | None = Query(None, description="sms/voice 过滤"),
+    limit: int = Query(50, ge=1, le=200),
+) -> ApiResponse:
+    """分页返回短信/语音网关触达回执（模拟模式下即「模拟真实数据」的发送记录）。"""
+    stmt = select(NotificationDelivery)
+    if channel:
+        stmt = stmt.where(NotificationDelivery.channel == channel)
+    rows = db.scalars(stmt.order_by(NotificationDelivery.id.desc()).limit(limit)).all()
+    return ApiResponse.success(
+        data=[NotificationDeliveryOut.model_validate(r).model_dump() for r in rows]
+    )
+
+
+@router.post(
+    "/test-send",
+    summary="模拟网关下发（验证链路/触达）",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("dashboard:view"))],
+)
+def test_send(
+    body: TestSendReq,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ApiResponse:
+    """经网关下发一条测试短信/语音（默认模拟模式），返回网关回执与落库记录。
+
+    用于在无第三方凭据阶段验证「平台 → 网关 → 触达记录」全链路，并核对真实形态回执。
+    """
+    if body.channel not in ("sms", "voice"):
+        return ApiResponse.fail("channel 仅支持 sms/voice", code=400)
+    result = send_via_gateway(body.channel, body.phone, body.content)
+    rec = NotificationDelivery(**result.to_record(user_id=user.id))
+    db.add(rec)
+    db.commit()
+    db.refresh(rec)
+    return ApiResponse.success(
+        data={
+            "result": asdict(result),
+            "delivery": NotificationDeliveryOut.model_validate(rec).model_dump(),
+        }
+    )

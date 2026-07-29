@@ -20,6 +20,7 @@ from app.model import (  # noqa: F401
     inspection,
     job,
     notification,
+    notification_delivery,
     person,
     project,
     realtime,

@@ -21,7 +21,9 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.data_scope import resolve_data_scope
+from app.core.gateways import send_via_gateway
 from app.model.notification import Notification
+from app.model.notification_delivery import NotificationDelivery
 from app.model.project import Project
 from app.model.system import User
 
@@ -47,14 +49,13 @@ class InAppNotifier:
 
 
 class SmsNotifier:
-    """预留：短信网关未配置，仅留痕。"""
+    """短信网关：经适配器下发（模拟模式默认，无需凭据），并落库网关回执。"""
 
     channel = "sms"
 
     def send(
         self, db: Session, user_id: int, title: str, content=None, link=None, category="alarm"
     ):
-        logger.warning("短信通知未启用(channel=sms)，仅落库留痕：user=%s title=%s", user_id, title)
         db.add(
             Notification(
                 user_id=user_id,
@@ -65,19 +66,25 @@ class SmsNotifier:
                 link=link,
             )
         )
+        phone = self._phone(db, user_id)
+        result = send_via_gateway("sms", phone, content or title)
+        db.add(NotificationDelivery(**result.to_record(user_id=user_id)))
+        logger.info("短信下发(user=%s, phone=%s) → %s", user_id, phone, result.status)
+
+    @staticmethod
+    def _phone(db: Session, user_id: int) -> str | None:
+        u = db.get(User, int(user_id))
+        return u.phone if u else None
 
 
 class VoiceNotifier:
-    """预留：语音网关未配置，仅留痕。"""
+    """语音网关：经适配器下发（模拟模式默认，无需凭据），并落库网关回执。"""
 
     channel = "voice"
 
     def send(
         self, db: Session, user_id: int, title: str, content=None, link=None, category="alarm"
     ):
-        logger.warning(
-            "语音通知未启用(channel=voice)，仅落库留痕：user=%s title=%s", user_id, title
-        )
         db.add(
             Notification(
                 user_id=user_id,
@@ -88,6 +95,15 @@ class VoiceNotifier:
                 link=link,
             )
         )
+        phone = self._phone(db, user_id)
+        result = send_via_gateway("voice", phone, content or title)
+        db.add(NotificationDelivery(**result.to_record(user_id=user_id)))
+        logger.info("语音下发(user=%s, phone=%s) → %s", user_id, phone, result.status)
+
+    @staticmethod
+    def _phone(db: Session, user_id: int) -> str | None:
+        u = db.get(User, int(user_id))
+        return u.phone if u else None
 
 
 NOTIFIERS: dict[str, object] = {
