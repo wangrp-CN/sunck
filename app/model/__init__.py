@@ -22,6 +22,7 @@ from app.model import (  # noqa: F401
     hazard,
     inspection,
     job,
+    knowledge,
     notification,
     notification_delivery,
     person,

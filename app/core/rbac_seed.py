@@ -65,6 +65,8 @@ _CHILDREN = {
         "alarm_policy:manage",
         "playbook:list",
         "playbook:manage",
+        "knowledge:list",
+        "knowledge:manage",
     ],
     "dashboard": ["dashboard:view"],
     "dispatch": ["dispatch:list", "dispatch:create", "dispatch:handle"],
@@ -125,6 +127,8 @@ _ROLES = {
             "alarm_policy:manage",
             "playbook:list",
             "playbook:manage",
+            "knowledge:list",
+            "knowledge:manage",
         },
         # 自定义数据范围（data_scope=2）绑定的部门编码；空表示不限定（看不到数据）
         "dept_codes": ["SECTION"],
@@ -154,6 +158,7 @@ _ROLES = {
             "forecast:view",
             "alarm_policy:list",
             "playbook:list",
+            "knowledge:list",
         },
     },
     "operator": {

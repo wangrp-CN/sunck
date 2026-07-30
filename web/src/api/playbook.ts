@@ -30,6 +30,8 @@ export interface Playbook {
   steps: string[];
   trigger_condition: string | null;
   references: PlaybookRef[];
+  /** 自动检索关联的知识库链接（按告警上下文） */
+  suggested_references?: PlaybookRef[];
   tags: string | null;
   owner_role: string | null;
   est_minutes: number | null;
@@ -128,4 +130,22 @@ export function updatePlaybook(
 
 export function deletePlaybook(id: number): Promise<{ deleted: boolean }> {
   return http<{ deleted: boolean }>({ url: `/v1/playbooks/${id}`, method: "DELETE" });
+}
+
+/** 按告警上下文检索候选知识库链接（知识库自动关联） */
+export interface SuggestReferencesParams {
+  project_id?: number;
+  alarm_type?: string;
+  alarm_level?: string;
+  limit?: number;
+}
+
+export function suggestPlaybookReferences(
+  params: SuggestReferencesParams,
+): Promise<PlaybookRef[]> {
+  return http<PlaybookRef[]>({
+    url: "/v1/playbooks/suggest-references",
+    method: "POST",
+    data: params,
+  });
 }

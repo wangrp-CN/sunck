@@ -15,6 +15,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from app.config import settings  # noqa: E402
+from app.core.knowledge_seed import seed_knowledge  # noqa: E402
 from app.core.playbook_seed import seed_playbooks  # noqa: E402
 from app.core.rbac_seed import seed_rbac  # noqa: E402
 
@@ -33,6 +34,10 @@ def main() -> None:
     pb = seed_playbooks()
     print("处置预案播种完成：")
     print(f"  新增：{pb['created']}  已存在跳过：{pb['skipped']}")
+
+    kb = seed_knowledge()
+    print("知识库播种完成：")
+    print(f"  新增：{kb['created']}  已存在跳过：{kb['skipped']}")
 
 
 if __name__ == "__main__":

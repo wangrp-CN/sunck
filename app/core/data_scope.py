@@ -31,6 +31,7 @@ from app.model.forecast import Forecast
 from app.model.hazard import Hazard
 from app.model.inspection import InspectionTask
 from app.model.job import WorkPlan
+from app.model.knowledge import KnowledgeArticle
 from app.model.person import Machine, Person
 from app.model.playbook import Playbook
 from app.model.project import Project
@@ -149,6 +150,7 @@ _MODEL_DEPT_LINK: dict[type, str] = {
     Forecast: VIA_PROJECT,
     AlarmPolicy: VIA_PROJECT,
     Playbook: VIA_PROJECT,
+    KnowledgeArticle: VIA_PROJECT,
 }
 
 

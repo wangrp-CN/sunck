@@ -19,6 +19,7 @@ from app.model.alarm import Alarm
 from app.model.playbook import Playbook
 from app.model.project import Project
 from app.schema.playbook import encode_json
+from app.service import knowledge_service
 
 logger = logging.getLogger("rail_monitor.playbook")
 
@@ -220,3 +221,35 @@ def recommend_for_alarm(
     return resolve_playbooks(
         db, scope, alarm.project_id, alarm.alarm_type, alarm.alarm_level, limit=limit
     )
+
+
+def suggest_knowledge_refs(
+    db: Session,
+    scope: DataScope,
+    *,
+    playbook: Playbook | None = None,
+    alarm_type: str | None = None,
+    alarm_level: str | None = None,
+    project_id: int | None = None,
+    limit: int = 5,
+) -> list[dict]:
+    """按上下文自动检索知识库，返回关联链接候选 ``[{"title","url"}]``。
+
+    检索语句由预案字段（名称/要点/标签/触发条件）与告警维度（类型英文 key/级别）拼装，
+    使知识库标签（含 alarm_type key）可命中。供告警处置时自动关联知识库链接。
+    """
+    parts: list[str] = []
+    if playbook is not None:
+        parts.append(playbook.name)
+        parts.append(playbook.summary)
+        if playbook.tags:
+            parts.append(playbook.tags)
+        if playbook.trigger_condition:
+            parts.append(playbook.trigger_condition)
+    if alarm_type:
+        parts.append(alarm_type)  # 含英文 key，匹配知识库标签
+    if alarm_level:
+        parts.append(alarm_level)
+    query = " ".join(p for p in parts if p) or "处置"
+    items = knowledge_service.search_knowledge(db, scope, query, limit=limit)
+    return [{"title": it.title, "url": it.url} for it in items]

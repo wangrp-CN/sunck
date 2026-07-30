@@ -1088,16 +1088,32 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
               <ol class="rec-steps">
                 <li v-for="(s, i) in pb.steps" :key="i">{{ s }}</li>
               </ol>
-              <div v-if="pb.references && pb.references.length" class="rec-refs">
-                <span class="rec-refs-label">知识库：</span>
-                <a
-                  v-for="(r, i) in pb.references"
-                  :key="i"
-                  :href="r.url"
-                  target="_blank"
-                  rel="noopener"
-                  class="rec-ref"
-                >{{ r.title || r.url }}</a>
+              <div
+                v-if="(pb.references && pb.references.length) || (pb.suggested_references && pb.suggested_references.length)"
+                class="rec-refs"
+              >
+                <template v-if="pb.references && pb.references.length">
+                  <span class="rec-refs-label">预案链接：</span>
+                  <a
+                    v-for="(r, i) in pb.references"
+                    :key="'c' + i"
+                    :href="r.url"
+                    target="_blank"
+                    rel="noopener"
+                    class="rec-ref"
+                  >{{ r.title || r.url }}</a>
+                </template>
+                <template v-if="pb.suggested_references && pb.suggested_references.length">
+                  <span class="rec-refs-label rec-refs-auto">知识库自动关联：</span>
+                  <a
+                    v-for="(r, i) in pb.suggested_references"
+                    :key="'s' + i"
+                    :href="r.url"
+                    target="_blank"
+                    rel="noopener"
+                    class="rec-ref rec-ref-auto"
+                  >{{ r.title || r.url }}</a>
+                </template>
               </div>
             </el-collapse-item>
           </el-collapse>

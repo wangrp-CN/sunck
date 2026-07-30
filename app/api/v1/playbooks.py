@@ -16,6 +16,7 @@
 """
 
 from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 
 from app.core.constants import (
     ALARM_TYPE_ANOMALY,
@@ -29,11 +30,22 @@ from app.core.data_scope import DataScope
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.responses import ApiResponse
+from app.model.alarm import Alarm
 from app.model.system import User
 from app.schema.playbook import PlaybookCreate, PlaybookOut, PlaybookUpdate
 from app.service import playbook_service as svc
 
 router = APIRouter(tags=["处置预案"])
+
+
+class SuggestReferencesPayload(BaseModel):
+    """按告警上下文检索候选知识库链接。"""
+
+    project_id: int | None = None
+    alarm_type: str | None = None
+    alarm_level: str | None = None
+    limit: int = 5
+
 
 _ALARM_TYPES = [
     {"key": ALARM_TYPE_FENCE, "label": "围栏侵入"},
@@ -48,6 +60,21 @@ _LEVELS = ["提示", "警告", "严重"]
 
 def _out(db, obj) -> dict:
     return PlaybookOut.model_validate(svc.to_out(db, obj)).model_dump()
+
+
+def _out_recommend(db, scope, obj, *, alarm_type, alarm_level, project_id, limit) -> dict:
+    """推荐输出：在预案字段基础上附加自动检索的知识库关联链接。"""
+    data = PlaybookOut.model_validate(svc.to_out(db, obj)).model_dump()
+    data["suggested_references"] = svc.suggest_knowledge_refs(
+        db,
+        scope,
+        playbook=obj,
+        alarm_type=alarm_type,
+        alarm_level=alarm_level,
+        project_id=project_id,
+        limit=limit,
+    )
+    return data
 
 
 @router.get(
@@ -108,7 +135,20 @@ def recommend(
     limit: int = Query(5, ge=1, le=20),
 ) -> ApiResponse:
     rows = svc.resolve_playbooks(db, scope, project_id, alarm_type, alarm_level, limit=limit)
-    return ApiResponse.success(data=[_out(db, r) for r in rows])
+    return ApiResponse.success(
+        data=[
+            _out_recommend(
+                db,
+                scope,
+                r,
+                alarm_type=alarm_type,
+                alarm_level=alarm_level,
+                project_id=project_id,
+                limit=limit,
+            )
+            for r in rows
+        ]
+    )
 
 
 @router.get(
@@ -122,8 +162,17 @@ def recommend_by_alarm(
     scope: DataScope = Depends(get_data_scope),
     limit: int = Query(5, ge=1, le=20),
 ) -> ApiResponse:
+    alarm = db.get(Alarm, alarm_id)
     rows = svc.recommend_for_alarm(db, scope, alarm_id, limit=limit)
-    return ApiResponse.success(data=[_out(db, r) for r in rows])
+    at = alarm.alarm_type if alarm else None
+    al = alarm.alarm_level if alarm else None
+    pid = alarm.project_id if alarm else None
+    return ApiResponse.success(
+        data=[
+            _out_recommend(db, scope, r, alarm_type=at, alarm_level=al, project_id=pid, limit=limit)
+            for r in rows
+        ]
+    )
 
 
 @router.get(
@@ -136,6 +185,28 @@ def detail(pid: int, db=Depends(get_db), scope: DataScope = Depends(get_data_sco
     if obj is None:
         return ApiResponse.fail(code=404, message="预案不存在或无权访问")
     return ApiResponse.success(data=_out(db, obj))
+
+
+@router.post(
+    "/suggest-references",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("playbook:manage"))],
+)
+def suggest_references(
+    payload: SuggestReferencesPayload,
+    db=Depends(get_db),
+    scope: DataScope = Depends(get_data_scope),
+) -> ApiResponse:
+    """按告警上下文检索候选知识库链接（供前端「从知识库检索关联链接」按钮调用）。"""
+    refs = svc.suggest_knowledge_refs(
+        db,
+        scope,
+        alarm_type=payload.alarm_type,
+        alarm_level=payload.alarm_level,
+        project_id=payload.project_id,
+        limit=payload.limit,
+    )
+    return ApiResponse.success(data=refs)
 
 
 @router.post(

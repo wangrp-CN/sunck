@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { useAuthStore } from "@/stores/auth";
 import { fetchProjects } from "@/api/project";
+import { searchKnowledge, type KnowledgeSearchItem } from "@/api/knowledge";
 import {
   createPlaybook,
   deletePlaybook,
@@ -170,6 +171,49 @@ function addRef() {
 }
 function removeRef(i: number) {
   form.value.references.splice(i, 1);
+}
+
+// ---- 从知识库检索关联链接 ----
+const kbDialogVisible = ref(false);
+const kbQuery = ref("");
+const kbLoading = ref(false);
+const kbResults = ref<KnowledgeSearchItem[]>([]);
+
+function openKbSearch() {
+  // 预填检索词：预案名称/要点/标签
+  kbQuery.value = [form.value.name, form.value.summary, form.value.tags]
+    .filter(Boolean)
+    .join(" ");
+  kbResults.value = [];
+  kbDialogVisible.value = true;
+}
+
+async function runKbSearch() {
+  if (!kbQuery.value.trim()) {
+    ElMessage.warning("请输入检索关键词");
+    return;
+  }
+  kbLoading.value = true;
+  try {
+    kbResults.value = await searchKnowledge({ q: kbQuery.value.trim(), limit: 10 });
+    if (kbResults.value.length === 0) {
+      ElMessage.info("无匹配知识库条目");
+    }
+  } catch (e: any) {
+    ElMessage.error(e?.message || "检索失败");
+  } finally {
+    kbLoading.value = false;
+  }
+}
+
+function addKbOne(r: KnowledgeSearchItem) {
+  const exists = form.value.references.some((x) => x.url === r.url);
+  if (exists) {
+    ElMessage.info("该链接已在预案中");
+    return;
+  }
+  form.value.references.push({ title: r.title, url: r.url });
+  ElMessage.success("已添加知识库链接");
 }
 
 async function submitForm() {
@@ -391,6 +435,7 @@ onMounted(async () => {
             <el-input v-model="form.refUrl" placeholder="URL" style="width: 260px" />
             <el-button @click="addRef">添加</el-button>
           </div>
+          <el-button class="kb-search-btn" @click="openKbSearch">🔍 从知识库检索关联链接</el-button>
         </el-form-item>
         <el-form-item label="链接列表">
           <ul class="ref-list">
@@ -420,6 +465,41 @@ onMounted(async () => {
         <el-button type="primary" :loading="submitting" @click="submitForm">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog
+      v-model="kbDialogVisible"
+      title="从知识库检索关联链接"
+      width="640px"
+      top="5vh"
+    >
+      <el-input
+        v-model="kbQuery"
+        placeholder="检索关键词：预案名称/要点/标签，或告警类型（如 fence_intrusion）"
+        @keyup.enter="runKbSearch"
+      >
+        <template #append>
+          <el-button @click="runKbSearch">检索</el-button>
+        </template>
+      </el-input>
+      <div v-loading="kbLoading" class="kb-result">
+        <el-empty
+          v-if="!kbLoading && kbResults.length === 0"
+          :image-size="50"
+          description="无匹配知识库条目"
+        />
+        <div v-for="r in kbResults" :key="r.id" class="kb-item">
+          <div class="kb-meta">
+            <a :href="r.url" target="_blank" rel="noopener" class="kb-title">{{ r.title }}</a>
+            <span class="kb-source">{{ r.source }}</span>
+            <p class="kb-summary">{{ r.summary }}</p>
+          </div>
+          <el-button size="small" type="primary" @click="addKbOne(r)">添加</el-button>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="kbDialogVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -435,4 +515,12 @@ onMounted(async () => {
 .step-editor, .ref-editor { display: flex; gap: 8px; width: 100%; }
 .step-list, .ref-list { margin: 0; padding-left: 18px; }
 .step-list li, .ref-list li { margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.kb-search-btn { margin-left: 8px; }
+.kb-result { margin-top: 12px; max-height: 50vh; overflow-y: auto; }
+.kb-item { display: flex; align-items: flex-start; gap: 12px; padding: 8px 0; border-bottom: 1px solid #f0f0f0; }
+.kb-meta { flex: 1; min-width: 0; }
+.kb-title { font-weight: 600; color: #303133; text-decoration: none; }
+.kb-title:hover { color: #409eff; }
+.kb-source { margin-left: 8px; font-size: 12px; color: #909399; background: #f4f4f5; padding: 1px 6px; border-radius: 4px; }
+.kb-summary { margin: 4px 0 0; font-size: 12px; color: #606266; line-height: 1.5; }
 </style>

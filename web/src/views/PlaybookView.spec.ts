@@ -77,6 +77,9 @@ vi.mock("@/api/playbook", () => ({
   recommendPlaybooks: vi.fn(),
   recommendPlaybooksByAlarm: vi.fn(),
 }));
+vi.mock("@/api/knowledge", () => ({
+  searchKnowledge: vi.fn(),
+}));
 vi.mock("@/api/project", () => ({ fetchProjects: vi.fn() }));
 
 import {
@@ -86,6 +89,7 @@ import {
   listPlaybooks,
   updatePlaybook,
 } from "@/api/playbook";
+import { searchKnowledge } from "@/api/knowledge";
 import { fetchProjects } from "@/api/project";
 
 let wrapper: ReturnType<typeof mount> | null = null;
@@ -160,5 +164,39 @@ describe("views/PlaybookView.vue", () => {
     await flushPromises();
     expect(vi.mocked(ElMessageBox.confirm)).toHaveBeenCalled();
     expect(vi.mocked(deletePlaybook)).toHaveBeenCalledWith(2);
+  });
+
+  it("从知识库检索关联链接：检索结果可加入预案 references", async () => {
+    wrapper = mount(PlaybookView);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    vm.openCreate();
+    vm.form.name = "围栏处置";
+    vi.mocked(searchKnowledge).mockResolvedValue([
+      {
+        id: 10,
+        title: "防护栅栏管理办法",
+        url: "https://kb.example.com/fence",
+        summary: "现场处置要点",
+        source: "规范库",
+        tags: "围栏",
+        content: null,
+        project_id: null,
+        project_name: null,
+        enabled: true,
+        created_at: null,
+        updated_at: null,
+        score: 5,
+      },
+    ] as any);
+    vm.openKbSearch();
+    expect(vm.kbDialogVisible).toBe(true);
+    await vm.runKbSearch();
+    await flushPromises();
+    expect(vm.kbResults.length).toBe(1);
+    vm.addKbOne(vm.kbResults[0]);
+    expect(vm.form.references.some((r: any) => r.url === "https://kb.example.com/fence")).toBe(
+      true,
+    );
   });
 });

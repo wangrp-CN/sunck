@@ -24,6 +24,7 @@ from app.api.v1 import (
     inspections,
     intelligence,
     jobs,
+    knowledge,
     machines,
     media,
     metrics,
@@ -49,6 +50,7 @@ api_router.include_router(jobs.router, prefix="/v1/jobs", tags=["作业计划"])
 api_router.include_router(alarms.router, prefix="/v1/alarms", tags=["告警管理"])
 api_router.include_router(alarm_policies.router, prefix="/v1/alarm-policies", tags=["告警策略"])
 api_router.include_router(playbooks.router, prefix="/v1/playbooks", tags=["处置预案"])
+api_router.include_router(knowledge.router, prefix="/v1/knowledge", tags=["知识库"])
 api_router.include_router(hazards.router, prefix="/v1/hazards", tags=["隐患治理"])
 api_router.include_router(notifications.router, prefix="/v1/notifications", tags=["通知中心"])
 api_router.include_router(realtime.router, prefix="/v1/realtime", tags=["实时链路"])
