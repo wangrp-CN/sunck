@@ -34,7 +34,7 @@
 | ⑪ | **多项目对比大屏** | 全栈 | P3 | ✅ 已完成 | `GET /v1/dashboard/project-compare` 风险分降序 |
 | ⑫ | **设备健康 / 运维** | 全栈 | P3 | ✅ 已完成 | `GET /v1/devices/health` 在线率/健康分 |
 | ⑬ | **闭环效能度量** | 全栈 | P3 | ✅ 已完成 | 大屏「闭环效能度量」卡：风暴抑制率/告警MTTR/派单SLA/隐患闭环率/异常引擎贡献占比（窗口可调）；`GET /v1/dashboard/effectiveness` + `effectiveness_service` |
-| ⑭ | **🅱 告警治理与值班体系** | 全栈 | P4 | 🟡 进行中(M1-M3✅) | 值班排班模型+CRUD接口+权限(M1)；派单自动兜底当班人(M3，后端+前端预填)；前端值班页+菜单(M2)。缺口：**M4 告警收敛/抑制/升级策略**(AlarmPolicy)、**M5 处置预案/知识库联动**(Playbook，可后置) |
+| ⑭ | **🅱 告警治理与值班体系** | 全栈 | P4 | 🟢 进行中(M1-M4✅, M5 可后置) | 值班排班模型+CRUD接口+权限(M1)；派单自动兜底当班人(M3，后端+前端预填)；前端值班页+菜单(M2)；**M4 告警收敛/抑制/升级策略**(AlarmPolicy，`create_alarm` 收敛窗口覆盖+静默免打扰+超时升级重通知+前端策略配置页)。缺口：**M5 处置预案/知识库联动**(Playbook，可后置) |
 
 图例：✅ 已完成 · 🟡 进行中 · 🔲 尚未启动
 
@@ -85,7 +85,12 @@
   - M3 自动派单兜底：`dispatch_service.create_order` 未指定 `assignee_id` 时调 `resolve_on_duty(db, project_id)` 取当前在班人；前端 `DispatchCreateDialog` 选归属项目后自动预填当班人为处理人（可手动覆盖）。**无排班时保持「待派」，不报错。**
   - 测试：`tests/test_duty.py`（5 用例绿），覆盖建/列/在班解析/自动派单兜底/无排班不指派。
   - 顺带修复：`app/api/v1/dispatch.py` 3 处误用不存在的 `ApiResponse.error` → 改 `ApiResponse.fail(code=404,...)`，与项目"业务失败 HTTP200+非0 code"约定一致。
-- **M4 告警收敛/抑制/升级策略（🔲 待做）**：`AlarmPolicy` 模型（按项目/类型/等级配置风暴抑制窗口、去重、静默、升级时限）→ `create_alarm` 集成；前端策略配置页。
+- **M4 告警收敛/抑制/升级策略（✅ 2026-07-30）**：`AlarmPolicy` 模型（按项目/类型通配 + 启用状态配置）驱动三类治理：
+  - **收敛**：`resolve_policy(project_id, alarm_type)` 按「项目+类型 > 项目通配 > 全局+类型 > 全局通配」取最新命中；命中策略的 `suppress_window_seconds` 覆盖全局风暴合并窗口（`alarm_service.create_alarm` 用其替代 `ALARM_DEDUP_TTL`）。
+  - **抑制（静默免打扰）**：`in_silence(policy)` 按北京时间 `silence_start~silence_end`（支持跨天）判定；静默时段内告警仍落库但跳过站内信通知（不丢数据）。
+  - **升级**：`run_escalations(db)` 扫描「待处理 + 超时 + 未升级过（`escalated_at` 留痕幂等）」的告警，按策略升级 `alarm_level` 并依 `escalate_channels` 重通知（含 `resolve_on_duty` 当班人姓名）；由 `scripts/report_subscription_job.py` 周期任务串联，另提供 `POST /v1/alarm-policies/run-escalations` 手动触发端点。
+  - 交付：`AlarmPolicy` 模型 + 迁移 `dd4e5f6a7b8c`（含 `alarm.escalated_at` 列）+ `app/service/alarm_policy_service.py`（CRUD/匹配/静默/升级）+ `app/api/v1/alarm_policies.py`（列表/`/meta`/手动升级/详情/增删改）+ 路由挂载 + 权限 `alarm_policy:list`/`alarm_policy:manage`（入 `rbac_seed` 的 alarm 子树，授 monitor/project_manager/超管）；前端 `api/alarm-policy.ts` + `AlarmPolicyView.vue`（列表/新增编辑/静默与升级配置/`立即扫描升级`）+ 路由菜单。测试 `tests/test_alarm_policy.py` 8 用例全绿，数据库无回归（317 passed / 1 skipped）；前端 173 测全过 + vue-tsc 0 错。
+- **M5 处置预案/知识库联动（🔲 可后置）**：`Playbook` 模型 + 告警关联预案 + 前端联动，闭环处置指导。
 - **M5 处置预案/知识库联动（🔲 可后置）**：`Playbook` 模型 + 告警关联预案 + 前端联动，闭环处置指导。
 - **🅰 双厂商抽象代码（✅ 2026-07-29）**：`RealSms/VoiceGateway` 已实现**双厂商（阿里云/腾讯云）SDK 适配**——按 `sms_provider`/`voice_provider`(`aliyun|tencent`) 分派 `_aliyun_*`/`_tencent_*` 真实调用，回执映射为统一 `GatewayResult`；厂商 SDK **懒加载导入**（模块导入期不依赖任何第三方库，无 SDK 也能启动，仅真实下发不可用，返回 `SDK_MISSING`）；凭据缺失/厂商未配→`not_configured`，调用异常→`error`，绝不中断业务。配置新增 `sms_app_id/sms_template_id/tencent_region/voice_template_code/voice_app_id/voice_template_id/voice_called_show_number` 及 `.env.example` 双厂商段；`tests/test_notifications_gateway.py` 增 4 用例（SDK 缺失优雅降级/厂商未配/BAD_PROVIDER/缺模板）共 12 绿。切真实网关=配 `SMS_MODE=real`+凭据+`pip install` 对应 SDK，业务零改动。
 - **Phase 5 · 智能化预测（✅ 全部交付，M1-M4）**：从"阈值告警"升级到"预测性预警"。

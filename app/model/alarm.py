@@ -68,6 +68,10 @@ class Alarm(Base, TimestampMixin, CreatorMixin):
     last_suppressed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, comment="最近一次抑制时间"
     )
+    # 告警升级留痕（🅱 M4）：超时未处理被策略升级的时间（空=未升级），保证升级幂等
+    escalated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, comment="策略升级时间(空=未升级)"
+    )
 
     # 查询索引（与手写迁移 k5l6m7n8o9p0 一致）：alarm_time 驱动趋势/近期/分页的
     # range + order_by；handle_status+alarm_time 支撑看板「待处理计数」复合过滤。

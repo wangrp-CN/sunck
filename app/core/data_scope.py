@@ -22,6 +22,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.model.alarm import Alarm
+from app.model.alarm_policy import AlarmPolicy
 from app.model.device import AntiIntrusionDevice, LocateDevice, TrainApproachDevice
 from app.model.dispatch import DispatchOrder
 from app.model.duty_roster import DutyRoster
@@ -145,6 +146,7 @@ _MODEL_DEPT_LINK: dict[type, str] = {
     DispatchOrder: VIA_PROJECT,
     DutyRoster: VIA_PROJECT,
     Forecast: VIA_PROJECT,
+    AlarmPolicy: VIA_PROJECT,
 }
 
 

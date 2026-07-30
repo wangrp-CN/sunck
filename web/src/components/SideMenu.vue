@@ -23,6 +23,7 @@ import {
   Warning,
   Monitor,
   Clock,
+  Switch,
 } from "@element-plus/icons-vue";
 
 const route = useRoute();
@@ -131,6 +132,10 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
     <el-menu-item index="/duty-roster">
       <el-icon><Clock /></el-icon>
       <span>值班排班</span>
+    </el-menu-item>
+    <el-menu-item index="/alarm-policies">
+      <el-icon><Switch /></el-icon>
+      <span>告警策略</span>
     </el-menu-item>
     <el-menu-item index="/hazards">
       <el-icon><Bell /></el-icon>

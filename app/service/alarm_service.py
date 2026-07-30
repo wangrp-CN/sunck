@@ -66,6 +66,11 @@ def create_alarm(db: Session, **fields) -> Alarm | None:
     去重续期：命中已存在键时不只跳过，而是刷新其 TTL。这样持续违规期间
     每次上行都会续期，整个违规周期只产生「1 条」告警开始，根除「每隔
     ALARM_DEDUP_TTL 秒重复生成告警开始、无界堆积」的隐患。
+
+    策略接入（🅱 M4，AlarmPolicy）：
+    - **收敛**：命中策略配置 ``suppress_window_seconds`` 时覆盖全局合并窗口；
+    - **静默抑制**：静默时段内告警仍**正常落库**（不丢数据），仅跳过站内信通知；
+    - 策略解析任何异常均降级为「无策略」，绝不阻塞告警主链路。
     """
     alarm_type = fields.get("alarm_type")
     device_no = fields.get("device_no")
@@ -73,12 +78,29 @@ def create_alarm(db: Session, **fields) -> Alarm | None:
     alarm_status = fields.get("alarm_status") or ALARM_STATUS_START
     work_plan_id = fields.get("work_plan_id")
 
+    # 策略解析（收敛窗口覆盖 + 静默判定）；失败降级 None 不影响主链路
+    policy = None
+    try:
+        from app.service import alarm_policy_service as policy_svc
+
+        policy = policy_svc.resolve_policy(db, fields.get("project_id"), alarm_type)
+    except Exception:  # noqa: BLE001
+        logger.warning("告警策略解析失败，按无策略处理（不影响告警落库）")
+    ttl = ALARM_DEDUP_TTL
+    if policy is not None:
+        try:
+            from app.service import alarm_policy_service as policy_svc
+
+            ttl = policy_svc.effective_suppress_window(policy) or ALARM_DEDUP_TTL
+        except Exception:  # noqa: BLE001
+            ttl = ALARM_DEDUP_TTL
+
     r = get_redis_client()
     key = _dedup_key(alarm_type, device_no, fence_name, alarm_status, work_plan_id)
     # 原子抢占去重槽：set(nx=True) 在 Redis 端原子完成「判断 + 占位」，
     # 彻底杜绝并发下 `exists` → `set` 的竞态双写（#8）。并发只有一方能 nx 成功。
     try:
-        claimed = bool(r.set(key, "pending", nx=True, ex=ALARM_DEDUP_TTL))
+        claimed = bool(r.set(key, "pending", nx=True, ex=ttl))
     except Exception:  # noqa: BLE001
         # Redis 不可用时降级为直接创建（与历史行为一致：宁可产生重复也不丢告警）
         logger.warning("告警去重键抢占失败，降级为直接创建：%s", key)
@@ -86,7 +108,7 @@ def create_alarm(db: Session, **fields) -> Alarm | None:
     if not claimed:
         # 去重命中：刷新合并窗口，避免持续违规时不断重建告警
         try:
-            r.expire(key, ALARM_DEDUP_TTL)
+            r.expire(key, ttl)
         except Exception:  # noqa: BLE001
             logger.warning("告警去重键续期失败（不影响落库）")
         # 风暴抑制 v2：把被合并的重复告警计数累加到 anchor 告警，并累计当日抑制总量，
@@ -119,9 +141,21 @@ def create_alarm(db: Session, **fields) -> Alarm | None:
     ALARM_CREATED_TOTAL.labels(alarm_type=alarm_type, alarm_level=alarm.alarm_level).inc()
     # 占位成功后写入真实告警 id（供规则引擎配对自动结束时读取），仅当槽位仍存在时覆盖
     try:
-        r.set(key, str(alarm.id), xx=True, ex=ALARM_DEDUP_TTL)
+        r.set(key, str(alarm.id), xx=True, ex=ttl)
     except Exception:  # noqa: BLE001
         logger.warning("告警去重键写入失败（不影响落库）")
+    # 静默抑制（🅱 M4）：静默时段内告警已正常落库，仅跳过通知打扰
+    silenced = False
+    if policy is not None:
+        try:
+            from app.service import alarm_policy_service as policy_svc
+
+            silenced = policy_svc.in_silence(policy)
+        except Exception:  # noqa: BLE001
+            silenced = False
+    if silenced:
+        logger.info("告警 #%s 落库成功，命中策略「%s」静默时段，跳过通知", alarm.id, policy.name)
+        return alarm
     # 新告警产生 → 推送站内信（去重命中时 create_alarm 已提前返回，不会重复通知）
     try:
         from app.core.notify import notify_alarm_raised

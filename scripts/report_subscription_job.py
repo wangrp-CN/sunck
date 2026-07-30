@@ -31,6 +31,7 @@ except Exception:
     pass
 
 from app.core.database import SessionLocal  # noqa: E402
+from app.service import alarm_policy_service  # noqa: E402
 from app.service import command_service  # noqa: E402
 from app.service import report_subscription as sub_svc  # noqa: E402
 
@@ -58,6 +59,16 @@ def main() -> None:
                 f"retried={retry['retried']} exhausted={retry['exhausted']}",
                 flush=True,
             )
+
+        # 告警治理（🅱 M4）：超时未处理告警按策略升级级别 + 重新通知（含当班人）
+        esc = alarm_policy_service.run_escalations(db, now=now)
+        if esc["escalated"]:
+            print(
+                f"[escalation] {now.isoformat()} -> scanned={esc['scanned']} "
+                f"escalated={esc['escalated']} ids={esc['alarm_ids']}",
+                flush=True,
+            )
+        db.commit()
     finally:
         db.close()
 

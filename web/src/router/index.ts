@@ -157,6 +157,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "值班排班" },
       },
       {
+        path: "alarm-policies",
+        name: "alarm-policies",
+        component: () => import("@/views/AlarmPolicyView.vue"),
+        meta: { title: "告警策略" },
+      },
+      {
         path: "hazards",
         name: "hazards",
         component: () => import("@/views/HazardView.vue"),
