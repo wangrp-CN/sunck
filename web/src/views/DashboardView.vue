@@ -39,6 +39,7 @@ import { pct, tc, previewToTSV, snapTrendMaxOf } from "@/utils/snapshot";
 import MapPanel from "@/components/MapPanel.vue";
 import WorkPlanPopup from "@/components/WorkPlanPopup.vue";
 import DashboardCorrelationCompareCard from "@/components/DashboardCorrelationCompareCard.vue";
+import DashboardForecastCard from "@/components/DashboardForecastCard.vue";
 import type { AnomalyParams, DashboardStats, MapDevice, MapFence, RecentAlarm, Effectiveness, ByProjectRow, EffTrend } from "@/types";
 
 const router = useRouter();
@@ -1455,6 +1456,13 @@ onUnmounted(() => {
     <el-row :gutter="16" class="compare-row">
       <el-col :span="24">
         <DashboardCorrelationCompareCard />
+      </el-col>
+    </el-row>
+
+    <!-- Phase 5 M4：智能预测卡（项目风险 / 设备健康趋势外推 + 95% 置信带，自带 60s 刷新） -->
+    <el-row :gutter="16" class="forecast-row">
+      <el-col :span="24">
+        <DashboardForecastCard />
       </el-col>
     </el-row>
 

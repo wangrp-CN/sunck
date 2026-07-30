@@ -1,0 +1,85 @@
+// 风险预测（Phase 5 智能化预测）前端接口
+// 与后端 app/api/v1/forecasts.py 对齐：
+// - GET  /v1/forecasts          预测列表（scope_type/metric/project_id 过滤）
+// - GET  /v1/forecasts/preview  单对象序列预览（历史点+拟合+预测点+置信带）
+// - POST /v1/forecasts/recompute 重算
+import { http } from "@/utils/request";
+
+// forecast 表一行（列表项）
+export interface ForecastItem {
+  id: number;
+  project_id: number | null;
+  scope_type: "project" | "device";
+  ref_id: string;
+  name: string | null;
+  metric: "risk_index" | "health_score";
+  horizon_days: number;
+  sample_count: number;
+  last_value: number;
+  slope: number;
+  intercept: number;
+  forecast_value: number;
+  forecast_level: string | null; // risk: 高/中/低；health: 优/良/中/差
+  std_resid: number | null;
+  forecast_lower: number | null;
+  forecast_upper: number | null;
+  forecast_at: string;
+  computed_at: string;
+}
+
+// preview 的历史序列点
+export interface ForecastSeriesPoint {
+  at: string;
+  value: number;
+}
+
+// preview 的拟合结果（样本不足时为 null）
+export interface ForecastFit {
+  metric: string;
+  horizon_days: number;
+  sample_count: number;
+  last_value: number;
+  slope: number;
+  intercept: number;
+  forecast_value: number;
+  forecast_level: string | null;
+  std_resid: number;
+  forecast_lower: number;
+  forecast_upper: number;
+  forecast_at: string;
+  computed_at: string;
+}
+
+export interface ForecastPreview {
+  scope_type: string;
+  ref_id: string;
+  metric: string;
+  horizon_days: number;
+  series: ForecastSeriesPoint[];
+  forecast: ForecastFit | null;
+}
+
+export interface ListForecastParams {
+  project_id?: number;
+  scope_type?: "project" | "device";
+  metric?: "risk_index" | "health_score";
+}
+
+export function listForecasts(params: ListForecastParams = {}): Promise<{ items: ForecastItem[] }> {
+  return http<{ items: ForecastItem[] }>({ url: "/v1/forecasts/", method: "GET", params });
+}
+
+export function previewForecast(params: {
+  ref_id: string;
+  scope_type: "project" | "device";
+  horizon_days?: number;
+  history_days?: number;
+}): Promise<ForecastPreview> {
+  return http<ForecastPreview>({ url: "/v1/forecasts/preview", method: "GET", params });
+}
+
+export function recomputeForecasts(params: { project_id?: number; horizon_days?: number } = {}): Promise<
+  ForecastItem | { computed: number; skipped: number; projects: number; devices: number }
+> {
+  return http({ url: "/v1/forecasts/recompute", method: "POST", params });
+}
