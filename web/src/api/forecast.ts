@@ -83,3 +83,25 @@ export function recomputeForecasts(params: { project_id?: number; horizon_days?:
 > {
   return http({ url: "/v1/forecasts/recompute", method: "POST", params });
 }
+
+// 预测命中率报表结果（预测性预警闭环验证）
+export interface PredictionHitRate {
+  verifiable: number;
+  hits: number;
+  false_positives: number;
+  pending: number;
+  hit_rate: number | null;
+  avg_lead_hours: number | null;
+  by_metric: Record<string, { metric: string; verifiable: number; hits: number; false_positives: number; pending: number; hit_rate: number | null }>;
+  by_project: { project_id: number; verifiable: number; hits: number; false_positives: number; pending: number; hit_rate: number | null }[];
+  period_days: number;
+  generated_at: string;
+}
+
+export function getForecastHitRate(params: {
+  days?: number;
+  project_id?: number;
+  metric?: "risk_index" | "health_score";
+} = {}): Promise<PredictionHitRate> {
+  return http<PredictionHitRate>({ url: "/v1/forecasts/hit-rate", method: "GET", params });
+}

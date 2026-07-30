@@ -26,6 +26,7 @@ from app.model.command import COMMAND_STATUS_FAILED
 from app.model.project import Project
 from app.model.system import User
 from app.service import command_service
+from app.service import disposition_service as disp_svc
 from app.service import hazard_service as hz_svc
 from app.service.alarm_report import (
     build_excel,
@@ -217,6 +218,11 @@ def update_config(req: AlarmConfigUpdate, db: Session = Depends(get_db)) -> ApiR
 class AlarmHandleRequest(BaseModel):
     handle_status: str = Field(..., description="处理状态(待处理/已处理/已忽略/已确认/已消警)")
     content: str | None = Field(None, description="处置内容")
+    # 处置效果闭环：记录处置依据与结果（可选；不传则不写处置记录）
+    playbook_id: int | None = Field(None, description="采用的处置预案ID")
+    knowledge_refs: list[dict] | None = Field(None, description="采用的知识库链接[{title,url}]")
+    outcome: str | None = Field(None, description="处置结果(已解决/部分解决/未解决/误报)")
+    action_taken: str | None = Field(None, description="处置动作")
 
 
 class AlarmBatchHandleRequest(BaseModel):
@@ -301,6 +307,20 @@ def handle_alarm_endpoint(
     if result is None:
         raise HTTPException(status_code=404, detail="告警不存在")
 
+    # 处置效果闭环：若带处置结果，记录处置依据（预案/知识库链接）与结果（created_by=当前用户）
+    if req.outcome is not None:
+        disp_svc.create_disposition(
+            db,
+            scope,
+            alarm_id=alarm_id,
+            user_id=_.id,
+            outcome=req.outcome,
+            playbook_id=req.playbook_id,
+            knowledge_refs=req.knowledge_refs,
+            action_taken=req.action_taken,
+            note=req.content,
+        )
+
     # 先固化业务状态（操作员处置意图），再下发设备指令，
     # 避免「指令已下发但 commit 失败导致状态回滚」的设备-数据不一致。
     db.commit()
@@ -333,6 +353,26 @@ def handle_alarm_endpoint(
                 data=result, message="处置已保存，但消警指令下发失败，请检查设备连接"
             )
     return ApiResponse.success(data=result, message="处置已保存")
+
+
+@router.get(
+    "/{alarm_id}/dispositions",
+    summary="告警处置记录",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("alarm:list"))],
+)
+def list_alarm_dispositions(
+    alarm_id: int,
+    db: Session = Depends(get_db),
+    scope: DataScope = Depends(get_data_scope),
+) -> ApiResponse:
+    """返回某告警的全部处置记录（时间倒序），施加部门数据隔离。"""
+    stmt = select(Alarm).where(Alarm.id == alarm_id)
+    stmt = apply_data_scope(stmt, Alarm, scope)
+    if db.scalar(stmt) is None:
+        raise HTTPException(status_code=404, detail="告警不存在")
+    items = disp_svc.list_by_alarm(db, alarm_id)
+    return ApiResponse.success(data={"items": [disp_svc.to_disposition_out(d) for d in items]})
 
 
 @router.post(

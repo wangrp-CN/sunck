@@ -9,17 +9,21 @@
 - POST /recompute   重算（全部或指定项目）并返回最新结果
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
+from app.core.cache import get_cached_json, set_cached_json
 from app.core.data_scope import DataScope, apply_data_scope
-from app.core.database import get_db
-from app.core.deps import get_data_scope, require_permissions
+from app.core.database import get_db, get_read_db
+from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.responses import ApiResponse
 from app.model.forecast import Forecast
 from app.model.project import Project
+from app.model.system import User
 from app.schema.forecast import ForecastOut
 from app.service import forecast_service as svc
+from app.service import prediction_hitrate as hitrate_svc
 
 router = APIRouter(tags=["风险预测"])
 
@@ -117,3 +121,34 @@ def recompute(
     stats = svc.run_forecasts(db, horizon_days=horizon_days)
     db.commit()
     return ApiResponse.success(data=stats)
+
+
+@router.get(
+    "/hit-rate",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("forecast:view"))],
+)
+def hit_rate(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_read_db),
+    scope: DataScope = Depends(get_data_scope),
+    days: int = Query(30, ge=7, le=365, description="统计窗口(天)"),
+    project_id: int | None = Query(None, ge=1, description="按项目下钻"),
+    metric: str | None = Query(None, description="risk_index|health_score"),
+) -> ApiResponse:
+    """预测命中率报表：度量预测性预警的准确度（命中率/平均提前量/误报/待验证）。
+
+    仅统计「实际触发预测性预警的预测」（越阈），窗口已结束者计入命中率分母，
+    窗口未结束者列为 pending。数据范围隔离；复用 3s 响应缓存。
+    """
+    _cached = get_cached_json(current_user.id, request.url.path, request.url.query)
+    if _cached is not None:
+        return ApiResponse(**_cached)
+
+    data = hitrate_svc.compute_prediction_hitrate(
+        db, scope, days=days, project_id=project_id, metric=metric
+    )
+    resp = ApiResponse.success(data=data)
+    set_cached_json(current_user.id, request.url.path, request.url.query, resp.model_dump())
+    return resp

@@ -125,6 +125,20 @@ DISPATCH_SOURCES: tuple[str, ...] = (
 )
 DISPATCH_LEVELS: tuple[str, ...] = ("严重", "警告", "提示")
 
+# ---------------------------------------------------------------------------
+# 告警处置结果（处置效果闭环）
+# ---------------------------------------------------------------------------
+DISPOSITION_RESOLVED = "已解决"
+DISPOSITION_PARTIAL = "部分解决"
+DISPOSITION_UNRESOLVED = "未解决"
+DISPOSITION_FALSE_ALARM = "误报"
+DISPOSITION_OUTCOMES: tuple[str, ...] = (
+    DISPOSITION_RESOLVED,
+    DISPOSITION_PARTIAL,
+    DISPOSITION_UNRESOLVED,
+    DISPOSITION_FALSE_ALARM,
+)
+
 
 def up_topic(device_type: str) -> str:
     """设备上行主题。"""

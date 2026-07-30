@@ -40,6 +40,7 @@ import MapPanel from "@/components/MapPanel.vue";
 import WorkPlanPopup from "@/components/WorkPlanPopup.vue";
 import DashboardCorrelationCompareCard from "@/components/DashboardCorrelationCompareCard.vue";
 import DashboardForecastCard from "@/components/DashboardForecastCard.vue";
+import DashboardHitRateCard from "@/views/DashboardHitRateCard.vue";
 import type { AnomalyParams, DashboardStats, MapDevice, MapFence, RecentAlarm, Effectiveness, ByProjectRow, EffTrend } from "@/types";
 
 const router = useRouter();
@@ -1463,6 +1464,13 @@ onUnmounted(() => {
     <el-row :gutter="16" class="forecast-row">
       <el-col :span="24">
         <DashboardForecastCard />
+      </el-col>
+    </el-row>
+
+    <!-- 预测命中率卡（预测性预警闭环验证，自带 60s 刷新） -->
+    <el-row :gutter="16" class="forecast-row">
+      <el-col :span="24">
+        <DashboardHitRateCard />
       </el-col>
     </el-row>
 

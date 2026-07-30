@@ -17,6 +17,7 @@ from app.api.v1 import (
     devices,
     dicts,
     dispatch,
+    dispositions,
     duty,
     fences,
     forecasts,
@@ -48,6 +49,7 @@ api_router.include_router(machines.router, prefix="/v1/machines", tags=["大型�
 api_router.include_router(fences.router, prefix="/v1/fences", tags=["电子围栏"])
 api_router.include_router(jobs.router, prefix="/v1/jobs", tags=["作业计划"])
 api_router.include_router(alarms.router, prefix="/v1/alarms", tags=["告警管理"])
+api_router.include_router(dispositions.router, prefix="/v1/dispositions", tags=["告警处置"])
 api_router.include_router(alarm_policies.router, prefix="/v1/alarm-policies", tags=["告警策略"])
 api_router.include_router(playbooks.router, prefix="/v1/playbooks", tags=["处置预案"])
 api_router.include_router(knowledge.router, prefix="/v1/knowledge", tags=["知识库"])

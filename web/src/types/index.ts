@@ -320,6 +320,25 @@ export interface AlarmPage {
 export interface AlarmHandleRequest {
   handle_status: string;
   content?: string | null;
+  // 处置效果闭环：处置依据与结果（可选；不传则不写处置记录）
+  playbook_id?: number | null;
+  knowledge_refs?: { title: string; url: string }[] | null;
+  outcome?: string | null;
+  action_taken?: string | null;
+}
+
+export interface AlarmDisposition {
+  id: number;
+  alarm_id: number;
+  project_id: number | null;
+  handler_id: number | null;
+  playbook_id: number | null;
+  knowledge_refs: { title: string; url: string }[];
+  outcome: string | null;
+  action_taken: string | null;
+  note: string | null;
+  resolved_at: string | null;
+  created_at: string | null;
 }
 
 // ===================== 媒体管理 =====================

@@ -1,7 +1,12 @@
 // 告警管理 API 封装（处置 + 配置 + 报表/导出）；列表复用 @/api/realtime 的 fetchAlarms
 import request, { http } from "@/utils/request";
 import type { Hazard } from "@/api/hazard";
-import type { Alarm, AlarmConfig, AlarmHandleRequest } from "@/types";
+import type {
+  Alarm,
+  AlarmConfig,
+  AlarmDisposition,
+  AlarmHandleRequest,
+} from "@/types";
 
 // 处置告警（处理/忽略/确认/已消警）
 export function handleAlarm(
@@ -12,6 +17,16 @@ export function handleAlarm(
     url: `/v1/alarms/${id}/handle`,
     method: "POST",
     data: req,
+  });
+}
+
+// 告警处置记录列表（处置效果闭环）
+export function getAlarmDispositions(
+  id: number,
+): Promise<{ items: AlarmDisposition[] }> {
+  return http<{ items: AlarmDisposition[] }>({
+    url: `/v1/alarms/${id}/dispositions`,
+    method: "GET",
   });
 }
 

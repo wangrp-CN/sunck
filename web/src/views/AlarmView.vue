@@ -17,6 +17,7 @@ import {
   fetchAlarmTrend,
   fetchSnapshotPreview,
   getAlarmConfig,
+  getAlarmDispositions,
   handleAlarm,
   updateAlarmConfig,
   type AlarmReportParams,
@@ -44,7 +45,7 @@ import WorkPlanPopup from "@/components/WorkPlanPopup.vue";
 import MediaUpload from "@/components/MediaUpload.vue";
 import DispatchCreateDialog from "@/components/DispatchCreateDialog.vue";
 import type { DispatchPreset } from "@/api/dispatch";
-import type { Alarm, AlarmConfig, MapDevice, MapFence, Project } from "@/types";
+import type { Alarm, AlarmConfig, AlarmDisposition, MapDevice, MapFence, Project } from "@/types";
 import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
@@ -313,20 +314,68 @@ function rowClassName({ row }: { row: any }) {
 const handleVisible = ref(false);
 const handling = ref(false);
 const handleMedia = ref<string[]>([]);
-const handleForm = reactive<{ id: number; handle_status: string; content: string }>({
+const handleForm = reactive<{
+  id: number;
+  handle_status: string;
+  content: string;
+  playbook_id: number | null;
+  outcome: string | null;
+  action_taken: string | null;
+}>({
   id: 0,
   handle_status: "已处理",
   content: "",
+  playbook_id: null,
+  outcome: null,
+  action_taken: null,
 });
+// 处置时采用的知识库链接（多选，提交时映射回 {title,url}）
+const kbRefKeys = ref<string[]>([]);
+// 处置记录历史（处置效果闭环）
+const dispositions = ref<AlarmDisposition[]>([]);
+const loadingDisp = ref(false);
+async function loadDispositions(alarmId: number) {
+  dispositions.value = [];
+  loadingDisp.value = true;
+  try {
+    const res = await getAlarmDispositions(alarmId);
+    dispositions.value = res.items || [];
+  } catch {
+    dispositions.value = [];
+  } finally {
+    loadingDisp.value = false;
+  }
+}
 function openHandle(row: any) {
   handleForm.id = row.id;
   handleForm.handle_status = row.handle_status === "待处理" ? "已处理" : row.handle_status;
   handleForm.content = row.handle_content || "";
+  handleForm.playbook_id = null;
+  handleForm.outcome = null;
+  handleForm.action_taken = null;
+  kbRefKeys.value = [];
   handleMedia.value = Array.isArray(row.media_urls) ? [...row.media_urls] : [];
   // 联动推荐处置预案（知识库）：按本告警的项目/类型/级别匹配
   loadRecommendedPlaybooks(row);
+  loadDispositions(row.id);
   handleVisible.value = true;
 }
+// 知识库链接可选项：合并各预案的「预案链接」与「知识库自动关联」
+const kbRefOptions = computed(() => {
+  const map = new Map<string, { key: string; title: string; url: string }>();
+  for (const pb of recommendedPlaybooks.value) {
+    const groups = [pb.references || [], pb.suggested_references || []];
+    for (const list of groups) {
+      for (const r of list) {
+        if (r && r.url && !map.has(r.url)) {
+          map.set(r.url, { key: r.url, title: r.title || r.url, url: r.url });
+        }
+      }
+    }
+  }
+  return [...map.values()];
+});
+const OUTCOME_OPTIONS = ["已解决", "部分解决", "未解决", "误报"];
 
 // ----- 处置预案联动推荐（🅱 M5 知识库联动）-----
 const recommendedPlaybooks = ref<Playbook[]>([]);
@@ -364,9 +413,16 @@ function mediaType(url: string): "image" | "video" {
 async function submitHandle() {
   handling.value = true;
   try {
+    const knowledge_refs = kbRefOptions.value
+      .filter((o) => kbRefKeys.value.includes(o.key))
+      .map((o) => ({ title: o.title, url: o.url }));
     await handleAlarm(handleForm.id, {
       handle_status: handleForm.handle_status,
       content: handleForm.content || null,
+      playbook_id: handleForm.playbook_id,
+      knowledge_refs: knowledge_refs.length ? knowledge_refs : null,
+      outcome: handleForm.outcome,
+      action_taken: handleForm.action_taken,
     });
     ElMessage.success("处置已保存");
     handleVisible.value = false;
@@ -1065,6 +1121,29 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
             placeholder="处置说明（可选）"
           />
         </el-form-item>
+        <el-form-item label="处置预案" v-if="recommendedPlaybooks.length">
+          <el-select v-model="handleForm.playbook_id" placeholder="选择采用的处置预案（可选）" clearable style="width: 100%">
+            <el-option v-for="pb in recommendedPlaybooks" :key="pb.id" :label="pb.name" :value="pb.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="知识库链接" v-if="kbRefOptions.length">
+          <el-select v-model="kbRefKeys" multiple placeholder="采用的知识库链接（可选）" style="width: 100%">
+            <el-option v-for="o in kbRefOptions" :key="o.key" :label="o.title" :value="o.key" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="处置结果">
+          <el-select v-model="handleForm.outcome" placeholder="选择处置结果（可选）" clearable style="width: 100%">
+            <el-option v-for="o in OUTCOME_OPTIONS" :key="o" :label="o" :value="o" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="处置动作">
+          <el-input
+            v-model="handleForm.action_taken"
+            type="textarea"
+            :rows="2"
+            placeholder="本次实际采取的操作（可选）"
+          />
+        </el-form-item>
         <el-form-item label="现场媒体">
           <MediaUpload
             v-model="handleMedia"
@@ -1117,6 +1196,32 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
               </div>
             </el-collapse-item>
           </el-collapse>
+        </div>
+        <el-divider>处置记录（处置效果闭环）</el-divider>
+        <div v-loading="loadingDisp" class="disp-panel">
+          <el-empty v-if="!loadingDisp && dispositions.length === 0" :image-size="60" description="暂无处置记录" />
+          <el-timeline v-else>
+            <el-timeline-item
+              v-for="d in dispositions"
+              :key="d.id"
+              :timestamp="d.created_at || ''"
+              placement="top"
+            >
+              <div class="disp-item">
+                <el-tag v-if="d.outcome" size="small" :type="d.outcome === '已解决' ? 'success' : d.outcome === '误报' ? 'info' : 'warning'">
+                  {{ d.outcome }}
+                </el-tag>
+                <span v-if="d.playbook_id" class="disp-pb">预案 #{{ d.playbook_id }}</span>
+                <span v-if="d.action_taken" class="disp-action">{{ d.action_taken }}</span>
+              </div>
+              <div v-if="d.knowledge_refs && d.knowledge_refs.length" class="disp-refs">
+                <a v-for="(r, i) in d.knowledge_refs" :key="i" :href="r.url" target="_blank" rel="noopener" class="rec-ref">
+                  {{ r.title || r.url }}
+                </a>
+              </div>
+              <div v-if="d.note" class="disp-note">{{ d.note }}</div>
+            </el-timeline-item>
+          </el-timeline>
         </div>
       </el-form>
       <template #footer>
@@ -1929,4 +2034,10 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
 .rec-refs-label { color: #909399; }
 .rec-ref { margin-right: 12px; color: #409eff; text-decoration: none; }
 .rec-ref:hover { text-decoration: underline; }
+.disp-panel { margin-top: 4px; }
+.disp-item { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.disp-pb { color: #909399; font-size: 12px; }
+.disp-action { color: #606266; font-size: 13px; }
+.disp-refs { margin: 4px 0; }
+.disp-note { color: #909399; font-size: 12px; }
 </style>

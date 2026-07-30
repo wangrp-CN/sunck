@@ -25,6 +25,7 @@ from app.model.alarm import Alarm
 from app.model.alarm_policy import AlarmPolicy
 from app.model.device import AntiIntrusionDevice, LocateDevice, TrainApproachDevice
 from app.model.dispatch import DispatchOrder
+from app.model.disposition import AlarmDisposition
 from app.model.duty_roster import DutyRoster
 from app.model.fence import ElectronicFence
 from app.model.forecast import Forecast
@@ -151,6 +152,7 @@ _MODEL_DEPT_LINK: dict[type, str] = {
     AlarmPolicy: VIA_PROJECT,
     Playbook: VIA_PROJECT,
     KnowledgeArticle: VIA_PROJECT,
+    AlarmDisposition: VIA_PROJECT,
 }
 
 
