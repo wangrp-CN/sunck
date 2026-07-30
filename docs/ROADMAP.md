@@ -34,7 +34,7 @@
 | ⑪ | **多项目对比大屏** | 全栈 | P3 | ✅ 已完成 | `GET /v1/dashboard/project-compare` 风险分降序 |
 | ⑫ | **设备健康 / 运维** | 全栈 | P3 | ✅ 已完成 | `GET /v1/devices/health` 在线率/健康分 |
 | ⑬ | **闭环效能度量** | 全栈 | P3 | ✅ 已完成 | 大屏「闭环效能度量」卡：风暴抑制率/告警MTTR/派单SLA/隐患闭环率/异常引擎贡献占比（窗口可调）；`GET /v1/dashboard/effectiveness` + `effectiveness_service` |
-| ⑭ | **🅱 告警治理与值班体系** | 全栈 | P4 | 🟢 进行中(M1-M4✅, M5 可后置) | 值班排班模型+CRUD接口+权限(M1)；派单自动兜底当班人(M3，后端+前端预填)；前端值班页+菜单(M2)；**M4 告警收敛/抑制/升级策略**(AlarmPolicy，`create_alarm` 收敛窗口覆盖+静默免打扰+超时升级重通知+前端策略配置页)。缺口：**M5 处置预案/知识库联动**(Playbook，可后置) |
+| ⑭ | **🅱 告警治理与值班体系** | 全栈 | P4 | ✅ 全部交付(M1-M5) | 值班排班模型+CRUD接口+权限(M1)；派单自动兜底当班人(M3，后端+前端预填)；前端值班页+菜单(M2)；**M4 告警收敛/抑制/升级策略**(AlarmPolicy)；**M5 处置预案/知识库联动**(Playbook，6 类 mock 预案+告警处置推荐面板闭环) |
 
 图例：✅ 已完成 · 🟡 进行中 · 🔲 尚未启动
 
@@ -90,8 +90,13 @@
   - **抑制（静默免打扰）**：`in_silence(policy)` 按北京时间 `silence_start~silence_end`（支持跨天）判定；静默时段内告警仍落库但跳过站内信通知（不丢数据）。
   - **升级**：`run_escalations(db)` 扫描「待处理 + 超时 + 未升级过（`escalated_at` 留痕幂等）」的告警，按策略升级 `alarm_level` 并依 `escalate_channels` 重通知（含 `resolve_on_duty` 当班人姓名）；由 `scripts/report_subscription_job.py` 周期任务串联，另提供 `POST /v1/alarm-policies/run-escalations` 手动触发端点。
   - 交付：`AlarmPolicy` 模型 + 迁移 `dd4e5f6a7b8c`（含 `alarm.escalated_at` 列）+ `app/service/alarm_policy_service.py`（CRUD/匹配/静默/升级）+ `app/api/v1/alarm_policies.py`（列表/`/meta`/手动升级/详情/增删改）+ 路由挂载 + 权限 `alarm_policy:list`/`alarm_policy:manage`（入 `rbac_seed` 的 alarm 子树，授 monitor/project_manager/超管）；前端 `api/alarm-policy.ts` + `AlarmPolicyView.vue`（列表/新增编辑/静默与升级配置/`立即扫描升级`）+ 路由菜单。测试 `tests/test_alarm_policy.py` 8 用例全绿，数据库无回归（317 passed / 1 skipped）；前端 173 测全过 + vue-tsc 0 错。
-- **M5 处置预案/知识库联动（🔲 可后置）**：`Playbook` 模型 + 告警关联预案 + 前端联动，闭环处置指导。
-- **M5 处置预案/知识库联动（🔲 可后置）**：`Playbook` 模型 + 告警关联预案 + 前端联动，闭环处置指导。
+- **M5 处置预案/知识库联动（✅ 2026-07-30）**：`Playbook` 模型 + 按告警自动推荐处置预案 + 前端联动，闭环处置指导（mock 预置 6 类预案，可一键替换真实数据）。
+  - `Playbook` 模型（含 `steps` 处置步骤 JSON、`references` 知识库链接 JSON：title+url、`alarm_type`/`alarm_level` 关联维度、`project_id` 项目维度、`summary`/`trigger_condition`/`tags`/`owner_role`/`est_minutes`）+ 迁移 `ee5f6a7b8c9d`（接 `dd4e5f6a7b8c`；时间戳带 `server_default=now()`）。
+  - `playbook_service`：`resolve_playbooks(db, scope, project_id, alarm_type, alarm_level, limit)` 按「项目+类型+级别 > 项目+类型 > 项目通配 > 全局+类型+级别 > 全局+类型 > 全局通配」特异性取最新启用预案；`recommend_for_alarm(db, alarm_id)` 按告警自身维度推荐；CRUD（含数据范围过滤 + 逻辑删）。
+  - `app/api/v1/playbooks.py`：`GET /`(过滤)/`/meta`(告警类型/级别字典，对接 `predictive_alert`)/`/recommend`(按维度)/`/recommend-by-alarm/{id}`(按告警)/详情/`POST`/`PUT`/`DELETE` + `rbac_seed` 权限 `playbook:list`/`playbook:manage`（入 alarm 子树，授 monitor/project_manager/超管）。
+  - 数据播种：`app/core/playbook_seed.py` 幂等预置 6 类告警处置预案（围栏越界/位移超限/设备离线/列车接近/异常检测/预测性预警），经 `scripts/seed_playbooks.py` 与 `scripts/seed_rbac.py` 串联执行。
+  - 前端：`api/playbook.ts` + `PlaybookView.vue`（列表/新增编辑/步骤与知识库链接可视化编辑/meta 联动/一键扫描推荐预览）+ 路由菜单「处置预案」；`AlarmView.vue` 处置对话框新增「相关处置预案」面板——打开处置时按 `alarm_type/alarm_level/project_id` 拉取推荐预案并展开步骤，处置指导闭环。
+  - 测试：`tests/test_playbook.py` 4 用例（CRUD/匹配优先级/JSON 编解码/推荐端点/预置预案存在性）全绿，全量 **321 passed / 1 skipped / 0 failed**；前端 `PlaybookView.spec.ts` 4 用例，全量 **177 passed** + vue-tsc 0 错。
 - **🅰 双厂商抽象代码（✅ 2026-07-29）**：`RealSms/VoiceGateway` 已实现**双厂商（阿里云/腾讯云）SDK 适配**——按 `sms_provider`/`voice_provider`(`aliyun|tencent`) 分派 `_aliyun_*`/`_tencent_*` 真实调用，回执映射为统一 `GatewayResult`；厂商 SDK **懒加载导入**（模块导入期不依赖任何第三方库，无 SDK 也能启动，仅真实下发不可用，返回 `SDK_MISSING`）；凭据缺失/厂商未配→`not_configured`，调用异常→`error`，绝不中断业务。配置新增 `sms_app_id/sms_template_id/tencent_region/voice_template_code/voice_app_id/voice_template_id/voice_called_show_number` 及 `.env.example` 双厂商段；`tests/test_notifications_gateway.py` 增 4 用例（SDK 缺失优雅降级/厂商未配/BAD_PROVIDER/缺模板）共 12 绿。切真实网关=配 `SMS_MODE=real`+凭据+`pip install` 对应 SDK，业务零改动。
 - **Phase 5 · 智能化预测（✅ 全部交付，M1-M4）**：从"阈值告警"升级到"预测性预警"。
   - **M1 预测基座（✅ 2026-07-29）**：`Forecast` 模型（唯一键 scope_type+ref_id+metric+horizon_days，upsert 只留最新；VIA_PROJECT 数据隔离）+ 迁移 `bb2c3d4e5f6a`；`forecast_service` 纯 Python OLS 对 `risk_index` 日序列外推（`forecast_horizon_days=7`/`forecast_history_days=30`/`forecast_min_points=3` 均入 config），预测值截断 0-100 并按 scoring 阈值给"高/中/低"预测级别；`GET /v1/forecasts` + `POST /v1/forecasts/recompute`（forecast:view，已入 rbac_seed 并授 project_manager/monitor）；`snapshot_job` 在异常检测后串联 `run_forecasts`；`tests/test_forecast.py` 6 用例（OLS 纯函数/上升序列/幂等 upsert/样本不足降级/端点）。样本 < 3 点自动跳过，每日快照跑满 3 天后自动出预测。

@@ -163,6 +163,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "告警策略" },
       },
       {
+        path: "playbooks",
+        name: "playbooks",
+        component: () => import("@/views/PlaybookView.vue"),
+        meta: { title: "处置预案" },
+      },
+      {
         path: "hazards",
         name: "hazards",
         component: () => import("@/views/HazardView.vue"),

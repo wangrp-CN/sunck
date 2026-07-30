@@ -32,6 +32,7 @@ from app.model.hazard import Hazard
 from app.model.inspection import InspectionTask
 from app.model.job import WorkPlan
 from app.model.person import Machine, Person
+from app.model.playbook import Playbook
 from app.model.project import Project
 from app.model.system import Department, User, role_dept
 from app.model.video import VideoChannel
@@ -147,6 +148,7 @@ _MODEL_DEPT_LINK: dict[type, str] = {
     DutyRoster: VIA_PROJECT,
     Forecast: VIA_PROJECT,
     AlarmPolicy: VIA_PROJECT,
+    Playbook: VIA_PROJECT,
 }
 
 

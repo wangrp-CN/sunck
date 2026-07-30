@@ -137,6 +137,10 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
       <el-icon><Switch /></el-icon>
       <span>告警策略</span>
     </el-menu-item>
+    <el-menu-item index="/playbooks">
+      <el-icon><Notebook /></el-icon>
+      <span>处置预案</span>
+    </el-menu-item>
     <el-menu-item index="/hazards">
       <el-icon><Bell /></el-icon>
       <span>隐患治理</span>

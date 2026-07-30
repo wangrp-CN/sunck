@@ -25,6 +25,7 @@ from app.model import (  # noqa: F401
     notification,
     notification_delivery,
     person,
+    playbook,
     project,
     realtime,
     report_subscription,

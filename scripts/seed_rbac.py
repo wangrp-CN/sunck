@@ -15,6 +15,7 @@ if _PROJECT_ROOT not in sys.path:
     sys.path.insert(0, _PROJECT_ROOT)
 
 from app.config import settings  # noqa: E402
+from app.core.playbook_seed import seed_playbooks  # noqa: E402
 from app.core.rbac_seed import seed_rbac  # noqa: E402
 
 
@@ -28,6 +29,10 @@ def main() -> None:
     print(
         f"  超级管理员账号：{settings.default_admin_username} / {settings.default_admin_password}"
     )
+
+    pb = seed_playbooks()
+    print("处置预案播种完成：")
+    print(f"  新增：{pb['created']}  已存在跳过：{pb['skipped']}")
 
 
 if __name__ == "__main__":

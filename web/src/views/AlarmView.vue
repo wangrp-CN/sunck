@@ -31,6 +31,7 @@ import { formatPeriodLabel, granularityLabel } from "@/utils/period";
 import { fetchProjects } from "@/api/project";
 import { fetchFences } from "@/api/fence";
 import { fetchPersons } from "@/api/person";
+import { recommendPlaybooks, type Playbook } from "@/api/playbook";
 import type { Person } from "@/types";
 import { useRouter } from "vue-router";
 import { putAlarmMedia } from "@/api/media";
@@ -322,7 +323,29 @@ function openHandle(row: any) {
   handleForm.handle_status = row.handle_status === "待处理" ? "已处理" : row.handle_status;
   handleForm.content = row.handle_content || "";
   handleMedia.value = Array.isArray(row.media_urls) ? [...row.media_urls] : [];
+  // 联动推荐处置预案（知识库）：按本告警的项目/类型/级别匹配
+  loadRecommendedPlaybooks(row);
   handleVisible.value = true;
+}
+
+// ----- 处置预案联动推荐（🅱 M5 知识库联动）-----
+const recommendedPlaybooks = ref<Playbook[]>([]);
+const loadingRec = ref(false);
+async function loadRecommendedPlaybooks(row: any) {
+  recommendedPlaybooks.value = [];
+  loadingRec.value = true;
+  try {
+    recommendedPlaybooks.value = await recommendPlaybooks({
+      project_id: row.project_id || undefined,
+      alarm_type: row.alarm_type || undefined,
+      alarm_level: row.alarm_level || undefined,
+      limit: 5,
+    });
+  } catch {
+    recommendedPlaybooks.value = [];
+  } finally {
+    loadingRec.value = false;
+  }
 }
 // 媒体变更即时持久化到告警（前端维护列表，后端整体替换）
 async function onMediaChange(list: string[]) {
@@ -1049,6 +1072,36 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
             @change="onMediaChange"
           />
         </el-form-item>
+        <el-divider>相关处置预案（知识库联动）</el-divider>
+        <div v-loading="loadingRec" class="rec-panel">
+          <el-empty v-if="!loadingRec && recommendedPlaybooks.length === 0" :image-size="60" description="暂无可匹配的处置预案" />
+          <el-collapse v-else :model-value="recommendedPlaybooks.map((p) => p.id)">
+            <el-collapse-item v-for="pb in recommendedPlaybooks" :key="pb.id" :name="pb.id">
+              <template #title>
+                <span class="rec-title">
+                  <el-tag size="small" type="primary">{{ pb.project_name || "全局" }}</el-tag>
+                  <span class="rec-name">{{ pb.name }}</span>
+                  <span class="rec-est" v-if="pb.est_minutes">约 {{ pb.est_minutes }} 分钟</span>
+                </span>
+              </template>
+              <p class="rec-summary">{{ pb.summary }}</p>
+              <ol class="rec-steps">
+                <li v-for="(s, i) in pb.steps" :key="i">{{ s }}</li>
+              </ol>
+              <div v-if="pb.references && pb.references.length" class="rec-refs">
+                <span class="rec-refs-label">知识库：</span>
+                <a
+                  v-for="(r, i) in pb.references"
+                  :key="i"
+                  :href="r.url"
+                  target="_blank"
+                  rel="noopener"
+                  class="rec-ref"
+                >{{ r.title || r.url }}</a>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
       </el-form>
       <template #footer>
         <el-button @click="handleVisible = false">取消</el-button>
@@ -1848,4 +1901,16 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
   color: #909399;
   margin-left: 6px;
 }
+/* 🅱 M5 处置预案联动推荐面板 */
+.rec-panel { margin-top: 4px; }
+.rec-title { display: inline-flex; align-items: center; gap: 8px; }
+.rec-name { font-weight: 600; color: #303133; }
+.rec-est { color: #909399; font-size: 12px; }
+.rec-summary { color: #606266; margin: 4px 0 8px; }
+.rec-steps { margin: 0 0 8px; padding-left: 20px; }
+.rec-steps li { margin-bottom: 4px; line-height: 1.5; }
+.rec-refs { font-size: 13px; }
+.rec-refs-label { color: #909399; }
+.rec-ref { margin-right: 12px; color: #409eff; text-decoration: none; }
+.rec-ref:hover { text-decoration: underline; }
 </style>
