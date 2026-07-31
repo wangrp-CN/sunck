@@ -35,6 +35,7 @@ class ForecastOut(BaseModel):
     std_resid: float | None = None
     forecast_lower: float | None = None
     forecast_upper: float | None = None
+    model_version: str = "ols_v1"
     forecast_at: datetime
     computed_at: datetime
 

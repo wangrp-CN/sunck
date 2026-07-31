@@ -21,7 +21,6 @@
 
 from __future__ import annotations
 
-import math
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -37,9 +36,13 @@ from app.model.device import AntiIntrusionDevice, LocateDevice, TrainApproachDev
 from app.model.forecast import Forecast
 from app.model.project import Project
 from app.model.snapshot import RiskHealthSnapshot
+from app.service import forecast_models as models
 
 METRIC_RISK_INDEX = "risk_index"
 METRIC_HEALTH_SCORE = "health_score"
+
+#: 默认上线模型（保持 OLS 不变；hw_v1 仅作 A/B 对照，可通过 recompute?model=hw_v1 切换）
+DEFAULT_MODEL = models.PRIMARY_MODEL
 
 #: 指标 → 快照取值列
 _METRIC_COLUMNS = {
@@ -90,43 +93,18 @@ def _ols(points: list[tuple[float, float]]) -> tuple[float, float]:
     return slope, intercept
 
 
-def _fit_and_forecast(series: list[tuple[datetime, float]], metric: str, horizon: int) -> dict:
-    """对时序做 OLS 拟合并外推，返回公共字段字典（不含归属信息）。
+def _fit_and_forecast(
+    series: list[tuple[datetime, float]],
+    metric: str,
+    horizon: int,
+    model_version: str = DEFAULT_MODEL,
+) -> dict | None:
+    """对时序按指定模型拟合并外推，返回公共字段字典（含 model_version，不含归属信息）。
 
-    置信带：残差标准差 std = sqrt(SSE/(n-2))（n≤2 时为 0），
-    band = 1.96*std，上下界截断 [0,100]。
+    模型调度见 :mod:`app.service.forecast_models`（ols_v1 / hw_v1）。样本不足时
+    返回 None（由调用方跳过落库）。
     """
-    t0 = series[0][0]
-    points = [((at - t0).total_seconds() / 86400.0, val) for at, val in series]
-    slope, intercept = _ols(points)
-
-    n = len(points)
-    if n > 2:
-        sse = sum((y - (slope * x + intercept)) ** 2 for x, y in points)
-        std = math.sqrt(sse / (n - 2))
-    else:
-        std = 0.0
-
-    last_at, last_value = series[-1]
-    x_target = (last_at - t0).total_seconds() / 86400.0 + horizon
-    raw_pred = slope * x_target + intercept
-    forecast_value = _clamp(raw_pred)
-    band = _Z95 * std
-    return {
-        "metric": metric,
-        "horizon_days": horizon,
-        "sample_count": n,
-        "last_value": last_value,
-        "slope": round(slope, 4),
-        "intercept": round(intercept, 4),
-        "forecast_value": round(forecast_value, 2),
-        "forecast_level": _level_for(metric, forecast_value),
-        "std_resid": round(std, 4),
-        "forecast_lower": round(_clamp(raw_pred - band), 2),
-        "forecast_upper": round(_clamp(raw_pred + band), 2),
-        "forecast_at": last_at + timedelta(days=horizon),
-        "computed_at": datetime.now(timezone.utc),
-    }
+    return models.forecast_by_model(model_version, series, metric, horizon)
 
 
 # ---------------------------------------------------------------------------
@@ -189,6 +167,7 @@ def compute_forecast(
     *,
     horizon_days: int | None = None,
     history_days: int | None = None,
+    model_version: str = DEFAULT_MODEL,
 ) -> dict | None:
     """单个项目的 risk_index 预测；样本不足返回 None（不落库）。"""
     horizon = horizon_days or settings.forecast_horizon_days
@@ -196,7 +175,9 @@ def compute_forecast(
     series = _load_series(db, "project", str(project_id), METRIC_RISK_INDEX, days=history)
     if len(series) < settings.forecast_min_points:
         return None
-    data = _fit_and_forecast(series, METRIC_RISK_INDEX, horizon)
+    data = _fit_and_forecast(series, METRIC_RISK_INDEX, horizon, model_version=model_version)
+    if data is None:
+        return None
     data.update(project_id=project_id, scope_type="project", ref_id=str(project_id))
     return data
 
@@ -207,6 +188,7 @@ def compute_device_forecast(
     *,
     horizon_days: int | None = None,
     history_days: int | None = None,
+    model_version: str = DEFAULT_MODEL,
 ) -> dict | None:
     """单个设备的 health_score 预测（M2）；样本不足返回 None。"""
     horizon = horizon_days or settings.forecast_horizon_days
@@ -214,7 +196,9 @@ def compute_device_forecast(
     series = _load_series(db, "device", device_no, METRIC_HEALTH_SCORE, days=history)
     if len(series) < settings.forecast_min_points:
         return None
-    data = _fit_and_forecast(series, METRIC_HEALTH_SCORE, horizon)
+    data = _fit_and_forecast(series, METRIC_HEALTH_SCORE, horizon, model_version=model_version)
+    if data is None:
+        return None
     data.update(project_id=_device_project_id(db, device_no), scope_type="device", ref_id=device_no)
     return data
 
@@ -234,6 +218,7 @@ def preview_forecast(
     *,
     horizon_days: int | None = None,
     history_days: int | None = None,
+    model_version: str = DEFAULT_MODEL,
 ) -> dict | None:
     """序列预览（M2，供前端画图）：历史点 + 拟合参数 + 预测点 + 置信带。
 
@@ -252,10 +237,11 @@ def preview_forecast(
         "forecast": None,
     }
     if len(series) >= settings.forecast_min_points:
-        fit = _fit_and_forecast(series, metric, horizon)
-        fit["forecast_at"] = fit["forecast_at"].isoformat()
-        fit["computed_at"] = fit["computed_at"].isoformat()
-        out["forecast"] = fit
+        fit = _fit_and_forecast(series, metric, horizon, model_version=model_version)
+        if fit is not None:
+            fit["forecast_at"] = fit["forecast_at"].isoformat()
+            fit["computed_at"] = fit["computed_at"].isoformat()
+            out["forecast"] = fit
     return out
 
 
@@ -286,7 +272,9 @@ def upsert_forecast(db: Session, data: dict, name: str | None = None) -> Forecas
     return obj
 
 
-def run_forecasts(db: Session, horizon_days: int | None = None) -> dict:
+def run_forecasts(
+    db: Session, horizon_days: int | None = None, model_version: str = DEFAULT_MODEL
+) -> dict:
     """全量预测（项目 risk_index + 设备 health_score），批量加载防 N+1。
 
     不 commit，由调用方提交。返回 {computed, skipped, projects, devices}。
@@ -306,7 +294,10 @@ def run_forecasts(db: Session, horizon_days: int | None = None) -> dict:
         if len(series) < min_pts:
             skipped += 1
             continue
-        data = _fit_and_forecast(series, METRIC_RISK_INDEX, horizon)
+        data = _fit_and_forecast(series, METRIC_RISK_INDEX, horizon, model_version=model_version)
+        if data is None:
+            skipped += 1
+            continue
         data.update(project_id=pid, scope_type="project", ref_id=str(pid))
         upsert_forecast(db, data, name=pname)
         computed += 1
@@ -325,7 +316,10 @@ def run_forecasts(db: Session, horizon_days: int | None = None) -> dict:
         if len(series) < min_pts:
             skipped += 1
             continue
-        data = _fit_and_forecast(series, METRIC_HEALTH_SCORE, horizon)
+        data = _fit_and_forecast(series, METRIC_HEALTH_SCORE, horizon, model_version=model_version)
+        if data is None:
+            skipped += 1
+            continue
         data.update(project_id=dpid, scope_type="device", ref_id=dno)
         upsert_forecast(db, data, name=dname)
         computed += 1
@@ -344,23 +338,30 @@ def run_forecasts(db: Session, horizon_days: int | None = None) -> dict:
 
 
 #: 越阈判据 → 告警级别。risk_index 仅「高」触发；health_score「中」→警告、「差」→严重。
-def _predictive_breach(fc: Forecast) -> tuple[bool, str | None]:
-    """判断预测是否越阈，并返回应生成的告警级别。
+def _breach_for(
+    metric: str, forecast_value: float, forecast_level: str | None
+) -> tuple[bool, str | None]:
+    """纯函数版越阈判据：给定指标/预测值/级别，返回 (是否触发预警, 告警级别)。
 
     - risk_index：预测级别「高」（forecast_value >= RISK_LEVEL_HIGH=60）触发，级别「警告」；
     - health_score：预测级别「中」→「警告」、「差」→「严重」；优/良不触发。
     """
-    if fc.metric == METRIC_RISK_INDEX:
-        if fc.forecast_level == "高":
+    if metric == METRIC_RISK_INDEX:
+        if forecast_level == "高":
             return True, "警告"
         return False, None
-    if fc.metric == METRIC_HEALTH_SCORE:
-        if fc.forecast_level == "差":
+    if metric == METRIC_HEALTH_SCORE:
+        if forecast_level == "差":
             return True, "严重"
-        if fc.forecast_level == "中":
+        if forecast_level == "中":
             return True, "警告"
         return False, None
     return False, None
+
+
+def _predictive_breach(fc: Forecast) -> tuple[bool, str | None]:
+    """判断预测是否越阈，并返回应生成的告警级别（封装 :func:`_breach_for`）。"""
+    return _breach_for(fc.metric, fc.forecast_value, fc.forecast_level)
 
 
 def run_predictive_alerts(db: Session) -> dict[str, Any]:

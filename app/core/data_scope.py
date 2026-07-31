@@ -29,6 +29,7 @@ from app.model.disposition import AlarmDisposition
 from app.model.duty_roster import DutyRoster
 from app.model.fence import ElectronicFence
 from app.model.forecast import Forecast
+from app.model.forecast_backtest import ForecastBacktest
 from app.model.hazard import Hazard
 from app.model.inspection import InspectionTask
 from app.model.job import WorkPlan
@@ -149,6 +150,7 @@ _MODEL_DEPT_LINK: dict[type, str] = {
     DispatchOrder: VIA_PROJECT,
     DutyRoster: VIA_PROJECT,
     Forecast: VIA_PROJECT,
+    ForecastBacktest: VIA_PROJECT,
     AlarmPolicy: VIA_PROJECT,
     Playbook: VIA_PROJECT,
     KnowledgeArticle: VIA_PROJECT,

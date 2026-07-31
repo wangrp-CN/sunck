@@ -105,3 +105,77 @@ export function getForecastHitRate(params: {
 } = {}): Promise<PredictionHitRate> {
   return http<PredictionHitRate>({ url: "/v1/forecasts/hit-rate", method: "GET", params });
 }
+
+// 回测摘要（POST /v1/forecasts/backtest 返回）
+export interface BacktestSummary {
+  models: string[];
+  anchors: number;
+  rows: number;
+  by_model: Record<string, { rows: number; hits: number; false_positives: number }>;
+  horizon_days: number;
+}
+
+export function runForecastBacktest(params: {
+  days?: number;
+  horizon_days?: number;
+} = {}): Promise<BacktestSummary> {
+  return http<BacktestSummary>({ url: "/v1/forecasts/backtest", method: "POST", params });
+}
+
+// A/B 命中率报表（GET /v1/forecasts/hit-rate/ab 返回）
+export interface ABModelRow {
+  model_version: string;
+  label: string;
+  verifiable: number;
+  hits: number;
+  false_positives: number;
+  pending: number;
+  hit_rate: number | null;
+  false_positive_rate: number | null;
+  avg_lead_hours: number | null;
+  by_metric: Record<
+    string,
+    {
+      metric: string;
+      verifiable: number;
+      hits: number;
+      false_positives: number;
+      pending: number;
+      hit_rate: number | null;
+    }
+  >;
+}
+
+export interface ABComparison {
+  baseline: string;
+  baseline_label: string;
+  challenger: string;
+  challenger_label: string;
+  hit_rate_baseline: number | null;
+  hit_rate_challenger: number | null;
+  hit_rate_delta: number | null;
+  hit_rate_delta_pct: number | null;
+  false_positive_rate_baseline: number | null;
+  false_positive_rate_challenger: number | null;
+  false_positive_rate_delta: number | null;
+  avg_lead_hours_baseline: number | null;
+  avg_lead_hours_challenger: number | null;
+  lead_delta_hours: number | null;
+  better: boolean;
+  summary: string;
+}
+
+export interface ABHitRate {
+  period_days: number;
+  generated_at: string;
+  models: ABModelRow[];
+  comparison: ABComparison | null;
+}
+
+export function getForecastABHitRate(params: {
+  days?: number;
+  project_id?: number;
+  metric?: "risk_index" | "health_score";
+} = {}): Promise<ABHitRate> {
+  return http<ABHitRate>({ url: "/v1/forecasts/hit-rate/ab", method: "GET", params });
+}

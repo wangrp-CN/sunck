@@ -41,6 +41,7 @@ import WorkPlanPopup from "@/components/WorkPlanPopup.vue";
 import DashboardCorrelationCompareCard from "@/components/DashboardCorrelationCompareCard.vue";
 import DashboardForecastCard from "@/components/DashboardForecastCard.vue";
 import DashboardHitRateCard from "@/views/DashboardHitRateCard.vue";
+import DashboardABHitRateCard from "@/views/DashboardABHitRateCard.vue";
 import DashboardDispositionCard from "@/views/DashboardDispositionCard.vue";
 import type { AnomalyParams, DashboardStats, MapDevice, MapFence, RecentAlarm, Effectiveness, ByProjectRow, EffTrend } from "@/types";
 
@@ -1472,6 +1473,13 @@ onUnmounted(() => {
     <el-row :gutter="16" class="forecast-row">
       <el-col :span="24">
         <DashboardHitRateCard />
+      </el-col>
+    </el-row>
+
+    <!-- 预测模型 A/B 对比卡（模型升级量化对比，自带 60s 刷新 + 重新回测） -->
+    <el-row :gutter="16" class="forecast-row">
+      <el-col :span="24">
+        <DashboardABHitRateCard />
       </el-col>
     </el-row>
 

@@ -22,6 +22,7 @@ from app.model.forecast import Forecast
 from app.model.project import Project
 from app.model.system import User
 from app.schema.forecast import ForecastOut
+from app.service import backtest_service as bt_svc
 from app.service import forecast_service as svc
 from app.service import prediction_hitrate as hitrate_svc
 
@@ -109,16 +110,25 @@ def recompute(
     scope: DataScope = Depends(get_data_scope),
     project_id: int | None = Query(None, description="仅重算指定项目；缺省为全部"),
     horizon_days: int | None = Query(None, ge=1, le=90, description="预测跨度(天)"),
+    model: str | None = Query(None, description="预测模型版本(ols_v1|hw_v1)；缺省为上线默认模型"),
 ) -> ApiResponse:
-    """基于最新快照序列重算预测并落库，返回统计。"""
+    """基于最新快照序列重算预测并落库，返回统计。
+
+    ``model`` 指定所用预测模型；缺省沿用上线默认模型（当前 ols_v1）。
+    传 ``hw_v1`` 即以升级的 Holt-Winters 模型重算并落库（model_version 落库，
+    供 A/B 报表与预测性预警对照）。
+    """
+    model_version = model or svc.DEFAULT_MODEL
     if project_id is not None:
-        data = svc.compute_forecast(db, project_id, horizon_days=horizon_days)
+        data = svc.compute_forecast(
+            db, project_id, horizon_days=horizon_days, model_version=model_version
+        )
         if data is None:
             return ApiResponse.fail(code=1001, message="快照样本不足，无法预测")
         obj = svc.upsert_forecast(db, data)
         db.commit()
         return ApiResponse.success(data=ForecastOut.model_validate(obj).model_dump())
-    stats = svc.run_forecasts(db, horizon_days=horizon_days)
+    stats = svc.run_forecasts(db, horizon_days=horizon_days, model_version=model_version)
     db.commit()
     return ApiResponse.success(data=stats)
 
@@ -149,6 +159,55 @@ def hit_rate(
     data = hitrate_svc.compute_prediction_hitrate(
         db, scope, days=days, project_id=project_id, metric=metric
     )
+    resp = ApiResponse.success(data=data)
+    set_cached_json(current_user.id, request.url.path, request.url.query, resp.model_dump())
+    return resp
+
+
+@router.post(
+    "/backtest",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("forecast:view"))],
+)
+def backtest(
+    db=Depends(get_db),
+    days: int = Query(90, ge=14, le=365, description="回测窗口(天)"),
+    horizon_days: int = Query(7, ge=1, le=90, description="预测跨度(天)"),
+) -> ApiResponse:
+    """walk-forward 回测：用历史快照序列对各模型做滑窗预测并落 ``forecast_backtest``，
+    随后可由 ``GET /hit-rate/ab`` 对比各模型命中率。返回回测摘要。
+
+    仅保留「会越阈预警」的预测（与线上 predictive_alert 口径一致），保证 A/B 分母可比。
+    """
+    summary = bt_svc.run_backtest(db, days=days, horizon=horizon_days)
+    db.commit()
+    return ApiResponse.success(data=summary)
+
+
+@router.get(
+    "/hit-rate/ab",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("forecast:view"))],
+)
+def hit_rate_ab(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_read_db),
+    scope: DataScope = Depends(get_data_scope),
+    days: int = Query(90, ge=14, le=365, description="统计窗口(天)"),
+    project_id: int | None = Query(None, ge=1, description="按项目下钻"),
+    metric: str | None = Query(None, description="risk_index|health_score"),
+) -> ApiResponse:
+    """A/B 命中率报表：对比各预测模型（OLS vs Holt-Winters）在越阈预警上的
+    命中率 / 误报率 / 平均提前量，并给出增量对比。数据来自 ``forecast_backtest`` 回测表。
+
+    若尚未运行回测（``POST /backtest``），各模型命中率为 None。数据范围隔离；复用 3s 缓存。
+    """
+    _cached = get_cached_json(current_user.id, request.url.path, request.url.query)
+    if _cached is not None:
+        return ApiResponse(**_cached)
+
+    data = bt_svc.compute_ab_hitrate(db, scope, days=days, project_id=project_id, metric=metric)
     resp = ApiResponse.success(data=data)
     set_cached_json(current_user.id, request.url.path, request.url.query, resp.model_dump())
     return resp

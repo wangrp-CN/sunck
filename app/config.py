@@ -147,6 +147,8 @@ class Settings(BaseSettings):
     forecast_history_days: int = 30
     # 最少样本数：序列点数低于此不出预测（防 1~2 点直线误导）。
     forecast_min_points: int = 3
+    # 回测窗口（天）：walk-forward 回测使用的历史锚点范围。
+    forecast_backtest_days: int = 90
 
     # ---------- PostgreSQL ----------
     postgres_host: str = "127.0.0.1"

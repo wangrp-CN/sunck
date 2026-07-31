@@ -37,6 +37,9 @@ class Forecast(Base, TimestampMixin):
     metric: Mapped[str] = mapped_column(
         String(32), nullable=False, default="risk_index", comment="预测指标(risk_index 等)"
     )
+    model_version: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="ols_v1", comment="预测模型版本(ols_v1/hw_v1)"
+    )
 
     horizon_days: Mapped[int] = mapped_column(Integer, nullable=False, comment="预测跨度(天)")
     sample_count: Mapped[int] = mapped_column(Integer, nullable=False, comment="拟合样本数")
@@ -71,5 +74,6 @@ class Forecast(Base, TimestampMixin):
 
     __table_args__ = (
         Index("ix_forecast_project", "project_id"),
+        Index("ix_forecast_model", "model_version"),
         Index("ix_forecast_key", "scope_type", "ref_id", "metric", "horizon_days", unique=True),
     )

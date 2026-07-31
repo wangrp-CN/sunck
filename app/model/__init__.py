@@ -20,6 +20,7 @@ from app.model import (  # noqa: F401
     duty_roster,
     fence,
     forecast,
+    forecast_backtest,
     hazard,
     inspection,
     job,
