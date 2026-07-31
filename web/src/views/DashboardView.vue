@@ -41,6 +41,7 @@ import WorkPlanPopup from "@/components/WorkPlanPopup.vue";
 import DashboardCorrelationCompareCard from "@/components/DashboardCorrelationCompareCard.vue";
 import DashboardForecastCard from "@/components/DashboardForecastCard.vue";
 import DashboardHitRateCard from "@/views/DashboardHitRateCard.vue";
+import DashboardDispositionCard from "@/views/DashboardDispositionCard.vue";
 import type { AnomalyParams, DashboardStats, MapDevice, MapFence, RecentAlarm, Effectiveness, ByProjectRow, EffTrend } from "@/types";
 
 const router = useRouter();
@@ -1471,6 +1472,13 @@ onUnmounted(() => {
     <el-row :gutter="16" class="forecast-row">
       <el-col :span="24">
         <DashboardHitRateCard />
+      </el-col>
+    </el-row>
+
+    <!-- 处置效果闭环卡（F1 处置效果闭环 · 与命中率卡同屏，自带 60s 刷新） -->
+    <el-row :gutter="16" class="forecast-row">
+      <el-col :span="24">
+        <DashboardDispositionCard />
       </el-col>
     </el-row>
 
