@@ -40,6 +40,7 @@ from app.service.alarm_service import (
     aggregate_alarms,
     handle_alarm,
     query_alarms_for_report,
+    summarize_preventive,
     update_alarm_media,
 )
 from app.service.alarm_service import (
@@ -280,6 +281,26 @@ def list_alarms(
         size=size,
     )
     return ApiResponse.success(data={"total": total, "items": items, "page": page, "size": size})
+
+
+@router.get(
+    "/preventive-summary",
+    summary="预防式告警活跃汇总（大屏卡）",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("alarm:list"))],
+)
+def preventive_summary(
+    db: Session = Depends(get_db),
+    scope=Depends(get_data_scope),
+    project_id: int | None = None,
+) -> ApiResponse:
+    """返回当前用户数据范围内、处于「待处理」的预防式告警活跃汇总。
+
+    供监控大屏「活跃预防式告警」卡使用：含总数、按指标分布、按级别分布、最近明细。
+    施加部门数据隔离（与告警列表同源）。
+    """
+    data = summarize_preventive(db, scope, project_id=project_id)
+    return ApiResponse.success(data=data)
 
 
 @router.post(

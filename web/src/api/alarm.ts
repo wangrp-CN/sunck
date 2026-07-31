@@ -289,3 +289,23 @@ export function fetchSnapshotPreview(params: {
     params,
   });
 }
+
+// 预防式告警活跃汇总（大屏「活跃预防式告警」卡）
+export interface PreventiveItem extends Alarm {
+  metric?: string;
+}
+export interface PreventiveSummary {
+  total: number;
+  by_metric: Record<string, number>;
+  by_level: Record<string, number>;
+  recent: PreventiveItem[];
+}
+export function getPreventiveSummary(params: {
+  project_id?: number;
+} = {}): Promise<PreventiveSummary> {
+  return http<PreventiveSummary>({
+    url: "/v1/alarms/preventive-summary",
+    method: "GET",
+    params,
+  });
+}

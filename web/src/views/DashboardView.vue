@@ -40,6 +40,7 @@ import MapPanel from "@/components/MapPanel.vue";
 import WorkPlanPopup from "@/components/WorkPlanPopup.vue";
 import DashboardCorrelationCompareCard from "@/components/DashboardCorrelationCompareCard.vue";
 import DashboardForecastCard from "@/components/DashboardForecastCard.vue";
+import DashboardPreventiveCard from "@/components/DashboardPreventiveCard.vue";
 import DashboardHitRateCard from "@/views/DashboardHitRateCard.vue";
 import DashboardABHitRateCard from "@/views/DashboardABHitRateCard.vue";
 import DashboardDispositionCard from "@/views/DashboardDispositionCard.vue";
@@ -1466,6 +1467,13 @@ onUnmounted(() => {
     <el-row :gutter="16" class="forecast-row">
       <el-col :span="24">
         <DashboardForecastCard />
+      </el-col>
+    </el-row>
+
+    <!-- 活跃预防式告警卡（预测→落库→大屏专门展示闭环，自带 60s 刷新） -->
+    <el-row :gutter="16" class="forecast-row">
+      <el-col :span="24">
+        <DashboardPreventiveCard />
       </el-col>
     </el-row>
 

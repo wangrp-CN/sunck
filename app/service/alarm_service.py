@@ -20,6 +20,7 @@ from app.core.constants import (
     ALARM_TYPE_DEVICE,
     ALARM_TYPE_DISTANCE,
     ALARM_TYPE_FENCE,
+    ALARM_TYPE_PREVENTIVE,
     ALARM_TYPE_TRAIN,
 )
 from app.core.data_scope import DataScope, apply_data_scope
@@ -329,6 +330,54 @@ def _alarm_list_stmt(
     if alarm_status is not None:
         stmt = stmt.where(Alarm.alarm_status == alarm_status)
     return stmt
+
+
+def _preventive_metric_of(device_no: str | None) -> str | None:
+    """从预防式告警的 device_no（preventive:{metric}:{ref_id}:{horizon}）解析指标 key。"""
+    if not device_no or not device_no.startswith("preventive:"):
+        return None
+    parts = device_no.split(":")
+    # preventive:{metric}:{ref_id}:{horizon_days}
+    return parts[1] if len(parts) > 1 else None
+
+
+def summarize_preventive(
+    db: Session,
+    scope: DataScope,
+    project_id: int | None = None,
+) -> dict[str, Any]:
+    """预防式告警活跃汇总（大屏卡）：数据隔离下，统计 handle_status=待处理 的预防式预警。
+
+    - total: 活跃总数
+    - by_metric: 按指标（risk_index/health_score...）分布
+    - by_level: 按告警级别分布
+    - recent: 最近 5 条（含结构化字段，供前端点击下钻）
+    """
+    base = _alarm_list_stmt(
+        scope,
+        project_id=project_id,
+        alarm_type=ALARM_TYPE_PREVENTIVE,
+        handle_status="待处理",
+    )
+    total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
+    rows = db.execute(base.with_entities(Alarm.device_no, Alarm.alarm_level)).all()
+    by_metric: dict[str, int] = {}
+    by_level: dict[str, int] = {}
+    for dn, lvl in rows:
+        m = _preventive_metric_of(dn)
+        if m:
+            by_metric[m] = by_metric.get(m, 0) + 1
+        if lvl:
+            by_level[lvl] = by_level.get(lvl, 0) + 1
+    recent = [
+        to_alarm_out(a) for a in db.scalars(base.order_by(Alarm.alarm_time.desc()).limit(5)).all()
+    ]
+    return {
+        "total": total,
+        "by_metric": by_metric,
+        "by_level": by_level,
+        "recent": recent,
+    }
 
 
 def count_alarms(

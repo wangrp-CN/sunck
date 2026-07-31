@@ -24,7 +24,7 @@ vi.mock("@/stores/auth", () => ({
 // AlarmView 现使用 useRouter（转隐患成功跳转），测试无 router 插件，桩掉避免告警
 vi.mock("vue-router", () => ({
   useRouter: () => ({ push: vi.fn() }),
-  useRoute: () => ({ path: "/", meta: {} }),
+  useRoute: () => ({ path: "/", meta: {}, query: {} }),
 }));
 
 const alarms = {

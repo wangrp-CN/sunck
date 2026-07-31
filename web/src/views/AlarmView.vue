@@ -34,7 +34,7 @@ import { fetchFences } from "@/api/fence";
 import { fetchPersons } from "@/api/person";
 import { recommendPlaybooks, type Playbook } from "@/api/playbook";
 import type { Person } from "@/types";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { putAlarmMedia } from "@/api/media";
 import { mediaKeyFromUrl, resolvePresigned } from "@/utils/media";
 import { wgs84ToGcj02 } from "@/utils/geo";
@@ -50,6 +50,7 @@ import { useAuthStore } from "@/stores/auth";
 
 const auth = useAuthStore();
 const router = useRouter();
+const route = useRoute();
 const canHandle = computed(() => auth.user?.permission_codes.includes("alarm:handle") ?? false);
 const canConfig = computed(() => auth.user?.permission_codes.includes("alarm:config") ?? false);
 const canReport = computed(() => auth.user?.permission_codes.includes("alarm:list") ?? false);
@@ -826,6 +827,11 @@ function levelTag(level: string | null): "" | "danger" | "warning" | "info" {
 }
 
 onMounted(async () => {
+  // 从大屏「活跃预防式告警」卡跳转而来时，预置类型筛选，直达明细列表
+  const presetType = route.query?.alarm_type;
+  if (typeof presetType === "string" && presetType) {
+    filters.alarm_type = presetType;
+  }
   if (!auth.user) {
     try {
       await auth.loadProfile();
