@@ -150,9 +150,9 @@ class Settings(BaseSettings):
     # 回测窗口（天）：walk-forward 回测使用的历史锚点范围。
     forecast_backtest_days: int = 90
     # 上线默认预测模型版本：ols_v1(原 OLS) | hw_v1(Holt-Winters 季节趋势)。
-    # 经环境变量 FORECAST_PRIMARY_MODEL 可持久切换；运行时亦可由
-    # POST /v1/forecasts/model/default 一键切换（重启后回退到此值）。
-    forecast_primary_model: str = "ols_v1"
+    # hw_v1 经 A/B 命中率报表验证后已于 2026-07-31 正式设为默认；如需回退可设
+    # 环境变量 FORECAST_PRIMARY_MODEL=ols_v1 或 POST /v1/forecasts/model/default 一键切换。
+    forecast_primary_model: str = "hw_v1"
 
     # ---------- PostgreSQL ----------
     postgres_host: str = "127.0.0.1"
