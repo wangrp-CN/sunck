@@ -27,6 +27,25 @@ export interface ForecastItem {
   computed_at: string;
 }
 
+// 单维特征对预测值的贡献（可解释化归因，按 |impact| 降序）
+export interface ForecastContribution {
+  feature: string;
+  label: string;
+  impact: number;
+}
+
+// 预测指标注册表项（GET /v1/forecasts/metrics）
+export interface ForecastMetric {
+  key: string;
+  label: string;
+  scope_type: "project" | "device";
+  direction: "high_good" | "low_good";
+  unit: string;
+  description: string;
+  preventive_threshold?: number | null;
+  preventive_alarm_level?: string | null;
+}
+
 // preview 的历史序列点
 export interface ForecastSeriesPoint {
   at: string;
@@ -48,6 +67,9 @@ export interface ForecastFit {
   forecast_upper: number;
   forecast_at: string;
   computed_at: string;
+  // 可解释化（hw_feat_v1 融合分支产出，纯 HW 兜底时为缺省）
+  explanation?: string | null;
+  contributions?: ForecastContribution[] | null;
 }
 
 export interface ForecastPreview {
@@ -62,7 +84,7 @@ export interface ForecastPreview {
 export interface ListForecastParams {
   project_id?: number;
   scope_type?: "project" | "device";
-  metric?: "risk_index" | "health_score";
+  metric?: string;
 }
 
 export function listForecasts(params: ListForecastParams = {}): Promise<{ items: ForecastItem[] }> {
@@ -74,6 +96,7 @@ export function previewForecast(params: {
   scope_type: "project" | "device";
   horizon_days?: number;
   history_days?: number;
+  metric?: string;
 }): Promise<ForecastPreview> {
   return http<ForecastPreview>({ url: "/v1/forecasts/preview", method: "GET", params });
 }
@@ -82,6 +105,11 @@ export function recomputeForecasts(params: { project_id?: number; horizon_days?:
   ForecastItem | { computed: number; skipped: number; projects: number; devices: number }
 > {
   return http({ url: "/v1/forecasts/recompute", method: "POST", params });
+}
+
+// 可用预测指标清单（多指标切换用；GET /v1/forecasts/metrics）
+export function listForecastMetrics(): Promise<ForecastMetric[]> {
+  return http<ForecastMetric[]>({ url: "/v1/forecasts/metrics", method: "GET" });
 }
 
 // 预测命中率报表结果（预测性预警闭环验证）
@@ -101,7 +129,7 @@ export interface PredictionHitRate {
 export function getForecastHitRate(params: {
   days?: number;
   project_id?: number;
-  metric?: "risk_index" | "health_score";
+  metric?: string;
 } = {}): Promise<PredictionHitRate> {
   return http<PredictionHitRate>({ url: "/v1/forecasts/hit-rate", method: "GET", params });
 }
@@ -175,7 +203,7 @@ export interface ABHitRate {
 export function getForecastABHitRate(params: {
   days?: number;
   project_id?: number;
-  metric?: "risk_index" | "health_score";
+  metric?: string;
 } = {}): Promise<ABHitRate> {
   return http<ABHitRate>({ url: "/v1/forecasts/hit-rate/ab", method: "GET", params });
 }

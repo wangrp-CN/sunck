@@ -23,16 +23,9 @@ from app.config import settings
 from app.core.data_scope import DataScope, apply_data_scope
 from app.model.forecast_backtest import ForecastBacktest
 from app.model.snapshot import RiskHealthSnapshot
+from app.service import forecast_metrics as fm
 from app.service import forecast_models as models_mod
 from app.service import forecast_service as svc
-
-METRIC_RISK_INDEX = "risk_index"
-METRIC_HEALTH_SCORE = "health_score"
-
-_METRIC_COLUMNS = {
-    METRIC_RISK_INDEX: RiskHealthSnapshot.risk_index,
-    METRIC_HEALTH_SCORE: RiskHealthSnapshot.health_score,
-}
 
 
 def _now() -> datetime:
@@ -43,7 +36,7 @@ def _verify(
     db, scope_type: str, ref_id: str, metric: str, forecast_at: datetime, horizon: int, value: float
 ) -> tuple[bool, float | None]:
     """窗口内回查实际值是否如期越阈，返回 (命中, 提前量小时数|None)。"""
-    col = _METRIC_COLUMNS.get(metric)
+    col = fm.metric_column(metric)
     if col is None or forecast_at is None:
         return False, None
     window_end = forecast_at + timedelta(days=horizon)
@@ -58,10 +51,11 @@ def _verify(
         )
         .order_by(RiskHealthSnapshot.snapshot_at.asc())
     ).all()
+    low_good = fm.direction_of(metric) == fm.DIRECTION_LOW_GOOD
     for snap_at, val in rows:
         if val is None:
             continue
-        breach = (val >= value) if metric == METRIC_RISK_INDEX else (val <= value)
+        breach = (val >= value) if low_good else (val <= value)
         if breach:
             lead = max(0.0, (snap_at - forecast_at).total_seconds() / 3600.0)
             return True, lead
@@ -92,16 +86,17 @@ def run_backtest(
         )
     )
 
-    proj_series = svc._load_series_bulk(db, "project", METRIC_RISK_INDEX, days=days)
-    dev_series = svc._load_series_bulk(db, "device", METRIC_HEALTH_SCORE, days=days)
-
     tasks: list[tuple[str, str, str, int | None, list[tuple[datetime, float]]]] = []
-    for ref_id, series in proj_series.items():
-        pid = int(ref_id) if ref_id.isdigit() else None
-        tasks.append(("project", ref_id, METRIC_RISK_INDEX, pid, series))
-    for ref_id, series in dev_series.items():
-        pid = svc._device_project_id(db, ref_id)
-        tasks.append(("device", ref_id, METRIC_HEALTH_SCORE, pid, series))
+    for meta in fm.metrics_for_scope("project"):
+        proj_series = svc._load_series_bulk(db, "project", meta.key, days=days)
+        for ref_id, series in proj_series.items():
+            pid = int(ref_id) if ref_id.isdigit() else None
+            tasks.append(("project", ref_id, meta.key, pid, series))
+    for meta in fm.metrics_for_scope("device"):
+        dev_series = svc._load_series_bulk(db, "device", meta.key, days=days)
+        for ref_id, series in dev_series.items():
+            pid = svc._device_project_id(db, ref_id)
+            tasks.append(("device", ref_id, meta.key, pid, series))
 
     total_rows = 0
     anchors_used = 0

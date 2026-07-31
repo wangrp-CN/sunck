@@ -1,8 +1,8 @@
 // 大屏智能预测卡单测：列表加载 + 默认选中最差对象 + 预览联动 + 指标切换重拉
 import { flushPromises, mount } from "@vue/test-utils";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DashboardForecastCard from "@/components/DashboardForecastCard.vue";
-import type { ForecastItem } from "@/api/forecast";
+import type { ForecastItem, ForecastMetric } from "@/api/forecast";
 
 function fc(partial: Partial<ForecastItem>): ForecastItem {
   return {
@@ -83,15 +83,22 @@ const PREVIEW = {
   },
 };
 
+const METRICS: ForecastMetric[] = [
+  { key: "risk_index", label: "项目风险指数", scope_type: "project", direction: "low_good", unit: "分", description: "项目综合风险指数(0-100)，越低越好", preventive_threshold: 60, preventive_alarm_level: "警告" },
+  { key: "health_score", label: "设备健康分", scope_type: "device", direction: "high_good", unit: "分", description: "设备健康分(0-100)，越高越好", preventive_threshold: 60, preventive_alarm_level: "严重" },
+];
+
 const hoisted = vi.hoisted(() => ({
   listForecasts: vi.fn(),
   previewForecast: vi.fn(),
+  listForecastMetrics: vi.fn(),
   elError: vi.fn(),
 }));
 
 vi.mock("@/api/forecast", () => ({
   listForecasts: (...a: any[]) => hoisted.listForecasts(...a),
   previewForecast: (...a: any[]) => hoisted.previewForecast(...a),
+  listForecastMetrics: (...a: any[]) => hoisted.listForecastMetrics(...a),
 }));
 vi.mock("element-plus", async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -101,9 +108,13 @@ vi.mock("element-plus", async (importOriginal) => {
   };
 });
 
+beforeEach(() => {
+  hoisted.listForecastMetrics.mockResolvedValue(METRICS);
+});
 afterEach(() => {
   hoisted.listForecasts.mockReset();
   hoisted.previewForecast.mockReset();
+  hoisted.listForecastMetrics.mockReset();
   hoisted.elError.mockReset();
 });
 
@@ -120,7 +131,7 @@ describe("DashboardForecastCard", () => {
     expect(rows[0].text()).toContain("高风险项目");
     expect(rows[0].classes()).toContain("active");
     // 预览联动（默认选中第一行）
-    expect(hoisted.previewForecast).toHaveBeenCalledWith({ ref_id: "1", scope_type: "project" });
+    expect(hoisted.previewForecast).toHaveBeenCalledWith({ ref_id: "1", scope_type: "project", metric: "risk_index" });
     expect(wrapper.find(".fc-chart-meta").text()).toContain("74");
     expect(wrapper.findComponent({ name: "ForecastChart" }).exists()).toBe(true);
     wrapper.unmount();
@@ -134,7 +145,7 @@ describe("DashboardForecastCard", () => {
 
     await wrapper.findAll(".fc-row")[1].trigger("click");
     await flushPromises();
-    expect(hoisted.previewForecast).toHaveBeenLastCalledWith({ ref_id: "2", scope_type: "project" });
+    expect(hoisted.previewForecast).toHaveBeenLastCalledWith({ ref_id: "2", scope_type: "project", metric: "risk_index" });
     wrapper.unmount();
   });
 

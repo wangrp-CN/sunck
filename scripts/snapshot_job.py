@@ -103,6 +103,13 @@ def main() -> None:
         alerts = forecast_svc.run_predictive_alerts(db)
         print(f"[snapshot] predictive alerts created={alerts['created']}", flush=True)
 
+        # 预防式预警（预测可解释化 + 多指标）：置信区间越阈提前预警，进既有告警流。
+        try:
+            prev = forecast_svc.run_preventive_alerts(db)
+            print(f"[snapshot] preventive alerts created={prev['created']}", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[snapshot] preventive alerts skipped due to error: {exc}", flush=True)
+
         # A/B 回测（预测模型升级）：walk-forward 回测落 forecast_backtest，
         # 供 A/B 命中率报表对比各模型（ols_v1 / hw_v1）。独立 try 保护，避免影响关键快照。
         try:

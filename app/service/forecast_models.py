@@ -19,7 +19,7 @@ import math
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 
-from app.core.scoring import RISK_LEVEL_HIGH, RISK_LEVEL_MID, device_health_level
+from app.service import forecast_metrics
 
 METRIC_RISK_INDEX = "risk_index"
 METRIC_HEALTH_SCORE = "health_score"
@@ -48,14 +48,8 @@ def _clamp(v: float) -> float:
 
 
 def _level_for(metric: str, value: float) -> str:
-    """预测值按与实时口径一致的阈值分档（app.core.scoring）。"""
-    if metric == METRIC_HEALTH_SCORE:
-        return device_health_level(int(round(value)))
-    if value >= RISK_LEVEL_HIGH:
-        return "高"
-    if value >= RISK_LEVEL_MID:
-        return "中"
-    return "低"
+    """预测值按与实时口径一致的阈值分档（委托指标注册表，口径统一）。"""
+    return forecast_metrics.level_for(metric, value)
 
 
 def _common(
@@ -68,6 +62,7 @@ def _common(
     slope: float,
     intercept: float,
     model_version: str,
+    contributions: list | None = None,
 ) -> dict[str, Any]:
     """组装与 Forecast 表字段一致的归一化字典。"""
     last_at, last_value = series[-1]
@@ -89,6 +84,7 @@ def _common(
         "forecast_at": last_at + timedelta(days=horizon),
         "computed_at": datetime.now(timezone.utc),
         "model_version": model_version,
+        "contributions": contributions,
     }
 
 
@@ -264,6 +260,31 @@ def forecast_holt_winters(
 # ---------------------------------------------------------------------------
 
 
+# 设计向量顺序（与 _design_row 严格一致）：用于可解释化贡献归因
+FEATURE_NAMES = [
+    "intercept",
+    "dow",
+    "month",
+    "is_weekend",
+    "temperature",
+    "rainfall",
+    "wind_speed",
+    "construction_intensity",
+    "device_load",
+]
+FEATURE_LABELS = [
+    "截距(基线)",
+    "星期",
+    "月份",
+    "是否周末",
+    "温度",
+    "降雨",
+    "风速",
+    "施工强度",
+    "设备负载",
+]
+
+
 def _design_row(d: date, ext: dict) -> list[float]:
     """设计向量：[1(截距), dow, month, is_weekend, temperature, rainfall,
     wind_speed, construction_intensity, device_load]；缺失外部特征补 0。"""
@@ -431,6 +452,20 @@ def forecast_holt_winters_feature(
     if raw is None:
         return None
 
+    # 可解释化：最后一步（horizon 天）各维贡献 = beta_i * x_i，按绝对影响排序
+    fd = dates[-1] + timedelta(days=horizon)
+    ext_h = external_features.get(fd.isoformat(), {})
+    _x = _design_row(fd, ext_h)
+    contributions = [
+        {
+            "feature": FEATURE_NAMES[i],
+            "label": FEATURE_LABELS[i],
+            "impact": round(beta[i] * _x[i], 3),
+        }
+        for i in range(len(beta))
+    ]
+    contributions.sort(key=lambda c: abs(c["impact"]), reverse=True)
+
     std_total = math.sqrt(hw_std**2 + resid_std**2)
     return _common(
         metric,
@@ -441,6 +476,7 @@ def forecast_holt_winters_feature(
         slope=trend,
         intercept=lev,
         model_version=model_version,
+        contributions=contributions,
     )
 
 

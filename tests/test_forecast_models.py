@@ -170,3 +170,58 @@ def test_hw_feat_fusion_consumes_external():
         series, METRIC_RISK, horizon, external_features=external
     )
     assert fused2["forecast_value"] == fused["forecast_value"]
+
+
+def test_hw_feat_returns_contributions():
+    """hw_feat_v1 必须透出 contributions（按 |impact| 降序的特征贡献归因）。"""
+    series, external, horizon = _make_feat_series()
+    d = m.forecast_holt_winters_feature(series, METRIC_RISK, horizon, external_features=external)
+    assert d is not None
+    contribs = d.get("contributions")
+    assert isinstance(contribs, list) and len(contribs) >= 1
+    for c in contribs:
+        assert "feature" in c and "label" in c and "impact" in c
+        assert isinstance(c["impact"], (int, float))
+    # 按 |impact| 降序
+    impacts = [abs(c["impact"]) for c in contribs]
+    assert impacts == sorted(impacts, reverse=True)
+    # 至少含截距与纳入设计向量的外部特征项
+    feats = {c["feature"] for c in contribs}
+    assert "intercept" in feats
+    assert "device_load" in feats  # 外部特征被纳入设计向量
+
+
+def test_hw_feat_contributions_absent_without_external():
+    """无外部特征退化为纯 HW：contributions 优雅缺省（None），不抛错、解释省略。"""
+    s = _series([10 + 2 * i + 3 * (i % 7) for i in range(21)])
+    d = m.forecast_holt_winters_feature(s, METRIC_RISK, 7)
+    assert d is not None
+    # 融合分支才产出 contributions；纯 HW 兜底时无（前端须优雅处理缺失解释）
+    assert d.get("contributions") is None or isinstance(d["contributions"], list)
+
+
+def test_explain_contributions_template_risk_low_good():
+    """risk_index（low_good）：正向 impact 措辞为「风险走高/不利」。"""
+    contribs = [{"feature": "rainfall", "label": "降雨", "impact": 3.2}]
+    txt = svc._explain_contributions(METRIC_RISK, contribs)
+    assert "降雨" in txt
+    assert "风险走高" in txt
+    assert "不利" in txt
+    assert txt.endswith("。")
+
+
+def test_explain_contributions_template_health_high_good():
+    """health_score（high_good）：正向 impact 措辞为「健康改善/有利」。"""
+    contribs = [{"feature": "rainfall", "label": "降雨", "impact": 3.2}]
+    txt = svc._explain_contributions(METRIC_HEALTH, contribs)
+    assert "健康改善" in txt
+    assert "有利" in txt
+
+
+def test_explain_contributions_fallback_when_insignificant():
+    """贡献不显著（仅截距或 |impact|<0.5）时返回确定性兜底文案。"""
+    txt = svc._explain_contributions(
+        METRIC_RISK,
+        [{"feature": "intercept", "label": "截距(基线)", "impact": 50.0}],
+    )
+    assert "历史趋势" in txt

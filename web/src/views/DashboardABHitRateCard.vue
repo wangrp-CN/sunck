@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import {
   getForecastABHitRate,
   getForecastDefaultModel,
+  listForecastMetrics,
   runForecastBacktest,
   setForecastDefaultModel,
   type ABHitRate,
   type ABModelRow,
   type ForecastDefaultModel,
+  type ForecastMetric,
 } from "@/api/forecast";
 
 const loading = ref(false);
@@ -16,6 +18,8 @@ const backtesting = ref(false);
 const switching = ref(false);
 const data = ref<ABHitRate | null>(null);
 const defaultModel = ref<ForecastDefaultModel | null>(null);
+const metrics = ref<ForecastMetric[]>([]);
+const selMetric = ref<string>("all"); // "all" = 全部指标聚合
 let timer: ReturnType<typeof setInterval> | null = null;
 
 // 当前线上默认模型是否已是 A/B 挑战者（报表末位模型）
@@ -43,10 +47,19 @@ function fmtHours(v: number | null): string {
   return v.toFixed(1) + " h";
 }
 
+async function loadMetrics() {
+  try {
+    metrics.value = await listForecastMetrics();
+  } catch {
+    // 保留空清单，仅显示「全部指标」
+  }
+}
+
 async function load() {
   loading.value = true;
   try {
-    data.value = await getForecastABHitRate({ days: 90 });
+    const params = selMetric.value === "all" ? { days: 90 } : { days: 90, metric: selMetric.value };
+    data.value = await getForecastABHitRate(params);
   } catch {
     data.value = null;
   } finally {
@@ -96,6 +109,7 @@ const hasData = () =>
   !!data.value && data.value.models.some((m: ABModelRow) => m.verifiable > 0);
 
 onMounted(() => {
+  loadMetrics();
   load();
   loadDefault();
   timer = setInterval(load, 60000);
@@ -103,6 +117,9 @@ onMounted(() => {
 onUnmounted(() => {
   if (timer) clearInterval(timer);
 });
+
+// 指标筛选切换：watch 比 @change 更稳健（程序化赋值同样触发重拉）
+watch(selMetric, () => void load());
 </script>
 
 <template>
@@ -124,6 +141,14 @@ onUnmounted(() => {
         >
       </div>
     </template>
+
+    <div class="ab-tools">
+      <span class="ab-tools-label">指标</span>
+      <el-radio-group v-model="selMetric" size="small">
+        <el-radio-button value="all">全部指标</el-radio-button>
+        <el-radio-button v-for="m in metrics" :key="m.key" :value="m.key">{{ m.label }}</el-radio-button>
+      </el-radio-group>
+    </div>
 
     <template v-if="hasData()">
       <!-- 增量对比横幅 -->
@@ -191,6 +216,16 @@ onUnmounted(() => {
 <style scoped>
 .ab-card {
   height: 100%;
+}
+.ab-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.ab-tools-label {
+  font-size: 12px;
+  color: #909399;
 }
 .card-head {
   display: flex;

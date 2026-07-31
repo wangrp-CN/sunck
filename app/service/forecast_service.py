@@ -30,13 +30,13 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.core.constants import ALARM_TYPE_FORECAST
-from app.core.scoring import RISK_LEVEL_HIGH, RISK_LEVEL_MID, device_health_level
 from app.model.alarm import Alarm
 from app.model.device import AntiIntrusionDevice, LocateDevice, TrainApproachDevice
 from app.model.forecast import Forecast
 from app.model.project import Project
 from app.model.snapshot import RiskHealthSnapshot
 from app.service import feature_provider as feat_svc
+from app.service import forecast_metrics as fm
 from app.service import forecast_models as models
 
 METRIC_RISK_INDEX = "risk_index"
@@ -57,31 +57,15 @@ def _resolve_default_model() -> str:
     return mv if mv in models.MODELS else models.PRIMARY_MODEL
 
 
-#: 指标 → 快照取值列
-_METRIC_COLUMNS = {
-    METRIC_RISK_INDEX: RiskHealthSnapshot.risk_index,
-    METRIC_HEALTH_SCORE: RiskHealthSnapshot.health_score,
-}
-
 _DEVICE_MODELS = [AntiIntrusionDevice, LocateDevice, TrainApproachDevice]
 
 #: 95% 置信带 z 值
 _Z95 = 1.96
 
 
-def _risk_level(value: float) -> str:
-    """预测值按与实时口径一致的阈值分档（app.core.scoring）。"""
-    if value >= RISK_LEVEL_HIGH:
-        return "高"
-    if value >= RISK_LEVEL_MID:
-        return "中"
-    return "低"
-
-
 def _level_for(metric: str, value: float) -> str:
-    if metric == METRIC_HEALTH_SCORE:
-        return device_health_level(int(round(value)))
-    return _risk_level(value)
+    """预测值分档委托指标注册表（口径统一，支持多指标）。"""
+    return fm.level_for(metric, value)
 
 
 def _clamp(v: float) -> float:
@@ -139,7 +123,7 @@ def _load_series(
     db: Session, scope_type: str, ref_id: str, metric: str, days: int
 ) -> list[tuple[datetime, float]]:
     """单个对象的快照序列（旧→新），保留 datetime 供换算天数。"""
-    col = _METRIC_COLUMNS[metric]
+    col = fm.metric_column(metric)
     since = datetime.now(timezone.utc) - timedelta(days=days)
     rows = db.execute(
         select(RiskHealthSnapshot.snapshot_at, col)
@@ -158,7 +142,7 @@ def _load_series_bulk(
     db: Session, scope_type: str, metric: str, days: int
 ) -> dict[str, list[tuple[datetime, float]]]:
     """按 ref_id 分组批量加载某类快照序列（单查，防 N+1）。"""
-    col = _METRIC_COLUMNS[metric]
+    col = fm.metric_column(metric)
     since = datetime.now(timezone.utc) - timedelta(days=days)
     rows = db.execute(
         select(RiskHealthSnapshot.ref_id, RiskHealthSnapshot.snapshot_at, col)
@@ -276,15 +260,18 @@ def preview_forecast(
     *,
     horizon_days: int | None = None,
     history_days: int | None = None,
+    metric: str | None = None,
     model_version: str | None = None,
 ) -> dict | None:
-    """序列预览（M2，供前端画图）：历史点 + 拟合参数 + 预测点 + 置信带。
+    """序列预览（M2，供前端画图）：历史点 + 拟合参数 + 预测点 + 置信带 + 可解释化贡献。
 
     样本不足时仍返回历史序列（forecast 为 None），前端可提示"数据积累中"。
+    ``metric`` 缺省时按 scope 推断（project→risk_index / device→health_score），亦可由前端
+    显式指定（多指标切换）。
     """
     horizon = horizon_days or settings.forecast_horizon_days
     history = history_days or settings.forecast_history_days
-    metric = METRIC_RISK_INDEX if scope_type == "project" else METRIC_HEALTH_SCORE
+    metric = metric or (METRIC_RISK_INDEX if scope_type == "project" else METRIC_HEALTH_SCORE)
     series = _load_series(db, scope_type, ref_id, metric, days=history)
     out: dict = {
         "scope_type": scope_type,
@@ -303,6 +290,8 @@ def preview_forecast(
         if fit is not None:
             fit["forecast_at"] = fit["forecast_at"].isoformat()
             fit["computed_at"] = fit["computed_at"].isoformat()
+            if fit.get("contributions"):
+                fit["explanation"] = _explain_contributions(metric, fit["contributions"])
             out["forecast"] = fit
     return out
 
@@ -313,7 +302,12 @@ def preview_forecast(
 
 
 def upsert_forecast(db: Session, data: dict, name: str | None = None) -> Forecast:
-    """按唯一键 (scope_type, ref_id, metric, horizon_days) upsert。"""
+    """按唯一键 (scope_type, ref_id, metric, horizon_days) upsert。
+
+    剔除仅用于解释/预览、不落库的字段（如 contributions）。
+    """
+    data = dict(data)
+    data.pop("contributions", None)
     obj = db.scalars(
         select(Forecast).where(
             Forecast.scope_type == data["scope_type"],
@@ -347,29 +341,29 @@ def run_forecasts(
     model_version = model_version or _resolve_default_model()
     computed = skipped = 0
 
-    # 项目 risk_index
-    proj_series = _load_series_bulk(db, "project", METRIC_RISK_INDEX, days=history)
-    projects = db.execute(
-        select(Project.id, Project.name).where(Project.is_deleted.is_(False))
-    ).all()
-    for pid, pname in projects:
-        series = proj_series.get(str(pid), [])
-        if len(series) < min_pts:
-            skipped += 1
-            continue
-        ext = _load_external_features(db, "project", str(pid), days=history)
-        data = _fit_and_forecast(
-            series, METRIC_RISK_INDEX, horizon, model_version=model_version, external_features=ext
-        )
-        if data is None:
-            skipped += 1
-            continue
-        data.update(project_id=pid, scope_type="project", ref_id=str(pid))
-        upsert_forecast(db, data, name=pname)
-        computed += 1
+    # 项目级指标（按注册表遍历，未来新增指标自动覆盖）
+    for meta in fm.metrics_for_scope("project"):
+        proj_series = _load_series_bulk(db, "project", meta.key, days=history)
+        projects = db.execute(
+            select(Project.id, Project.name).where(Project.is_deleted.is_(False))
+        ).all()
+        for pid, pname in projects:
+            series = proj_series.get(str(pid), [])
+            if len(series) < min_pts:
+                skipped += 1
+                continue
+            ext = _load_external_features(db, "project", str(pid), days=history)
+            data = _fit_and_forecast(
+                series, meta.key, horizon, model_version=model_version, external_features=ext
+            )
+            if data is None:
+                skipped += 1
+                continue
+            data.update(project_id=pid, scope_type="project", ref_id=str(pid))
+            upsert_forecast(db, data, name=pname)
+            computed += 1
 
-    # 设备 health_score（M2）
-    dev_series = _load_series_bulk(db, "device", METRIC_HEALTH_SCORE, days=history)
+    # 设备级指标（M2，按注册表遍历）
     devices: list[tuple[str, str, int | None]] = []
     for m in _DEVICE_MODELS:
         devices.extend(
@@ -377,21 +371,23 @@ def run_forecasts(
                 select(m.device_no, m.name, m.project_id).where(m.is_deleted.is_(False))
             ).all()
         )
-    for dno, dname, dpid in devices:
-        series = dev_series.get(dno, [])
-        if len(series) < min_pts:
-            skipped += 1
-            continue
-        ext = _load_external_features(db, "device", dno, days=history)
-        data = _fit_and_forecast(
-            series, METRIC_HEALTH_SCORE, horizon, model_version=model_version, external_features=ext
-        )
-        if data is None:
-            skipped += 1
-            continue
-        data.update(project_id=dpid, scope_type="device", ref_id=dno)
-        upsert_forecast(db, data, name=dname)
-        computed += 1
+    for meta in fm.metrics_for_scope("device"):
+        dev_series = _load_series_bulk(db, "device", meta.key, days=history)
+        for dno, dname, dpid in devices:
+            series = dev_series.get(dno, [])
+            if len(series) < min_pts:
+                skipped += 1
+                continue
+            ext = _load_external_features(db, "device", dno, days=history)
+            data = _fit_and_forecast(
+                series, meta.key, horizon, model_version=model_version, external_features=ext
+            )
+            if data is None:
+                skipped += 1
+                continue
+            data.update(project_id=dpid, scope_type="device", ref_id=dno)
+            upsert_forecast(db, data, name=dname)
+            computed += 1
 
     return {
         "computed": computed,
@@ -410,22 +406,8 @@ def run_forecasts(
 def _breach_for(
     metric: str, forecast_value: float, forecast_level: str | None
 ) -> tuple[bool, str | None]:
-    """纯函数版越阈判据：给定指标/预测值/级别，返回 (是否触发预警, 告警级别)。
-
-    - risk_index：预测级别「高」（forecast_value >= RISK_LEVEL_HIGH=60）触发，级别「警告」；
-    - health_score：预测级别「中」→「警告」、「差」→「严重」；优/良不触发。
-    """
-    if metric == METRIC_RISK_INDEX:
-        if forecast_level == "高":
-            return True, "警告"
-        return False, None
-    if metric == METRIC_HEALTH_SCORE:
-        if forecast_level == "差":
-            return True, "严重"
-        if forecast_level == "中":
-            return True, "警告"
-        return False, None
-    return False, None
+    """越阈判据委托指标注册表（支持多指标、与预防式口径统一）。"""
+    return fm.breach_for(metric, forecast_value, forecast_level)
 
 
 def _predictive_breach(fc: Forecast) -> tuple[bool, str | None]:
@@ -480,6 +462,88 @@ def run_predictive_alerts(db: Session) -> dict[str, Any]:
             db,
             project_id=fc.project_id,
             alarm_type=ALARM_TYPE_FORECAST,
+            device_no=device_no,
+            device_name=fc.name,
+            alarm_info=info,
+            alarm_level=level,
+            alarm_time=fc.computed_at,
+            handle_status="待处理",
+        )
+        if alarm is not None:
+            created_ids.append(alarm.id)
+    return {"created": len(created_ids), "alarm_ids": created_ids}
+
+
+def _explain_contributions(metric: str, contributions: list[dict]) -> str:
+    """确定性模板解读：基于 top 贡献生成中文解释（可解释化）。
+
+    contributions 已按 |impact| 降序；排除截距基线项，取前 3 个显著影响者。
+    impact>0 推动预测值上升，<0 压低；按指标方向（low/high_good）措辞「恶化/改善」。
+    """
+    meta = fm.get_metric_meta(metric)
+    if not meta:
+        return ""
+    top = [c for c in contributions if c.get("feature") != "intercept" and abs(c["impact"]) >= 0.5][
+        :3
+    ]
+    if not top:
+        return "预测主要由历史趋势决定，外部特征影响不显著。"
+    parts = []
+    for c in top:
+        rising = c["impact"] > 0
+        if meta.direction == fm.DIRECTION_LOW_GOOD:
+            verdict = "上升（风险走高）" if rising else "下降（风险走低）"
+            good = "不利" if rising else "有利"
+        else:
+            verdict = "上升（健康改善）" if rising else "下降（健康恶化）"
+            good = "有利" if rising else "不利"
+        parts.append(f"{c['label']}{verdict}（{good}）")
+    return "；".join(parts) + "。"
+
+
+def run_preventive_alerts(db: Session) -> dict[str, Any]:
+    """预防式告警（置信带联动）：遍历 forecast 表，对预测置信区间将越过告警阈值的
+    对象生成 ``preventive_alert`` 告警，比点预测越阈更早预警。
+
+    判据见 :func:`forecast_metrics.preventive_breach`：low_good 指标（risk_index）看上界、
+    high_good 指标（health_score）看下界。幂等唯一键
+    ``preventive:{metric}:{ref_id}:{horizon_days}``（跨 Redis-TTL 仍生效）。
+    复用既有告警流（落库 + 站内信 + 告警页）。
+    """
+    from app.core.constants import ALARM_TYPE_PREVENTIVE
+    from app.service import alarm_service
+
+    rows = db.scalars(select(Forecast)).all()
+    created_ids: list[int] = []
+    for fc in rows:
+        if fc.forecast_value is None or fc.forecast_level is None:
+            continue
+        breach, level = fm.preventive_breach(fc.metric, fc.forecast_lower, fc.forecast_upper)
+        if not breach or level is None:
+            continue
+        device_no = f"preventive:{fc.metric}:{fc.ref_id}:{fc.horizon_days}"
+        existing = db.scalar(select(Alarm.id).where(Alarm.device_no == device_no).limit(1))
+        if existing is not None:
+            continue
+        horizon = fc.horizon_days
+        lower = fc.forecast_lower if fc.forecast_lower is not None else fc.forecast_value
+        upper = fc.forecast_upper if fc.forecast_upper is not None else fc.forecast_value
+        fa_str = fc.forecast_at.strftime("%Y-%m-%d") if fc.forecast_at else "—"
+        meta = fm.get_metric_meta(fc.metric)
+        metric_label = meta.label if meta else fc.metric
+        if meta and meta.direction == fm.DIRECTION_LOW_GOOD:
+            trend_phrase = f"将升至 {fc.forecast_value:.0f}（预测区间上限 {upper:.0f}）"
+        else:
+            trend_phrase = f"将跌至 {fc.forecast_value:.0f}（预测区间下限 {lower:.0f}）"
+        info = (
+            f"预防式预警：{metric_label}《{fc.name}》预测 {horizon} 天后{trend_phrase}，"
+            f"95% 置信区间 [{lower:.0f}, {upper:.0f}] 将越过告警阈值，预计 {fa_str} 前触及，"
+            f"建议提前介入处置。"
+        )
+        alarm = alarm_service.create_alarm(
+            db,
+            project_id=fc.project_id,
+            alarm_type=ALARM_TYPE_PREVENTIVE,
             device_no=device_no,
             device_name=fc.name,
             alarm_info=info,

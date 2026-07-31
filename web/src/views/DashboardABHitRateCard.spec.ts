@@ -1,8 +1,13 @@
-// 大屏预测模型 A/B 对比卡单测：加载渲染 + 空态 + 重新回测联动
+// 大屏预测模型 A/B 对比卡单测：加载渲染 + 空态 + 重新回测联动 + 指标筛选
 import { flushPromises, mount } from "@vue/test-utils";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DashboardABHitRateCard from "@/views/DashboardABHitRateCard.vue";
-import type { ABHitRate } from "@/api/forecast";
+import type { ABHitRate, ForecastMetric } from "@/api/forecast";
+
+const METRICS: ForecastMetric[] = [
+  { key: "risk_index", label: "项目风险指数", scope_type: "project", direction: "low_good", unit: "分", description: "项目综合风险指数(0-100)，越低越好", preventive_threshold: 60, preventive_alarm_level: "警告" },
+  { key: "health_score", label: "设备健康分", scope_type: "device", direction: "high_good", unit: "分", description: "设备健康分(0-100)，越高越好", preventive_threshold: 60, preventive_alarm_level: "严重" },
+];
 
 const AB_DATA: ABHitRate = {
   period_days: 90,
@@ -68,6 +73,7 @@ const hoisted = vi.hoisted(() => ({
   runForecastBacktest: vi.fn(),
   getForecastDefaultModel: vi.fn(),
   setForecastDefaultModel: vi.fn(),
+  listForecastMetrics: vi.fn(),
   elSuccess: vi.fn(),
   elError: vi.fn(),
 }));
@@ -77,6 +83,7 @@ vi.mock("@/api/forecast", () => ({
   runForecastBacktest: (...a: any[]) => hoisted.runForecastBacktest(...a),
   getForecastDefaultModel: (...a: any[]) => hoisted.getForecastDefaultModel(...a),
   setForecastDefaultModel: (...a: any[]) => hoisted.setForecastDefaultModel(...a),
+  listForecastMetrics: (...a: any[]) => hoisted.listForecastMetrics(...a),
 }));
 vi.mock("element-plus", async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -91,11 +98,15 @@ vi.mock("element-plus", async (importOriginal) => {
   };
 });
 
+beforeEach(() => {
+  hoisted.listForecastMetrics.mockResolvedValue(METRICS);
+});
 afterEach(() => {
   hoisted.getForecastABHitRate.mockReset();
   hoisted.runForecastBacktest.mockReset();
   hoisted.getForecastDefaultModel.mockReset();
   hoisted.setForecastDefaultModel.mockReset();
+  hoisted.listForecastMetrics.mockReset();
   hoisted.elSuccess.mockReset();
   hoisted.elError.mockReset();
 });
@@ -169,6 +180,20 @@ describe("DashboardABHitRateCard", () => {
     expect(hoisted.setForecastDefaultModel).toHaveBeenCalledWith("hw_v1");
     expect(hoisted.elSuccess).toHaveBeenCalled();
     expect(hoisted.getForecastDefaultModel).toHaveBeenCalledTimes(2);
+    wrapper.unmount();
+  });
+
+  it("切换指标筛选：以指定 metric 重新拉取 A/B 报表（默认全部不传 metric）", async () => {
+    hoisted.getForecastABHitRate.mockResolvedValue(EMPTY);
+    const wrapper = mount(DashboardABHitRateCard);
+    await flushPromises();
+
+    // 默认「全部指标」：仅传 days
+    expect(hoisted.getForecastABHitRate).toHaveBeenLastCalledWith({ days: 90 });
+    // 选中具体指标后携带 metric
+    await wrapper.findComponent({ name: "ElRadioGroup" }).setValue("risk_index");
+    await flushPromises();
+    expect(hoisted.getForecastABHitRate).toHaveBeenLastCalledWith({ days: 90, metric: "risk_index" });
     wrapper.unmount();
   });
 });

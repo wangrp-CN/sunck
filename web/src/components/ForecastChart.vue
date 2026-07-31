@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import type { ForecastFit, ForecastSeriesPoint } from "@/api/forecast";
+import type { ForecastContribution, ForecastFit, ForecastSeriesPoint } from "@/api/forecast";
 
 // 预测图（Phase 5 M4 驾驶舱预测卡）：纯内联 SVG，不引图表库。
 // 历史实线 + 预测虚线延伸 + 预测点 + 95% 置信带（从末点张开到预测点的扇形区）
 // + 阈值虚线。x 轴按真实时间戳比例布点（历史与预测跨度按时长占位）。
+// 另含「特征贡献归因」横向条形图（可解释化）：各外部/日历特征对预测值的贡献（按 |impact| 降序）。
 const props = withDefaults(
   defineProps<{
     series: ForecastSeriesPoint[];
@@ -14,8 +15,53 @@ const props = withDefaults(
     height?: number;
     color?: string;
     forecastColor?: string;
+    contributions?: ForecastContribution[] | null;
   }>(),
   { width: 420, height: 150, color: "#409eff", forecastColor: "#e6a23c" },
+);
+
+// ---- 特征贡献归因条形图（可解释化）----
+const CONTRIB_ROW_H = 18;
+const CONTRIB_PAD_L = 8;
+const CONTRIB_LABEL_W = 60;
+const CONTRIB_VALUE_W = 40;
+
+const showContrib = computed(() => (props.contributions?.length ?? 0) > 0);
+
+// 排除截距基线项，最多展示前 6 个显著特征
+const contribRows = computed(() =>
+  (props.contributions ?? [])
+    .filter((c) => c.feature !== "intercept")
+    .slice(0, 6),
+);
+
+const contribW = computed(() => props.width);
+const contribH = computed(() => Math.max(1, contribRows.value.length * CONTRIB_ROW_H + 8));
+const contribAreaW = computed(
+  () => contribW.value - CONTRIB_PAD_L - CONTRIB_LABEL_W - CONTRIB_VALUE_W - 4,
+);
+const contribCenterX = computed(() => CONTRIB_PAD_L + CONTRIB_LABEL_W + 4 + contribAreaW.value / 2);
+
+const contribMaxAbs = computed(() => {
+  const m = Math.max(1e-9, ...contribRows.value.map((r) => Math.abs(r.impact)));
+  return m;
+});
+
+const contribBars = computed(() =>
+  contribRows.value.map((r, i) => {
+    const cy = 8 + i * CONTRIB_ROW_H + CONTRIB_ROW_H / 2;
+    const len = (Math.abs(r.impact) / contribMaxAbs.value) * (contribAreaW.value / 2);
+    const pos = r.impact >= 0;
+    return {
+      label: r.label,
+      valueText: (pos ? "+" : "") + r.impact.toFixed(1),
+      x: pos ? contribCenterX.value : contribCenterX.value - len,
+      y: cy - 5,
+      w: Math.max(len, 1.2),
+      color: pos ? "#e6a23c" : "#409eff",
+      textY: cy + 3.5,
+    };
+  }),
 );
 
 const PAD = { top: 14, right: 46, bottom: 20, left: 8 };
@@ -121,87 +167,108 @@ const xLabels = computed(() => {
 </script>
 
 <template>
-  <svg
-    v-if="hasSeries"
-    :viewBox="`0 0 ${width} ${height}`"
-    :width="width"
-    :height="height"
-    role="img"
-    class="forecast-chart"
-    :aria-label="`预测图：${series.length} 个历史点${forecast ? `，预测值 ${forecast.forecast_value}` : ''}`"
-  >
-    <!-- 阈值虚线 -->
-    <line
-      v-if="thresholdY !== null"
-      :x1="PAD.left"
-      :x2="width - PAD.right"
-      :y1="thresholdY"
-      :y2="thresholdY"
-      class="fc-threshold"
-    />
-    <text
-      v-if="thresholdY !== null"
-      :x="width - PAD.right + 4"
-      :y="thresholdY + 3"
-      class="fc-th-label"
+  <div class="forecast-chart-wrap">
+    <svg
+      v-if="hasSeries"
+      :viewBox="`0 0 ${width} ${height}`"
+      :width="width"
+      :height="height"
+      role="img"
+      class="forecast-chart"
+      :aria-label="`预测图：${series.length} 个历史点${forecast ? `，预测值 ${forecast.forecast_value}` : ''}`"
     >
-      {{ threshold }}
-    </text>
-
-    <!-- 95% 置信带 -->
-    <path v-if="bandPath" :d="bandPath" class="fc-band" :fill="forecastColor" />
-
-    <!-- 历史折线 -->
-    <path :d="linePath" fill="none" :stroke="color" stroke-width="1.8" class="fc-line" />
-
-    <!-- 预测虚线延伸 -->
-    <path
-      v-if="projPath"
-      :d="projPath"
-      fill="none"
-      :stroke="forecastColor"
-      stroke-width="1.6"
-      stroke-dasharray="4 3"
-      class="fc-proj"
-    />
-
-    <!-- 历史末点 -->
-    <circle v-if="lastPoint" :cx="lastPoint.x" :cy="lastPoint.y" r="2.6" :fill="color" class="fc-dot" />
-
-    <!-- 预测点（菱形） + 数值标注 -->
-    <g v-if="fcPoint && forecast" class="fc-point">
-      <rect
-        :x="fcPoint.x - 3.4"
-        :y="fcPoint.y - 3.4"
-        width="6.8"
-        height="6.8"
-        :fill="forecastColor"
-        :transform="`rotate(45 ${fcPoint.x} ${fcPoint.y})`"
-        stroke="#fff"
-        stroke-width="1"
+      <!-- 阈值虚线 -->
+      <line
+        v-if="thresholdY !== null"
+        :x1="PAD.left"
+        :x2="width - PAD.right"
+        :y1="thresholdY"
+        :y2="thresholdY"
+        class="fc-threshold"
       />
-      <text :x="fcPoint.x + 6" :y="fcPoint.y - 6" class="fc-value" :fill="forecastColor">
-        {{ forecast.forecast_value.toFixed(0) }}
+      <text
+        v-if="thresholdY !== null"
+        :x="width - PAD.right + 4"
+        :y="thresholdY + 3"
+        class="fc-th-label"
+      >
+        {{ threshold }}
       </text>
-      <!-- 置信带上下界刻度 -->
-      <text :x="fcPoint.x + 6" :y="fcPoint.yHi + 3" class="fc-bound">{{ forecast.forecast_upper.toFixed(0) }}</text>
-      <text :x="fcPoint.x + 6" :y="fcPoint.yLo + 3" class="fc-bound">{{ forecast.forecast_lower.toFixed(0) }}</text>
-    </g>
 
-    <!-- x 轴日期 -->
-    <text
-      v-for="(l, i) in xLabels"
-      :key="i"
-      :x="l.x"
-      :y="height - 6"
-      text-anchor="middle"
-      class="fc-x-label"
-      :class="l.cls"
+      <!-- 95% 置信带 -->
+      <path v-if="bandPath" :d="bandPath" class="fc-band" :fill="forecastColor" />
+
+      <!-- 历史折线 -->
+      <path :d="linePath" fill="none" :stroke="color" stroke-width="1.8" class="fc-line" />
+
+      <!-- 预测虚线延伸 -->
+      <path
+        v-if="projPath"
+        :d="projPath"
+        fill="none"
+        :stroke="forecastColor"
+        stroke-width="1.6"
+        stroke-dasharray="4 3"
+        class="fc-proj"
+      />
+
+      <!-- 历史末点 -->
+      <circle v-if="lastPoint" :cx="lastPoint.x" :cy="lastPoint.y" r="2.6" :fill="color" class="fc-dot" />
+
+      <!-- 预测点（菱形） + 数值标注 -->
+      <g v-if="fcPoint && forecast" class="fc-point">
+        <rect
+          :x="fcPoint.x - 3.4"
+          :y="fcPoint.y - 3.4"
+          width="6.8"
+          height="6.8"
+          :fill="forecastColor"
+          :transform="`rotate(45 ${fcPoint.x} ${fcPoint.y})`"
+          stroke="#fff"
+          stroke-width="1"
+        />
+        <text :x="fcPoint.x + 6" :y="fcPoint.y - 6" class="fc-value" :fill="forecastColor">
+          {{ forecast.forecast_value.toFixed(0) }}
+        </text>
+        <!-- 置信带上下界刻度 -->
+        <text :x="fcPoint.x + 6" :y="fcPoint.yHi + 3" class="fc-bound">{{ forecast.forecast_upper.toFixed(0) }}</text>
+        <text :x="fcPoint.x + 6" :y="fcPoint.yLo + 3" class="fc-bound">{{ forecast.forecast_lower.toFixed(0) }}</text>
+      </g>
+
+      <!-- x 轴日期 -->
+      <text
+        v-for="(l, i) in xLabels"
+        :key="i"
+        :x="l.x"
+        :y="height - 6"
+        text-anchor="middle"
+        class="fc-x-label"
+        :class="l.cls"
+      >
+        {{ l.text }}
+      </text>
+    </svg>
+
+    <!-- 特征贡献归因（可解释化）：横向发散条形图 -->
+    <svg
+      v-if="showContrib"
+      :viewBox="`0 0 ${contribW} ${contribH}`"
+      :width="contribW"
+      :height="contribH"
+      role="img"
+      class="forecast-contrib"
+      aria-label="预测特征贡献归因"
     >
-      {{ l.text }}
-    </text>
-  </svg>
-  <div v-else class="fc-empty">暂无快照序列</div>
+      <line :x1="contribCenterX" :x2="contribCenterX" :y1="6" :y2="contribH - 4" class="fc-contrib-axis" />
+      <g v-for="(b, i) in contribBars" :key="i">
+        <text :x="CONTRIB_PAD_L" :y="b.textY" class="fc-contrib-label">{{ b.label }}</text>
+        <rect :x="b.x" :y="b.y" :width="b.w" height="10" :fill="b.color" rx="1.5" class="fc-contrib-bar" />
+        <text :x="contribW - 4" :y="b.textY" text-anchor="end" class="fc-contrib-val">{{ b.valueText }}</text>
+      </g>
+    </svg>
+
+    <div v-if="!hasSeries" class="fc-empty">暂无快照序列</div>
+  </div>
 </template>
 
 <style scoped>
@@ -250,5 +317,26 @@ const xLabels = computed(() => {
   font-size: 12px;
   text-align: center;
   padding: 24px 0;
+}
+.forecast-contrib {
+  display: block;
+  margin-top: 6px;
+}
+.fc-contrib-axis {
+  stroke: #dcdfe6;
+  stroke-width: 1;
+}
+.fc-contrib-label {
+  font-size: 10px;
+  fill: #606266;
+}
+.fc-contrib-val {
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  fill: #303133;
+  font-weight: 600;
+}
+.fc-contrib-bar {
+  opacity: 0.85;
 }
 </style>

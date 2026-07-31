@@ -25,17 +25,8 @@ from sqlalchemy import select
 from app.core.data_scope import DataScope, apply_data_scope
 from app.model.forecast import Forecast
 from app.model.snapshot import RiskHealthSnapshot
-from app.service.forecast_service import (
-    METRIC_HEALTH_SCORE,
-    METRIC_RISK_INDEX,
-    _predictive_breach,
-)
-
-# 指标 → 实际读数列（与 forecast_service._METRIC_COLUMNS 保持一致）
-_METRIC_COLUMNS = {
-    METRIC_RISK_INDEX: RiskHealthSnapshot.risk_index,
-    METRIC_HEALTH_SCORE: RiskHealthSnapshot.health_score,
-}
+from app.service import forecast_metrics as fm
+from app.service.forecast_service import _predictive_breach
 
 
 def _now() -> datetime:
@@ -66,7 +57,7 @@ def _zero_project(project_id: int) -> dict[str, Any]:
 
 def _verify(fc: Forecast, db) -> tuple[bool, float | None]:
     """在预测窗口内回查实际序列，返回 (是否命中, 提前量小时数|None)。"""
-    col = _METRIC_COLUMNS.get(fc.metric)
+    col = fm.metric_column(fc.metric)
     if col is None or fc.forecast_at is None or fc.forecast_value is None:
         return False, None
     window_end = fc.forecast_at + timedelta(days=fc.horizon_days)
@@ -81,14 +72,11 @@ def _verify(fc: Forecast, db) -> tuple[bool, float | None]:
         )
         .order_by(RiskHealthSnapshot.snapshot_at.asc())
     ).all()
+    low_good = fm.direction_of(fc.metric) == fm.DIRECTION_LOW_GOOD
     for snap_at, val in rows:
         if val is None:
             continue
-        if fc.metric == METRIC_RISK_INDEX:
-            breach = val >= fc.forecast_value
-        else:
-            breach = val <= fc.forecast_value
-        if breach:
+        if (val >= fc.forecast_value) if low_good else (val <= fc.forecast_value):
             lead = (snap_at - fc.forecast_at).total_seconds() / 3600.0
             if lead < 0:
                 lead = 0.0

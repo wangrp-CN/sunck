@@ -29,6 +29,7 @@ from app.model.project import Project
 from app.model.system import User
 from app.schema.forecast import ForecastOut
 from app.service import backtest_service as bt_svc
+from app.service import forecast_metrics as metrics_mod
 from app.service import forecast_models as models_mod
 from app.service import forecast_service as svc
 from app.service import prediction_hitrate as hitrate_svc
@@ -84,8 +85,9 @@ def preview(
     scope: DataScope = Depends(get_data_scope),
     horizon_days: int | None = Query(None, ge=1, le=90, description="预测跨度(天)"),
     history_days: int | None = Query(None, ge=3, le=365, description="回看窗口(天)"),
+    metric: str | None = Query(None, description="预测指标 key（缺省按 scope 推断）"),
 ) -> ApiResponse:
-    """历史序列 + 拟合参数 + 预测点 + 置信带（M2，供驾驶舱预测卡画图）。
+    """历史序列 + 拟合参数 + 预测点 + 置信带 + 可解释化贡献（M2，供驾驶舱预测卡画图）。
 
     样本不足时 forecast 为 null，series 照常返回（前端提示"数据积累中"）。
     """
@@ -99,11 +101,40 @@ def preview(
             return ApiResponse.fail(code=400, message="project 预览的 ref_id 须为项目 ID")
     else:
         pid = svc._device_project_id(db, ref_id)
+    if metric:
+        meta = metrics_mod.get_metric_meta(metric)
+        if meta is None:
+            return ApiResponse.fail(code=400, message=f"未知指标：{metric}")
     if not _can_access_project(db, scope, pid):
         return ApiResponse.fail(code=403, message="对象不存在或无权访问")
     data = svc.preview_forecast(
-        db, scope_type, ref_id, horizon_days=horizon_days, history_days=history_days
+        db, scope_type, ref_id, horizon_days=horizon_days, history_days=history_days, metric=metric
     )
+    return ApiResponse.success(data=data)
+
+
+@router.get(
+    "/metrics",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("forecast:view"))],
+)
+def list_metrics(
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse:
+    """可用预测指标清单（多指标切换用）。"""
+    data = [
+        {
+            "key": m.key,
+            "label": m.label,
+            "scope_type": m.scope_type,
+            "direction": m.direction,
+            "unit": m.unit,
+            "description": m.description,
+            "preventive_threshold": m.preventive_threshold,
+            "preventive_alarm_level": m.preventive_alarm_level,
+        }
+        for m in metrics_mod.all_metrics()
+    ]
     return ApiResponse.success(data=data)
 
 
@@ -267,6 +298,7 @@ def set_default_model(
     settings.forecast_primary_model = payload.model_version
     stats = svc.run_forecasts(db, model_version=payload.model_version)
     alerts = svc.run_predictive_alerts(db)
+    preventive = svc.run_preventive_alerts(db)
     db.commit()
     return ApiResponse.success(
         data={
@@ -274,5 +306,6 @@ def set_default_model(
             "label": models_mod.MODEL_LABELS.get(payload.model_version, payload.model_version),
             "recomputed": stats,
             "predictive_alerts": alerts,
+            "preventive_alerts": preventive,
         }
     )
