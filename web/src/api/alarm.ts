@@ -309,3 +309,33 @@ export function getPreventiveSummary(params: {
     params,
   });
 }
+
+// 告警态势总览（大屏「告警态势」卡）
+export interface SituationKpi {
+  today_new: number;
+  pending: number;
+  pending_critical: number;
+  active_preventive: number;
+}
+export interface SituationTrendPoint {
+  date: string;
+  total: number;
+  严重: number;
+  警告: number;
+  提示: number;
+}
+export interface SituationSummary {
+  kpi: SituationKpi;
+  pending_by_level: Record<string, number>;
+  trend: SituationTrendPoint[];
+}
+export function getSituation(params: {
+  project_id?: number;
+  days?: number;
+} = {}): Promise<SituationSummary> {
+  return http<SituationSummary>({
+    url: "/v1/alarms/situation",
+    method: "GET",
+    params,
+  });
+}

@@ -41,6 +41,7 @@ import WorkPlanPopup from "@/components/WorkPlanPopup.vue";
 import DashboardCorrelationCompareCard from "@/components/DashboardCorrelationCompareCard.vue";
 import DashboardForecastCard from "@/components/DashboardForecastCard.vue";
 import DashboardPreventiveCard from "@/components/DashboardPreventiveCard.vue";
+import DashboardAlarmSituationCard from "@/components/DashboardAlarmSituationCard.vue";
 import DashboardHitRateCard from "@/views/DashboardHitRateCard.vue";
 import DashboardABHitRateCard from "@/views/DashboardABHitRateCard.vue";
 import DashboardDispositionCard from "@/views/DashboardDispositionCard.vue";
@@ -1460,6 +1461,13 @@ onUnmounted(() => {
     <el-row :gutter="16" class="compare-row">
       <el-col :span="24">
         <DashboardCorrelationCompareCard />
+      </el-col>
+    </el-row>
+
+    <!-- 告警态势总览卡（KPI + 待处理分布 + 近 14 天趋势，自带 60s 刷新） -->
+    <el-row :gutter="16" class="forecast-row">
+      <el-col :span="24">
+        <DashboardAlarmSituationCard />
       </el-col>
     </el-row>
 

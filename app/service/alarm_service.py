@@ -6,10 +6,10 @@ ALARM_DEDUP_TTL 秒内只产生一条「打开中」告警，后续重复上报�
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, literal, select, update
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -360,7 +360,7 @@ def summarize_preventive(
         handle_status="待处理",
     )
     total = db.scalar(select(func.count()).select_from(base.subquery())) or 0
-    rows = db.execute(base.with_entities(Alarm.device_no, Alarm.alarm_level)).all()
+    rows = db.execute(base.with_only_columns(Alarm.device_no, Alarm.alarm_level)).all()
     by_metric: dict[str, int] = {}
     by_level: dict[str, int] = {}
     for dn, lvl in rows:
@@ -377,6 +377,112 @@ def summarize_preventive(
         "by_metric": by_metric,
         "by_level": by_level,
         "recent": recent,
+    }
+
+
+#: 告警级别固定顺序（趋势堆叠面积 / 分布 chip 共用）
+_ALARM_LEVEL_ORDER = ("严重", "警告", "提示")
+
+
+def situation_summary(
+    db: Session,
+    scope: DataScope,
+    project_id: int | None = None,
+    days: int = 14,
+) -> dict[str, Any]:
+    """告警态势总览（大屏卡）：KPI + 近 days 天按级别每日趋势，施加部门数据隔离。
+
+    - kpi.today_new:        今日(按 date(alarm_time)=date(now))新增告警
+    - kpi.pending:          待处理总数
+    - kpi.pending_critical: 待处理且级别=严重（高亮红）
+    - kpi.active_preventive:活跃预防式告警(待处理)
+    - pending_by_level:     待处理按级别分布
+    - trend:                近 days 天每日 {date,total,严重,警告,提示}
+
+    全部复用 _alarm_list_stmt 的过滤 + 隔离，零新增迁移；趋势按 DB date() 分组，
+    跨 Postgres/SQLite 一致（边界 tz 误差 ≤1 天，对 N 天趋势视图可忽略）。
+    """
+    days = max(1, min(int(days), 90))
+
+    # —— 趋势：近 days 天，按日期 + 级别分组（SQL 聚合，轻量） ——
+    # 以「会话本地日期」为窗口基准：func.date(alarm_time) 在 PG 中按会话时区
+    # （生产为中国 +8）取日期，若桶键用 UTC 零点的 start_dt 推算，会出现近 1 天
+    # 告警（如 23:xx UTC = 次日中国）落入窗口外被漏计。统一用本地日期口径对齐。
+    local_today = db.scalar(select(func.date(func.now())))
+    if local_today is None:
+        local_today = datetime.now(timezone.utc).date()
+    start_date = local_today - timedelta(days=days - 1)
+
+    trend_rows = db.execute(
+        _alarm_list_stmt(scope, project_id=project_id)
+        .with_only_columns(
+            func.date(Alarm.alarm_time).label("d"),
+            Alarm.alarm_level,
+            func.count().label("c"),
+        )
+        .where(func.date(Alarm.alarm_time) >= literal(start_date))
+        .group_by(func.date(Alarm.alarm_time), Alarm.alarm_level)
+    ).all()
+
+    # 预填整窗（含零值日期），保证「无告警日」仍出现在趋势中
+    buckets: dict[str, dict[str, int]] = {}
+    for i in range(days):
+        ds = (start_date + timedelta(days=i)).isoformat()
+        buckets[ds] = {"date": ds, "total": 0, "严重": 0, "警告": 0, "提示": 0}
+    for d, lvl, c in trend_rows:
+        # d 在 PG 为 date、在 SQLite 为 'YYYY-MM-DD' 字符串，统一取前 10 位
+        ds = (d.isoformat() if isinstance(d, date) else str(d))[:10]
+        b = buckets.get(ds)
+        if b is None:
+            continue
+        b["total"] += c
+        if lvl in _ALARM_LEVEL_ORDER:
+            b[lvl] += c
+    trend = list(buckets.values())
+
+    # —— KPI ——
+    pending = count_alarms(db, scope, project_id=project_id, handle_status="待处理")
+    pending_critical = (
+        db.scalar(
+            select(func.count()).select_from(
+                _alarm_list_stmt(scope, project_id=project_id, handle_status="待处理")
+                .where(Alarm.alarm_level == "严重")
+                .subquery()
+            )
+        )
+        or 0
+    )
+    active_preventive = count_alarms(
+        db, scope, project_id=project_id, alarm_type=ALARM_TYPE_PREVENTIVE, handle_status="待处理"
+    )
+    today_new = (
+        db.scalar(
+            select(func.count()).select_from(
+                _alarm_list_stmt(scope, project_id=project_id)
+                .where(func.date(Alarm.alarm_time) == func.date(func.now()))
+                .subquery()
+            )
+        )
+        or 0
+    )
+
+    # 待处理按级别分布
+    pl_rows = db.execute(
+        _alarm_list_stmt(scope, project_id=project_id, handle_status="待处理")
+        .with_only_columns(Alarm.alarm_level, func.count())
+        .group_by(Alarm.alarm_level)
+    ).all()
+    pending_by_level = {lvl: c for lvl, c in pl_rows}
+
+    return {
+        "kpi": {
+            "today_new": today_new,
+            "pending": pending,
+            "pending_critical": pending_critical,
+            "active_preventive": active_preventive,
+        },
+        "pending_by_level": pending_by_level,
+        "trend": trend,
     }
 
 

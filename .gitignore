@@ -29,6 +29,9 @@ htmlcov/
 .idea/
 .vscode/
 
+# macOS
+.DS_Store
+
 # 工程产物
 data/
 media/

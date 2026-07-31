@@ -40,6 +40,7 @@ from app.service.alarm_service import (
     aggregate_alarms,
     handle_alarm,
     query_alarms_for_report,
+    situation_summary,
     summarize_preventive,
     update_alarm_media,
 )
@@ -300,6 +301,27 @@ def preventive_summary(
     施加部门数据隔离（与告警列表同源）。
     """
     data = summarize_preventive(db, scope, project_id=project_id)
+    return ApiResponse.success(data=data)
+
+
+@router.get(
+    "/situation",
+    summary="告警态势总览（大屏卡）",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("alarm:list"))],
+)
+def alarm_situation(
+    db: Session = Depends(get_db),
+    scope=Depends(get_data_scope),
+    project_id: int | None = None,
+    days: int = Query(14, description="趋势回溯天数 (1-90)", ge=1, le=90),
+) -> ApiResponse:
+    """返回当前用户数据范围内、监控大屏「告警态势」卡所需的概览数据。
+
+    含 KPI（今日新增/待处理/严重待处理/活跃预防式）、待处理按级别分布、
+    近 days 天按级别每日趋势。施加部门数据隔离（与告警列表同源）。
+    """
+    data = situation_summary(db, scope, project_id=project_id, days=days)
     return ApiResponse.success(data=data)
 
 

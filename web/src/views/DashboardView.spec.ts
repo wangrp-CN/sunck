@@ -56,6 +56,7 @@ vi.mock("@/api/alarm", () => ({
   exportAlarmReport: vi.fn(),
   fetchSnapshotPreview: vi.fn(),
   getPreventiveSummary: vi.fn(),
+  getSituation: vi.fn(),
 }));
 vi.mock("@/components/MapPanel.vue", () => ({ default: { name: "M", template: "<div/>", methods: { focusDevice() {} } } }));
 vi.mock("@/components/WorkPlanPopup.vue", () => ({ default: { name: "WPP", template: "<div/>" } }));
@@ -66,7 +67,7 @@ import { getRiskAlerts, getRiskTrend, getCorrelationSummary, getCorrelationTrend
 import { fetchDevices, fetchLocations } from "@/api/realtime";
 import { fetchFences } from "@/api/fence";
 import { fetchProjects } from "@/api/project";
-import { exportAlarmReport, fetchSnapshotPreview, getPreventiveSummary } from "@/api/alarm";
+import { exportAlarmReport, fetchSnapshotPreview, getPreventiveSummary, getSituation } from "@/api/alarm";
 
 // el-dialog 在 jsdom 下卸载时过渡 vnode 为 null 会抛未处理异常（已知环境问题）。
 // 用无过渡的占位替换 ElDialog，使弹层相关断言仍成立且不再崩溃。
@@ -84,6 +85,11 @@ beforeEach(() => {
     by_metric: {},
     by_level: {},
     recent: [],
+  } as any);
+  vi.mocked(getSituation).mockResolvedValue({
+    kpi: { today_new: 0, pending: 0, pending_critical: 0, active_preventive: 0 },
+    pending_by_level: {},
+    trend: [],
   } as any);
   vi.mocked(getRecentAlarms).mockResolvedValue(recent as any);
   vi.mocked(getRiskAlerts).mockResolvedValue({ items: [] } as any);
