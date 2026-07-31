@@ -10,7 +10,9 @@
 
 from datetime import datetime, timedelta, timezone
 
+from app.config import settings
 from app.service import forecast_models as m
+from app.service import forecast_service as svc
 
 METRIC_RISK = "risk_index"
 METRIC_HEALTH = "health_score"
@@ -100,3 +102,13 @@ def test_forecast_by_model_unknown_falls_back():
     d = m.forecast_by_model("does_not_exist", s, METRIC_RISK, 7)
     assert d is not None
     assert d["model_version"] == m.PRIMARY_MODEL == "ols_v1"
+
+
+def test_resolve_default_model_reads_settings(monkeypatch):
+    """默认模型版本从 settings.forecast_primary_model 动态解析；非法值回退 PRIMARY_MODEL。"""
+    monkeypatch.setattr(settings, "forecast_primary_model", "hw_v1")
+    assert svc._resolve_default_model() == "hw_v1"
+    monkeypatch.setattr(settings, "forecast_primary_model", "not_a_model")
+    assert svc._resolve_default_model() == svc.models.PRIMARY_MODEL
+    monkeypatch.setattr(settings, "forecast_primary_model", "ols_v1")
+    assert svc._resolve_default_model() == "ols_v1"

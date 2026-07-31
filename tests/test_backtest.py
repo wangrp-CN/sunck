@@ -14,8 +14,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, select
 
+from app.config import settings
 from app.core.data_scope import DataScope
 from app.core.database import SessionLocal
+from app.model.forecast import Forecast
 from app.model.forecast_backtest import ForecastBacktest
 from app.model.project import Project
 from app.model.snapshot import RiskHealthSnapshot
@@ -145,3 +147,61 @@ def test_backtest_and_hitrate_endpoints(client: TestClient, admin_token: str, bt
     assert body2["code"] == 0, body2
     assert len(body2["data"]["models"]) == 2
     assert body2["data"]["comparison"] is not None
+
+
+def test_model_default_endpoints(client: TestClient, admin_token: str, bt_env):
+    """GET 读当前默认模型；POST 一键切换并即时重算落库；非法版本拒绝。"""
+    orig = settings.forecast_primary_model
+    try:
+        # 读默认
+        r = client.get("/api/v1/forecasts/model/default", headers=_h(admin_token))
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["code"] == 0, body
+        assert body["data"]["model_version"] == orig
+        assert len(body["data"]["available"]) == 2
+
+        # 一键切换到 hw_v1（即时重算 + 落库）
+        r2 = client.post(
+            "/api/v1/forecasts/model/default",
+            json={"model_version": "hw_v1"},
+            headers=_h(admin_token),
+        )
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["code"] == 0, r2.json()
+        assert r2.json()["data"]["model_version"] == "hw_v1"
+        assert settings.forecast_primary_model == "hw_v1"
+
+        # 该项目的 forecast 已用 hw_v1 重算落库
+        db = SessionLocal()
+        try:
+            f = db.scalars(
+                select(Forecast).where(
+                    Forecast.ref_id == str(bt_env), Forecast.metric == "risk_index"
+                )
+            ).first()
+            assert f is not None and f.model_version == "hw_v1"
+        finally:
+            db.close()
+
+        # 切回原模型（恢复全局/库状态）
+        r3 = client.post(
+            "/api/v1/forecasts/model/default",
+            json={"model_version": orig},
+            headers=_h(admin_token),
+        )
+        assert r3.json()["code"] == 0
+        assert settings.forecast_primary_model == orig
+    finally:
+        settings.forecast_primary_model = orig
+
+
+def test_model_default_rejects_unknown(client: TestClient, admin_token: str):
+    """未知模型版本应被拒绝（业务错误码）。"""
+    r = client.post(
+        "/api/v1/forecasts/model/default",
+        json={"model_version": "nope"},
+        headers=_h(admin_token),
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["code"] != 0

@@ -179,3 +179,26 @@ export function getForecastABHitRate(params: {
 } = {}): Promise<ABHitRate> {
   return http<ABHitRate>({ url: "/v1/forecasts/hit-rate/ab", method: "GET", params });
 }
+
+// 当前上线默认预测模型（GET /v1/forecasts/model/default 返回）
+export interface ForecastDefaultModel {
+  model_version: string;
+  available: { model_version: string; label: string }[];
+}
+
+export function getForecastDefaultModel(): Promise<ForecastDefaultModel> {
+  return http<ForecastDefaultModel>({ url: "/v1/forecasts/model/default", method: "GET" });
+}
+
+export function setForecastDefaultModel(model_version: string): Promise<{
+  model_version: string;
+  label: string;
+  recomputed: unknown;
+  predictive_alerts: unknown;
+}> {
+  return http({
+    url: "/v1/forecasts/model/default",
+    method: "POST",
+    data: { model_version },
+  });
+}

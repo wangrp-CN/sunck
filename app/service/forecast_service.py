@@ -41,8 +41,20 @@ from app.service import forecast_models as models
 METRIC_RISK_INDEX = "risk_index"
 METRIC_HEALTH_SCORE = "health_score"
 
-#: 默认上线模型（保持 OLS 不变；hw_v1 仅作 A/B 对照，可通过 recompute?model=hw_v1 切换）
+#: 默认上线模型版本（可在 settings.forecast_primary_model 中配置，支持运行时一键切换）。
+#: 此处保留 PRIMARY_MODEL 作为解析失败的兜底；真正生效值由 _resolve_default_model() 运行时读取。
 DEFAULT_MODEL = models.PRIMARY_MODEL
+
+
+def _resolve_default_model() -> str:
+    """读取当前上线默认模型版本；若配置值不在注册表中则回退到 PRIMARY_MODEL。
+
+    运行时经 ``POST /v1/forecasts/model/default`` 修改 ``settings.forecast_primary_model``
+    后，本函数立即反映新值，使默认预测/回测/重算均切换到新模型。
+    """
+    mv = getattr(settings, "forecast_primary_model", models.PRIMARY_MODEL)
+    return mv if mv in models.MODELS else models.PRIMARY_MODEL
+
 
 #: 指标 → 快照取值列
 _METRIC_COLUMNS = {
@@ -97,13 +109,14 @@ def _fit_and_forecast(
     series: list[tuple[datetime, float]],
     metric: str,
     horizon: int,
-    model_version: str = DEFAULT_MODEL,
+    model_version: str | None = None,
 ) -> dict | None:
     """对时序按指定模型拟合并外推，返回公共字段字典（含 model_version，不含归属信息）。
 
     模型调度见 :mod:`app.service.forecast_models`（ols_v1 / hw_v1）。样本不足时
     返回 None（由调用方跳过落库）。
     """
+    model_version = model_version or _resolve_default_model()
     return models.forecast_by_model(model_version, series, metric, horizon)
 
 
@@ -167,7 +180,7 @@ def compute_forecast(
     *,
     horizon_days: int | None = None,
     history_days: int | None = None,
-    model_version: str = DEFAULT_MODEL,
+    model_version: str | None = None,
 ) -> dict | None:
     """单个项目的 risk_index 预测；样本不足返回 None（不落库）。"""
     horizon = horizon_days or settings.forecast_horizon_days
@@ -175,6 +188,7 @@ def compute_forecast(
     series = _load_series(db, "project", str(project_id), METRIC_RISK_INDEX, days=history)
     if len(series) < settings.forecast_min_points:
         return None
+    model_version = model_version or _resolve_default_model()
     data = _fit_and_forecast(series, METRIC_RISK_INDEX, horizon, model_version=model_version)
     if data is None:
         return None
@@ -188,7 +202,7 @@ def compute_device_forecast(
     *,
     horizon_days: int | None = None,
     history_days: int | None = None,
-    model_version: str = DEFAULT_MODEL,
+    model_version: str | None = None,
 ) -> dict | None:
     """单个设备的 health_score 预测（M2）；样本不足返回 None。"""
     horizon = horizon_days or settings.forecast_horizon_days
@@ -196,6 +210,7 @@ def compute_device_forecast(
     series = _load_series(db, "device", device_no, METRIC_HEALTH_SCORE, days=history)
     if len(series) < settings.forecast_min_points:
         return None
+    model_version = model_version or _resolve_default_model()
     data = _fit_and_forecast(series, METRIC_HEALTH_SCORE, horizon, model_version=model_version)
     if data is None:
         return None
@@ -218,7 +233,7 @@ def preview_forecast(
     *,
     horizon_days: int | None = None,
     history_days: int | None = None,
-    model_version: str = DEFAULT_MODEL,
+    model_version: str | None = None,
 ) -> dict | None:
     """序列预览（M2，供前端画图）：历史点 + 拟合参数 + 预测点 + 置信带。
 
@@ -237,6 +252,7 @@ def preview_forecast(
         "forecast": None,
     }
     if len(series) >= settings.forecast_min_points:
+        model_version = model_version or _resolve_default_model()
         fit = _fit_and_forecast(series, metric, horizon, model_version=model_version)
         if fit is not None:
             fit["forecast_at"] = fit["forecast_at"].isoformat()
@@ -273,7 +289,7 @@ def upsert_forecast(db: Session, data: dict, name: str | None = None) -> Forecas
 
 
 def run_forecasts(
-    db: Session, horizon_days: int | None = None, model_version: str = DEFAULT_MODEL
+    db: Session, horizon_days: int | None = None, model_version: str | None = None
 ) -> dict:
     """全量预测（项目 risk_index + 设备 health_score），批量加载防 N+1。
 
@@ -282,6 +298,7 @@ def run_forecasts(
     horizon = horizon_days or settings.forecast_horizon_days
     history = settings.forecast_history_days
     min_pts = settings.forecast_min_points
+    model_version = model_version or _resolve_default_model()
     computed = skipped = 0
 
     # 项目 risk_index

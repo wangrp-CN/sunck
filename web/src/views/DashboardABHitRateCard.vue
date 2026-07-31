@@ -1,17 +1,32 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { ElMessage } from "element-plus";
 import {
   getForecastABHitRate,
+  getForecastDefaultModel,
   runForecastBacktest,
+  setForecastDefaultModel,
   type ABHitRate,
   type ABModelRow,
+  type ForecastDefaultModel,
 } from "@/api/forecast";
 
 const loading = ref(false);
 const backtesting = ref(false);
+const switching = ref(false);
 const data = ref<ABHitRate | null>(null);
+const defaultModel = ref<ForecastDefaultModel | null>(null);
 let timer: ReturnType<typeof setInterval> | null = null;
+
+// 当前线上默认模型是否为 hw_v1
+const onlineIsHw = computed(() => defaultModel.value?.model_version === "hw_v1");
+// 当 hw_v1 表现更优且尚未上线时，提示一键切换
+const showSwitchSuggestion = computed(
+  () =>
+    !!data.value?.comparison?.better &&
+    data.value.comparison.challenger === "hw_v1" &&
+    !onlineIsHw.value,
+);
 
 function fmtRate(v: number | null): string {
   if (v === null || v === undefined) return "—";
@@ -38,6 +53,27 @@ async function load() {
   }
 }
 
+async function loadDefault() {
+  try {
+    defaultModel.value = await getForecastDefaultModel();
+  } catch {
+    defaultModel.value = null;
+  }
+}
+
+async function switchToHw() {
+  switching.value = true;
+  try {
+    await setForecastDefaultModel("hw_v1");
+    ElMessage.success("已切换上线模型为 Holt-Winters(hw_v1)，预测与预警已即时重算");
+    await Promise.all([loadDefault(), load()]);
+  } catch {
+    ElMessage.error("切换失败");
+  } finally {
+    switching.value = false;
+  }
+}
+
 async function runBacktest() {
   backtesting.value = true;
   try {
@@ -56,6 +92,7 @@ const hasData = () =>
 
 onMounted(() => {
   load();
+  loadDefault();
   timer = setInterval(load, 60000);
 });
 onUnmounted(() => {
@@ -67,7 +104,12 @@ onUnmounted(() => {
   <el-card class="ab-card" shadow="hover" v-loading="loading">
     <template #header>
       <div class="card-head">
-        <span class="card-title">预测模型 A/B 对比</span>
+        <span class="card-title">
+          预测模型 A/B 对比
+          <span v-if="defaultModel" class="online-tag"
+            >· 线上：{{ defaultModel?.available.find((a) => a.model_version === defaultModel?.model_version)?.label || defaultModel?.model_version }}</span
+          >
+        </span>
         <el-button
           size="small"
           type="primary"
@@ -88,6 +130,15 @@ onUnmounted(() => {
         <el-icon v-if="data!.comparison!.better"><CircleCheck /></el-icon>
         <el-icon v-else><WarningFilled /></el-icon>
         <span>{{ data!.comparison!.summary }}</span>
+      </div>
+
+      <!-- 一键切换建议（hw_v1 更优且尚未上线） -->
+      <div v-if="showSwitchSuggestion" class="switch-banner">
+        <el-icon><MagicStick /></el-icon>
+        <span>hw_v1 表现更优，建议切换为上线默认模型</span>
+        <el-button size="small" type="success" :loading="switching" @click="switchToHw"
+          >一键切换</el-button
+        >
       </div>
 
       <!-- 各模型并列 -->
@@ -144,6 +195,26 @@ onUnmounted(() => {
 .card-title {
   font-weight: 600;
   font-size: 15px;
+}
+.online-tag {
+  font-size: 12px;
+  font-weight: 400;
+  color: #909399;
+  margin-left: 6px;
+}
+.switch-banner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  background: #ecf5ff;
+  color: #409eff;
+}
+.switch-banner .el-button {
+  margin-left: auto;
 }
 .cmp-banner {
   display: flex;

@@ -1,18 +1,24 @@
 """风险预测路由（Phase 5 智能化预测 M1+M2）。
 
 权限：
-- forecast:view  预测列表 / 预览 / 重算
+- forecast:view  预测列表 / 预览 / 重算 / 回测 / A-B 命中率 / 切换上线模型
 
 端点：
-- GET  /            预测列表（项目/指标/scope 过滤；数据范围经 project 隔离）
-- GET  /preview     单对象序列预览：历史点+拟合+预测点+置信带（前端画图用）
-- POST /recompute   重算（全部或指定项目）并返回最新结果
+- GET  /                预测列表（项目/指标/scope 过滤；数据范围经 project 隔离）
+- GET  /preview         单对象序列预览：历史点+拟合+预测点+置信带（前端画图用）
+- POST /recompute       重算（全部或指定项目）并返回最新结果
+- POST /backtest        walk-forward 回测落 forecast_backtest
+- GET  /hit-rate/ab     A/B 命中率报表（各模型对比 + 增量）
+- GET  /model/default   读取当前上线默认模型与可用列表
+- POST /model/default   一键切换上线默认模型并即时重算 + 回灌预测性预警
 """
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Body, Depends, Query, Request
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.core.cache import get_cached_json, set_cached_json
 from app.core.data_scope import DataScope, apply_data_scope
 from app.core.database import get_db, get_read_db
@@ -23,6 +29,7 @@ from app.model.project import Project
 from app.model.system import User
 from app.schema.forecast import ForecastOut
 from app.service import backtest_service as bt_svc
+from app.service import forecast_models as models_mod
 from app.service import forecast_service as svc
 from app.service import prediction_hitrate as hitrate_svc
 
@@ -118,7 +125,7 @@ def recompute(
     传 ``hw_v1`` 即以升级的 Holt-Winters 模型重算并落库（model_version 落库，
     供 A/B 报表与预测性预警对照）。
     """
-    model_version = model or svc.DEFAULT_MODEL
+    model_version = model or svc._resolve_default_model()
     if project_id is not None:
         data = svc.compute_forecast(
             db, project_id, horizon_days=horizon_days, model_version=model_version
@@ -211,3 +218,61 @@ def hit_rate_ab(
     resp = ApiResponse.success(data=data)
     set_cached_json(current_user.id, request.url.path, request.url.query, resp.model_dump())
     return resp
+
+
+class ModelDefaultSwitch(BaseModel):
+    """一键切换上线默认预测模型请求体。"""
+
+    model_version: str
+
+
+@router.get(
+    "/model/default",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("forecast:view"))],
+)
+def get_default_model(
+    current_user: User = Depends(get_current_user),
+) -> ApiResponse:
+    """读取当前上线默认预测模型版本与可用模型列表。"""
+    return ApiResponse.success(
+        data={
+            "model_version": svc._resolve_default_model(),
+            "available": [
+                {"model_version": mv, "label": models_mod.MODEL_LABELS.get(mv, mv)}
+                for mv in models_mod.MODELS
+            ],
+        }
+    )
+
+
+@router.post(
+    "/model/default",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("forecast:view"))],
+)
+def set_default_model(
+    db=Depends(get_db),
+    payload: ModelDefaultSwitch = Body(...),
+) -> ApiResponse:
+    """一键切换上线默认预测模型（闭环增值）。
+
+    校验 ``model_version`` 在注册表内后，将 ``settings.forecast_primary_model`` 置为新值
+    （运行时即时生效；重启后回退到环境变量 ``FORECAST_PRIMARY_MODEL``），并**立即**以新模型
+    全量重算预测（``run_forecasts``）+ 回灌预测性预警（``run_predictive_alerts``）落库，
+    使线上 ``forecast`` 表与告警即时切换到新模型。返回重算统计与新模型信息。
+    """
+    if payload.model_version not in models_mod.MODELS:
+        return ApiResponse.fail(code=1002, message=f"未知模型版本：{payload.model_version}")
+    settings.forecast_primary_model = payload.model_version
+    stats = svc.run_forecasts(db, model_version=payload.model_version)
+    alerts = svc.run_predictive_alerts(db)
+    db.commit()
+    return ApiResponse.success(
+        data={
+            "model_version": payload.model_version,
+            "label": models_mod.MODEL_LABELS.get(payload.model_version, payload.model_version),
+            "recomputed": stats,
+            "predictive_alerts": alerts,
+        }
+    )

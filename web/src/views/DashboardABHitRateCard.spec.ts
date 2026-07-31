@@ -66,6 +66,8 @@ const EMPTY: ABHitRate = {
 const hoisted = vi.hoisted(() => ({
   getForecastABHitRate: vi.fn(),
   runForecastBacktest: vi.fn(),
+  getForecastDefaultModel: vi.fn(),
+  setForecastDefaultModel: vi.fn(),
   elSuccess: vi.fn(),
   elError: vi.fn(),
 }));
@@ -73,6 +75,8 @@ const hoisted = vi.hoisted(() => ({
 vi.mock("@/api/forecast", () => ({
   getForecastABHitRate: (...a: any[]) => hoisted.getForecastABHitRate(...a),
   runForecastBacktest: (...a: any[]) => hoisted.runForecastBacktest(...a),
+  getForecastDefaultModel: (...a: any[]) => hoisted.getForecastDefaultModel(...a),
+  setForecastDefaultModel: (...a: any[]) => hoisted.setForecastDefaultModel(...a),
 }));
 vi.mock("element-plus", async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>;
@@ -90,6 +94,8 @@ vi.mock("element-plus", async (importOriginal) => {
 afterEach(() => {
   hoisted.getForecastABHitRate.mockReset();
   hoisted.runForecastBacktest.mockReset();
+  hoisted.getForecastDefaultModel.mockReset();
+  hoisted.setForecastDefaultModel.mockReset();
   hoisted.elSuccess.mockReset();
   hoisted.elError.mockReset();
 });
@@ -134,6 +140,35 @@ describe("DashboardABHitRateCard", () => {
     expect(hoisted.runForecastBacktest).toHaveBeenCalledWith({ days: 90, horizon_days: 7 });
     expect(hoisted.elSuccess).toHaveBeenCalled();
     expect(hoisted.getForecastABHitRate).toHaveBeenCalledTimes(2);
+    wrapper.unmount();
+  });
+
+  it("hw_v1 更优且未上线时显示一键切换建议，点击调用切换接口并刷新", async () => {
+    hoisted.getForecastABHitRate.mockResolvedValue(AB_DATA);
+    hoisted.getForecastDefaultModel.mockResolvedValue({
+      model_version: "ols_v1",
+      available: [
+        { model_version: "ols_v1", label: "OLS 线性" },
+        { model_version: "hw_v1", label: "Holt-Winters 季节趋势" },
+      ],
+    });
+    hoisted.setForecastDefaultModel.mockResolvedValue({ model_version: "hw_v1" });
+    const wrapper = mount(DashboardABHitRateCard);
+    await flushPromises();
+
+    // 头部展示当前线上模型
+    expect(wrapper.find(".online-tag").text()).toContain("OLS 线性");
+    // 切换建议横幅可见
+    const switchBanner = wrapper.find(".switch-banner");
+    expect(switchBanner.exists()).toBe(true);
+    expect(switchBanner.text()).toContain("一键切换");
+
+    await switchBanner.find(".el-button").trigger("click");
+    await flushPromises();
+
+    expect(hoisted.setForecastDefaultModel).toHaveBeenCalledWith("hw_v1");
+    expect(hoisted.elSuccess).toHaveBeenCalled();
+    expect(hoisted.getForecastDefaultModel).toHaveBeenCalledTimes(2);
     wrapper.unmount();
   });
 });

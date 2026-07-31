@@ -30,6 +30,7 @@ from app.config import settings
 from app.core.database import SessionLocal
 from app.service import alarm_correlation as corr_svc
 from app.service import anomaly_service as anomaly_svc
+from app.service import backtest_service as bt_svc
 from app.service import forecast_service as forecast_svc
 from app.service import metrics_snapshot as svc
 from app.service import risk_alert as alert_svc
@@ -92,6 +93,16 @@ def main() -> None:
         # 进既有告警流（站内信通知 + 告警管理页一键派单闭环）。
         alerts = forecast_svc.run_predictive_alerts(db)
         print(f"[snapshot] predictive alerts created={alerts['created']}", flush=True)
+
+        # A/B 回测（预测模型升级）：walk-forward 回测落 forecast_backtest，
+        # 供 A/B 命中率报表对比各模型（ols_v1 / hw_v1）。独立 try 保护，避免影响关键快照。
+        try:
+            bt = bt_svc.run_backtest(
+                db, days=settings.forecast_backtest_days, horizon=settings.forecast_horizon_days
+            )
+            print(f"[snapshot] backtest rows={bt['rows']} anchors={bt['anchors']}", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[snapshot] backtest skipped due to error: {exc}", flush=True)
 
         db.commit()
     finally:
