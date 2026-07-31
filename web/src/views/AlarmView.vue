@@ -109,6 +109,7 @@ const ALARM_TYPE_LABELS: Record<string, string> = {
   train_approach: "列车接近预警",
   trend_anomaly: "趋势异常",
   predictive_alert: "预测预警",
+  preventive_alert: "预防式预警",
 };
 const HANDLE_OPTIONS = ["待处理", "已处理", "已忽略", "已确认", "已消警"];
 const STATUS_OPTIONS = ["告警开始", "告警结束", "已消警"];
@@ -239,6 +240,18 @@ function applyFilters() {
   loadAlarms();
 }
 
+// 预测类告警快捷筛选（与上方「类型」下拉双向同步）："" = 全部，其余为具体类型 key
+const quickType = computed<string>({
+  get: () =>
+    filters.alarm_type === "predictive_alert" || filters.alarm_type === "preventive_alert"
+      ? filters.alarm_type
+      : "",
+  set: (v: string) => {
+    filters.alarm_type = v;
+    applyFilters();
+  },
+});
+
 function resetFilters() {
   filters.project_id = null;
   filters.alarm_type = "";
@@ -307,7 +320,10 @@ function onRowClick(row: any) {
   selectAlarm(row);
 }
 function rowClassName({ row }: { row: any }) {
-  return row.id === selectedAlarmId.value ? "alarm-row-active" : "";
+  const cls: string[] = [];
+  if (row.id === selectedAlarmId.value) cls.push("alarm-row-active");
+  if (row.alarm_type === "preventive_alert") cls.push("row-preventive");
+  return cls.join(" ");
 }
 
 // ----- 处置弹窗 -----
@@ -856,6 +872,7 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
             <el-option label="列车接近预警" value="train_approach" />
             <el-option label="趋势异常" value="trend_anomaly" />
             <el-option label="预测预警" value="predictive_alert" />
+            <el-option label="预防式预警" value="preventive_alert" />
           </el-select>
         </el-form-item>
         <el-form-item label="处理状态">
@@ -935,6 +952,19 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
 
     <div class="layout">
       <div class="main">
+        <!-- 预测类告警快捷筛选：一键直达「预测预警 / 预防式预警」 -->
+        <div class="quick-filter">
+          <span class="quick-label">预测类：</span>
+          <el-radio-group v-model="quickType" size="small">
+            <el-radio-button value="">全部</el-radio-button>
+            <el-radio-button value="predictive_alert">预测预警</el-radio-button>
+            <el-radio-button value="preventive_alert">预防式预警</el-radio-button>
+          </el-radio-group>
+          <el-tooltip content="预防式预警：预测置信区间将越过阈值前提前预警，比点预测越阈更早" placement="top">
+            <el-tag type="info" effect="plain" size="small" class="quick-hint">🛡 提前预警</el-tag>
+          </el-tooltip>
+        </div>
+
         <!-- 批量处置工具条：仅处置权限可见，跨页保留勾选（reserve-selection） -->
         <div v-if="canHandle" class="batch-bar">
           <span class="batch-count">已选 <b>{{ selectedRows.length }}</b> 条</span>
@@ -977,9 +1007,23 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="类型" width="110">
+      <el-table-column label="类型" width="120">
         <template #default="{ row }">
-          {{ ALARM_TYPE_LABELS[row.alarm_type] || row.alarm_type || "-" }}
+          <el-tag
+            v-if="row.alarm_type === 'preventive_alert'"
+            type="danger"
+            effect="dark"
+            size="small"
+            class="type-preventive"
+          >🛡 {{ ALARM_TYPE_LABELS[row.alarm_type] }}</el-tag>
+          <el-tag
+            v-else-if="row.alarm_type === 'predictive_alert'"
+            type="warning"
+            effect="dark"
+            size="small"
+            class="type-predictive"
+          >🔮 {{ ALARM_TYPE_LABELS[row.alarm_type] }}</el-tag>
+          <span v-else>{{ ALARM_TYPE_LABELS[row.alarm_type] || row.alarm_type || "-" }}</span>
         </template>
       </el-table-column>
       <el-table-column label="设备" min-width="160">
@@ -1821,6 +1865,26 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
 :deep(.alarm-row-active:hover) > td {
   background: #e3efff !important;
 }
+/* 预防式预警行左侧强调条 */
+:deep(.row-preventive) > td {
+  box-shadow: inset 3px 0 0 #f56c6c;
+}
+.type-preventive {
+  box-shadow: 0 0 0 1px #f56c6c inset;
+  font-weight: 600;
+}
+.type-predictive {
+  box-shadow: 0 0 0 1px #e6a23c inset;
+}
+.quick-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.quick-label { font-size: 13px; color: #606266; }
+.quick-hint { cursor: help; }
 .bar-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; }
 .storm-tag { font-weight: 600; }
 .batch-bar {

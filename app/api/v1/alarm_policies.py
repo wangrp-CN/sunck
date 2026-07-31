@@ -22,6 +22,7 @@ from app.core.constants import (
     ALARM_TYPE_DISTANCE,
     ALARM_TYPE_FENCE,
     ALARM_TYPE_FORECAST,
+    ALARM_TYPE_PREVENTIVE,
     ALARM_TYPE_TRAIN,
 )
 from app.core.data_scope import DataScope
@@ -41,6 +42,7 @@ _ALARM_TYPES = [
     {"key": ALARM_TYPE_TRAIN, "label": "列车接近预警"},
     {"key": ALARM_TYPE_ANOMALY, "label": "趋势异常"},
     {"key": ALARM_TYPE_FORECAST, "label": "预测预警"},
+    {"key": ALARM_TYPE_PREVENTIVE, "label": "预防式预警"},
 ]
 _LEVELS = ["提示", "警告", "严重"]
 _CHANNELS = ["in_app", "sms", "voice"]
