@@ -18,14 +18,15 @@ const data = ref<ABHitRate | null>(null);
 const defaultModel = ref<ForecastDefaultModel | null>(null);
 let timer: ReturnType<typeof setInterval> | null = null;
 
-// 当前线上默认模型是否为 hw_v1
-const onlineIsHw = computed(() => defaultModel.value?.model_version === "hw_v1");
-// 当 hw_v1 表现更优且尚未上线时，提示一键切换
-const showSwitchSuggestion = computed(
+// 当前线上默认模型是否已是 A/B 挑战者（报表末位模型）
+const onlineIsChallenger = computed(
   () =>
-    !!data.value?.comparison?.better &&
-    data.value.comparison.challenger === "hw_v1" &&
-    !onlineIsHw.value,
+    !!data.value?.comparison &&
+    defaultModel.value?.model_version === data.value.comparison.challenger,
+);
+// 当挑战者（hw_v1 / hw_feat_v1…）表现更优且尚未上线时，提示一键切换
+const showSwitchSuggestion = computed(
+  () => !!data.value?.comparison?.better && !onlineIsChallenger.value,
 );
 
 function fmtRate(v: number | null): string {
@@ -62,10 +63,14 @@ async function loadDefault() {
 }
 
 async function switchToHw() {
+  const target = data.value?.comparison?.challenger;
+  if (!target) return;
   switching.value = true;
   try {
-    await setForecastDefaultModel("hw_v1");
-    ElMessage.success("已切换上线模型为 Holt-Winters(hw_v1)，预测与预警已即时重算");
+    await setForecastDefaultModel(target);
+    ElMessage.success(
+      `已切换上线模型为 ${data.value?.comparison?.challenger_label}，预测与预警已即时重算`,
+    );
     await Promise.all([loadDefault(), load()]);
   } catch {
     ElMessage.error("切换失败");
@@ -132,10 +137,10 @@ onUnmounted(() => {
         <span>{{ data!.comparison!.summary }}</span>
       </div>
 
-      <!-- 一键切换建议（hw_v1 更优且尚未上线） -->
+      <!-- 一键切换建议（挑战者模型更优且尚未上线） -->
       <div v-if="showSwitchSuggestion" class="switch-banner">
         <el-icon><MagicStick /></el-icon>
-        <span>hw_v1 表现更优，建议切换为上线默认模型</span>
+        <span>{{ data!.comparison!.challenger_label }} 表现更优，建议切换为上线默认模型</span>
         <el-button size="small" type="success" :loading="switching" @click="switchToHw"
           >一键切换</el-button
         >

@@ -149,6 +149,13 @@ class Settings(BaseSettings):
     forecast_min_points: int = 3
     # 回测窗口（天）：walk-forward 回测使用的历史锚点范围。
     forecast_backtest_days: int = 90
+
+    # ---------- 预测特征工程（突破单序列：外部特征融合） ----------
+    # 外部特征回看/回填天数（Mock 数据源 + 预留真实气象 API）。
+    feature_backfill_days: int = 365
+    # 真实气象 API key（和风/OpenWeather 等）。配置后特征源自动切换为真实 API，
+    # 否则使用确定性季节性 Mock 特征（无需凭据即可跑通整条管道）。
+    weather_api_key: str = ""
     # 上线默认预测模型版本：ols_v1(原 OLS) | hw_v1(Holt-Winters 季节趋势)。
     # hw_v1 经 A/B 命中率报表验证后已于 2026-07-31 正式设为默认；如需回退可设
     # 环境变量 FORECAST_PRIMARY_MODEL=ols_v1 或 POST /v1/forecasts/model/default 一键切换。

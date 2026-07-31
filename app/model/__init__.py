@@ -18,6 +18,7 @@ from app.model import (  # noqa: F401
     dispatch,
     disposition,
     duty_roster,
+    feature,
     fence,
     forecast,
     forecast_backtest,

@@ -110,6 +110,8 @@ def run_backtest(
     }
 
     for scope_type, ref_id, metric, pid, series in tasks:
+        # 该 scope 的外部特征一次性加载（覆盖历史+未来 horizon，hw_feat_v1 融合校正用）
+        ext = svc._load_external_features(db, scope_type, ref_id, days=days)
         for a, _ in series:
             if a < since or a > anchor_max:
                 continue
@@ -118,7 +120,9 @@ def run_backtest(
                 continue
             anchors_used += 1
             for mv in models:
-                data = models_mod.forecast_by_model(mv, upto, metric, horizon)
+                data = models_mod.forecast_by_model(
+                    mv, upto, metric, horizon, external_features=ext
+                )
                 if data is None:
                     continue
                 breach, _ = svc._breach_for(metric, data["forecast_value"], data["forecast_level"])

@@ -112,3 +112,61 @@ def test_resolve_default_model_reads_settings(monkeypatch):
     assert svc._resolve_default_model() == svc.models.PRIMARY_MODEL
     monkeypatch.setattr(settings, "forecast_primary_model", "ols_v1")
     assert svc._resolve_default_model() == "ols_v1"
+
+
+def _make_feat_series(n: int = 21, horizon: int = 7):
+    """构造：HW 可捕捉的基线(水平+趋势+周季节) + 周期3的外部特征耦合项。
+
+    周期3分量 HW(周期7) 吸收不掉 → 成为残差；hw_feat_v1 用外部特征(device_load=i%3)
+    残差回归校正后应当还原这部分，从而与纯 HW 产生差异且更接近真值。
+    """
+    import math
+
+    t0 = datetime(2025, 1, 1, tzinfo=timezone.utc)
+    base, feat = [], []
+    for i in range(n):
+        b = 50.0 + 0.2 * i + 3.0 * math.sin(2 * math.pi * i / 7.0)
+        f = float(i % 3)
+        base.append(b)
+        feat.append(f)
+    series = [(t0 + timedelta(days=i), base[i] + 50.0 * feat[i]) for i in range(n)]
+    # 外部特征覆盖历史 + 未来 horizon 天
+    external: dict[str, dict[str, float]] = {}
+    for i in range(n + horizon):
+        d = (t0 + timedelta(days=i)).date()
+        external[d.isoformat()] = {"device_load": float(i % 3)}
+    return series, external, horizon
+
+
+def test_hw_feat_fallback_without_external():
+    """无外部特征时 hw_feat_v1 退化为纯 HW（hw_v1 行为），model_version 仍标记自身。"""
+    s = _series([10 + 2 * i + 3 * (i % 7) for i in range(21)])
+    fused = m.forecast_holt_winters_feature(s, METRIC_RISK, 7)
+    pure = m.forecast_holt_winters(s, METRIC_RISK, 7)
+    assert fused is not None and pure is not None
+    assert fused["model_version"] == "hw_feat_v1"
+    assert fused["forecast_value"] == pure["forecast_value"]
+
+
+def test_hw_feat_short_series_none():
+    s = _series([1.0, 2.0])
+    assert m.forecast_holt_winters_feature(s, METRIC_RISK, 7) is None
+
+
+def test_hw_feat_fusion_consumes_external():
+    """hw_feat_v1 应消费外部特征：融合预测与纯 HW 明显不同，且不变量（确定性）。"""
+    series, external, horizon = _make_feat_series()
+    fused = m.forecast_holt_winters_feature(
+        series, METRIC_RISK, horizon, external_features=external
+    )
+    pure = m.forecast_holt_winters(series, METRIC_RISK, horizon)
+    assert fused is not None and pure is not None
+    assert fused["model_version"] == "hw_feat_v1"
+    # 外部特征被实际消费：融合预测明显偏离纯 HW
+    assert abs(fused["forecast_value"] - pure["forecast_value"]) > 10.0
+    # 结果合法且确定性可复现
+    assert 0.0 <= fused["forecast_value"] <= 100.0
+    fused2 = m.forecast_holt_winters_feature(
+        series, METRIC_RISK, horizon, external_features=external
+    )
+    assert fused2["forecast_value"] == fused["forecast_value"]

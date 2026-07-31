@@ -36,6 +36,7 @@ from app.model.device import AntiIntrusionDevice, LocateDevice, TrainApproachDev
 from app.model.forecast import Forecast
 from app.model.project import Project
 from app.model.snapshot import RiskHealthSnapshot
+from app.service import feature_provider as feat_svc
 from app.service import forecast_models as models
 
 METRIC_RISK_INDEX = "risk_index"
@@ -110,14 +111,23 @@ def _fit_and_forecast(
     metric: str,
     horizon: int,
     model_version: str | None = None,
+    *,
+    external_features: dict | None = None,
 ) -> dict | None:
     """对时序按指定模型拟合并外推，返回公共字段字典（含 model_version，不含归属信息）。
 
-    模型调度见 :mod:`app.service.forecast_models`（ols_v1 / hw_v1）。样本不足时
-    返回 None（由调用方跳过落库）。
+    模型调度见 :mod:`app.service.forecast_models`（ols_v1 / hw_v1 / hw_feat_v1）。
+    ``external_features`` 为 {日期iso: {特征名: 值}}；hw_feat_v1 据此做残差融合校正，
+    缺失时退化为纯 HW。样本不足时返回 None（由调用方跳过落库）。
     """
     model_version = model_version or _resolve_default_model()
-    return models.forecast_by_model(model_version, series, metric, horizon)
+    return models.forecast_by_model(
+        model_version,
+        series,
+        metric,
+        horizon,
+        external_features=external_features,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -169,6 +179,33 @@ def _as_utc(at: datetime) -> datetime:
     return at.replace(tzinfo=timezone.utc) if at.tzinfo is None else at
 
 
+def _resolve_project_id(db: Session, scope_type: str, ref_id: str) -> int | None:
+    """由 (scope_type, ref_id) 解析 project_id（外部特征按项目维度关联）。"""
+    if scope_type == "project":
+        try:
+            return int(ref_id)
+        except (TypeError, ValueError):
+            return None
+    return _device_project_id(db, ref_id)
+
+
+def _load_external_features(
+    db: Session, scope_type: str, ref_id: str, days: int | None = None
+) -> dict:
+    """加载 (scope, ref_id) 的外部特征（按 project_id 关联），覆盖历史 + 未来 horizon 天。
+
+    返回 {日期iso: {特征名: 值}}；无项目或无特征时返回空 dict（hw_feat_v1 将退化为纯 HW）。
+    """
+    days = days or settings.forecast_history_days
+    pid = _resolve_project_id(db, scope_type, ref_id)
+    if pid is None:
+        return {}
+    today = datetime.now(timezone.utc).date()
+    start = today - timedelta(days=days)
+    end = today + timedelta(days=settings.forecast_horizon_days)
+    return feat_svc.load_external_dict(db, pid, start, end)
+
+
 # ---------------------------------------------------------------------------
 # 计算入口
 # ---------------------------------------------------------------------------
@@ -189,7 +226,10 @@ def compute_forecast(
     if len(series) < settings.forecast_min_points:
         return None
     model_version = model_version or _resolve_default_model()
-    data = _fit_and_forecast(series, METRIC_RISK_INDEX, horizon, model_version=model_version)
+    ext = _load_external_features(db, "project", str(project_id), days=history)
+    data = _fit_and_forecast(
+        series, METRIC_RISK_INDEX, horizon, model_version=model_version, external_features=ext
+    )
     if data is None:
         return None
     data.update(project_id=project_id, scope_type="project", ref_id=str(project_id))
@@ -211,7 +251,10 @@ def compute_device_forecast(
     if len(series) < settings.forecast_min_points:
         return None
     model_version = model_version or _resolve_default_model()
-    data = _fit_and_forecast(series, METRIC_HEALTH_SCORE, horizon, model_version=model_version)
+    ext = _load_external_features(db, "device", device_no, days=history)
+    data = _fit_and_forecast(
+        series, METRIC_HEALTH_SCORE, horizon, model_version=model_version, external_features=ext
+    )
     if data is None:
         return None
     data.update(project_id=_device_project_id(db, device_no), scope_type="device", ref_id=device_no)
@@ -253,7 +296,10 @@ def preview_forecast(
     }
     if len(series) >= settings.forecast_min_points:
         model_version = model_version or _resolve_default_model()
-        fit = _fit_and_forecast(series, metric, horizon, model_version=model_version)
+        ext = _load_external_features(db, scope_type, ref_id, days=history)
+        fit = _fit_and_forecast(
+            series, metric, horizon, model_version=model_version, external_features=ext
+        )
         if fit is not None:
             fit["forecast_at"] = fit["forecast_at"].isoformat()
             fit["computed_at"] = fit["computed_at"].isoformat()
@@ -311,7 +357,10 @@ def run_forecasts(
         if len(series) < min_pts:
             skipped += 1
             continue
-        data = _fit_and_forecast(series, METRIC_RISK_INDEX, horizon, model_version=model_version)
+        ext = _load_external_features(db, "project", str(pid), days=history)
+        data = _fit_and_forecast(
+            series, METRIC_RISK_INDEX, horizon, model_version=model_version, external_features=ext
+        )
         if data is None:
             skipped += 1
             continue
@@ -333,7 +382,10 @@ def run_forecasts(
         if len(series) < min_pts:
             skipped += 1
             continue
-        data = _fit_and_forecast(series, METRIC_HEALTH_SCORE, horizon, model_version=model_version)
+        ext = _load_external_features(db, "device", dno, days=history)
+        data = _fit_and_forecast(
+            series, METRIC_HEALTH_SCORE, horizon, model_version=model_version, external_features=ext
+        )
         if data is None:
             skipped += 1
             continue

@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 
 from app.core.scoring import RISK_LEVEL_HIGH, RISK_LEVEL_MID, device_health_level
@@ -32,13 +32,14 @@ _WEEK = 7
 #: 默认上线模型（保持 OLS 不变，HW 仅作 A/B 对照；可切 hw_v1 上线）
 PRIMARY_MODEL = "ols_v1"
 
-#: 参与 A/B 的模型集合（顺序即报表展示顺序）
-AB_MODELS = ("ols_v1", "hw_v1")
+#: 参与 A/B 的模型集合（顺序即报表展示顺序；首=基线，末=挑战者）
+AB_MODELS = ("ols_v1", "hw_v1", "hw_feat_v1")
 
 #: 模型展示名（前端报表用）
 MODEL_LABELS = {
     "ols_v1": "OLS 线性",
     "hw_v1": "Holt-Winters 季节趋势",
+    "hw_feat_v1": "Holt-Winters + 特征融合",
 }
 
 
@@ -101,6 +102,7 @@ def forecast_ols(
     metric: str,
     horizon: int,
     model_version: str = "ols_v1",
+    external_features: Any = None,
 ) -> dict | None:
     """最小二乘拟合 y = slope*x + intercept 并外推（x 以天为单位）。
 
@@ -201,6 +203,7 @@ def forecast_holt_winters(
     metric: str,
     horizon: int,
     model_version: str = "hw_v1",
+    external_features: Any = None,
 ) -> dict | None:
     """Holt-Winters 加法模型（趋势 + 周季节性）。
 
@@ -257,6 +260,191 @@ def forecast_holt_winters(
 
 
 # ---------------------------------------------------------------------------
+# hw_feat_v1：Holt-Winters 基线 + 外部/日历特征残差融合校正
+# ---------------------------------------------------------------------------
+
+
+def _design_row(d: date, ext: dict) -> list[float]:
+    """设计向量：[1(截距), dow, month, is_weekend, temperature, rainfall,
+    wind_speed, construction_intensity, device_load]；缺失外部特征补 0。"""
+    return [
+        1.0,
+        float(d.weekday()),
+        float(d.month),
+        1.0 if d.weekday() >= 5 else 0.0,
+        float(ext.get("temperature", 0.0)),
+        float(ext.get("rainfall", 0.0)),
+        float(ext.get("wind_speed", 0.0)),
+        float(ext.get("construction_intensity", 0.0)),
+        float(ext.get("device_load", 0.0)),
+    ]
+
+
+def _ridge_solve(xs: list[list[float]], y: list[float], lam: float = 1e-6) -> list[float]:
+    """岭回归 (XᵀX + λI)β = Xᵀy 的纯 Python 解（高斯消元，确定性）。"""
+    k = len(xs[0])
+    xtx = [[0.0] * k for _ in range(k)]
+    xty = [0.0] * k
+    for row, yi in zip(xs, y):
+        for i in range(k):
+            xty[i] += row[i] * yi
+            for j in range(k):
+                xtx[i][j] += row[i] * row[j]
+    for i in range(k):
+        xtx[i][i] += lam
+    a = [row[:] + [xty[i]] for i, row in enumerate(xtx)]
+    n = k
+    for col in range(n):
+        piv = max(range(col, n), key=lambda r: abs(a[r][col]))
+        a[col], a[piv] = a[piv], a[col]
+        pv = a[col][col] or 1e-12
+        for r in range(n):
+            if r == col:
+                continue
+            f = a[r][col] / pv
+            if f == 0.0:
+                continue
+            for c in range(col, n + 1):
+                a[r][c] -= f * a[col][c]
+    return [a[i][n] / (a[i][i] or 1e-12) for i in range(n)]
+
+
+def _hw_fit(y: list[float], dates: list[date], m: int, alpha: float, beta: float, gamma: float):
+    """HW 拟合（含逐点单步残差），返回 (level, trend, seas, std, resid)。"""
+    n = len(y)
+    l0 = sum(y[:m]) / m
+    b0 = (sum(y[m : 2 * m]) - sum(y[:m])) / m if n >= 2 * m else 0.0
+    s_init = [y[i] - l0 for i in range(m)]
+    s_mean = sum(s_init) / m
+    seas = [v - s_mean for v in s_init]
+    lev, trend = l0, b0
+    resid: list[tuple[date, float]] = []
+    sse = 0.0
+    cnt = 0
+    for i in range(m, n):
+        si = i % m
+        err = y[i] - (lev + trend + seas[si])
+        resid.append((dates[i], err))
+        sse += err * err
+        cnt += 1
+        new_seas = gamma * (y[i] - lev - trend) + (1 - gamma) * seas[si]
+        new_lev = alpha * (y[i] - new_seas) + (1 - alpha) * (lev + trend)
+        new_trend = beta * (new_lev - lev) + (1 - beta) * trend
+        lev, trend, seas[si] = new_lev, new_trend, new_seas
+    std = math.sqrt(sse / cnt) if cnt > 0 else 0.0
+    return lev, trend, seas, std, resid
+
+
+def _holt_fit(y: list[float], dates: list[date], alpha: float, beta: float):
+    """Holt 拟合（含逐点单步残差），返回 (level, trend, std, resid)。"""
+    n = len(y)
+    lev = y[0]
+    trend = (y[1] - y[0]) if n >= 2 else 0.0
+    resid: list[tuple[date, float]] = []
+    sse = 0.0
+    cnt = 0
+    for i in range(1, n):
+        err = y[i] - (lev + trend)
+        resid.append((dates[i], err))
+        sse += err * err
+        cnt += 1
+        new_lev = alpha * y[i] + (1 - alpha) * (lev + trend)
+        new_trend = beta * (new_lev - lev) + (1 - beta) * trend
+        lev, trend = new_lev, new_trend
+    std = math.sqrt(sse / cnt) if cnt > 0 else 0.0
+    return lev, trend, std, resid
+
+
+def _has_external(ext: dict) -> bool:
+    return any(any(v != 0.0 for v in d.values()) for d in ext.values())
+
+
+def forecast_holt_winters_feature(
+    series: list[tuple[datetime, float]],
+    metric: str,
+    horizon: int,
+    *,
+    external_features: dict | None = None,
+    model_version: str = "hw_feat_v1",
+) -> dict | None:
+    """hw_feat_v1：HW 季节趋势基线 + 外部/日历特征残差融合校正。
+
+    先用 Holt-Winters（<2 周退化为 Holt）给出基线预测与逐点单步残差，再用外部特征
+    （气象/施工/设备负载）+ 日历特征对残差做岭回归校正，对未来各步叠加校正量。
+    外部特征缺失时优雅退化为纯 HW（行为与 hw_v1 一致），保证鲁棒且 A/B 口径无脏数据。
+
+    返回归一化字典（model_version=hw_feat_v1）；样本 <3 返回 None。
+    """
+    n = len(series)
+    if n < 3:
+        return None
+    external_features = external_features or {}
+    if not _has_external(external_features) or len(series) < 2 * _WEEK:
+        # 无外部特征或样本不足两周：退化为纯 HW（hw_v1 行为），保持可回归
+        return forecast_holt_winters(series, metric, horizon, model_version=model_version)
+
+    dates = [at.date() for at, _ in series]
+    ys = [v for _, v in series]
+
+    # 1) 选 HW/Holt 最佳参数并取基线状态 + 残差
+    if n >= 2 * _WEEK:
+        best = None
+        for a, b, g in _HW_GRID:
+            fit = _hw_fit(ys, dates, _WEEK, a, b, g)
+            key = (fit[3], a, b, g)
+            if best is None or key < best[0]:
+                best = (key, fit)
+        lev, trend, seas, hw_std, resid = best[1]
+        use_seasonal = True
+    else:
+        best = None
+        for a, b in _HOLT_GRID:
+            fit = _holt_fit(ys, dates, a, b)
+            key = (fit[2], a, b)
+            if best is None or key < best[0]:
+                best = (key, fit)
+        lev, trend, hw_std, resid = best[1]
+        seas = None
+        use_seasonal = False
+
+    if len(resid) < 5:
+        # 残差点过少，校正不可靠：退化为纯 HW
+        return forecast_holt_winters(series, metric, horizon, model_version=model_version)
+
+    # 2) 残差回归（外部特征 + 日历）
+    rd = [d for d, _ in resid]
+    rv = [e for _, e in resid]
+    X = [_design_row(d, external_features.get(d.isoformat(), {})) for d in rd]
+    beta = _ridge_solve(X, rv)
+    fitted = [sum(b * x for b, x in zip(beta, row)) for row in X]
+    sse = sum((e - f) ** 2 for e, f in zip(rv, fitted))
+    resid_std = math.sqrt(sse / max(1, len(rv) - len(beta)))
+
+    # 3) 逐期预测：基线 + 校正
+    raw = None
+    for h in range(1, horizon + 1):
+        fd = dates[-1] + timedelta(days=h)
+        baseline = lev + h * trend + (seas[(n - 1 + h) % _WEEK] if use_seasonal else 0.0)
+        ext_h = external_features.get(fd.isoformat(), {})
+        corr = sum(b * v for b, v in zip(beta, _design_row(fd, ext_h)))
+        raw = baseline + corr
+    if raw is None:
+        return None
+
+    std_total = math.sqrt(hw_std**2 + resid_std**2)
+    return _common(
+        metric,
+        horizon,
+        series,
+        forecast_value=raw,
+        std=std_total,
+        slope=trend,
+        intercept=lev,
+        model_version=model_version,
+    )
+
+
+# ---------------------------------------------------------------------------
 # 模型注册表与调度
 # ---------------------------------------------------------------------------
 
@@ -264,6 +452,7 @@ def forecast_holt_winters(
 MODELS: dict[str, Callable[..., dict | None]] = {
     "ols_v1": forecast_ols,
     "hw_v1": forecast_holt_winters,
+    "hw_feat_v1": forecast_holt_winters_feature,
 }
 
 
@@ -272,6 +461,8 @@ def forecast_by_model(
     series: list[tuple[datetime, float]],
     metric: str,
     horizon: int,
+    *,
+    external_features: dict | None = None,
 ) -> dict | None:
     """按 model_version 调度对应模型；未知版本回退到 PRIMARY_MODEL。
 
@@ -282,4 +473,10 @@ def forecast_by_model(
     if fn is None:
         fn = MODELS[PRIMARY_MODEL]
         model_version = PRIMARY_MODEL
-    return fn(series, metric, horizon, model_version=model_version)
+    return fn(
+        series,
+        metric,
+        horizon,
+        model_version=model_version,
+        external_features=external_features,
+    )

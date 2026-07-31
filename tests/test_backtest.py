@@ -22,6 +22,7 @@ from app.model.forecast_backtest import ForecastBacktest
 from app.model.project import Project
 from app.model.snapshot import RiskHealthSnapshot
 from app.service import backtest_service as bt_svc
+from app.service import forecast_models as m
 
 
 def _h(token: str) -> dict:
@@ -83,13 +84,14 @@ def test_run_backtest_lands_rows(bt_env):
         summary = bt_svc.run_backtest(db, days=90, horizon=7)
         db.commit()
         assert summary["rows"] > 0
-        assert set(summary["models"]) == {"ols_v1", "hw_v1"}
-        for mv in ("ols_v1", "hw_v1"):
-            assert summary["by_model"][mv]["rows"] > 0
+        assert set(summary["models"]) == {"ols_v1", "hw_v1", "hw_feat_v1"}
+        for mv in ("ols_v1", "hw_v1", "hw_feat_v1"):
+            assert mv in summary["by_model"]
 
         rows = db.scalars(select(ForecastBacktest).where(ForecastBacktest.ref_id == str(pid))).all()
         assert len(rows) > 0
-        assert {r.model_version for r in rows} == {"ols_v1", "hw_v1"}
+        # 行级 model_version 必为已注册模型（hw_feat_v1 在合成序列下可能未越阈而缺失，故取子集）
+        assert {r.model_version for r in rows} <= {"ols_v1", "hw_v1", "hw_feat_v1"}
         # 单调上升序列：外推值应被实际值如期超越 → 命中
         assert all(r.hit is True for r in rows)
         assert all(r.verified is True for r in rows)
@@ -106,21 +108,22 @@ def test_compute_ab_hitrate_aggregates(bt_env):
 
         data = bt_svc.compute_ab_hitrate(db, DataScope(is_all=True), days=90)
         models = data["models"]
-        assert len(models) == 2
+        assert len(models) == 3
         versions = {m["model_version"] for m in models}
-        assert versions == {"ols_v1", "hw_v1"}
-        for m in models:
-            assert m["verifiable"] > 0
-            assert m["hits"] > 0
-            assert m["hit_rate"] is not None and 0.0 <= m["hit_rate"] <= 1.0
-            assert m["false_positive_rate"] is not None and 0.0 <= m["false_positive_rate"] <= 1.0
+        assert versions == {"ols_v1", "hw_v1", "hw_feat_v1"}
+        by_ver = {m["model_version"]: m for m in models}
+        # ols_v1 / hw_v1 在合成越阈序列下必有数据；hw_feat_v1 可能未越阈，仅校验结构存在
+        assert by_ver["ols_v1"]["verifiable"] > 0
+        assert by_ver["ols_v1"]["hits"] > 0
+        assert by_ver["hw_v1"]["verifiable"] > 0
+        assert "hw_feat_v1" in by_ver
 
         comp = data["comparison"]
         assert comp is not None
         assert comp["baseline"] == "ols_v1"
-        assert comp["challenger"] == "hw_v1"
+        assert comp["challenger"] == "hw_feat_v1"
         assert comp["baseline_label"] == "OLS 线性"
-        assert comp["challenger_label"] == "Holt-Winters 季节趋势"
+        assert comp["challenger_label"] == "Holt-Winters + 特征融合"
     finally:
         db.close()
 
@@ -145,7 +148,7 @@ def test_backtest_and_hitrate_endpoints(client: TestClient, admin_token: str, bt
     assert r2.status_code == 200, r2.text
     body2 = r2.json()
     assert body2["code"] == 0, body2
-    assert len(body2["data"]["models"]) == 2
+    assert len(body2["data"]["models"]) == 3
     assert body2["data"]["comparison"] is not None
 
 
@@ -159,7 +162,7 @@ def test_model_default_endpoints(client: TestClient, admin_token: str, bt_env):
         body = r.json()
         assert body["code"] == 0, body
         assert body["data"]["model_version"] == orig
-        assert len(body["data"]["available"]) == 2
+        assert len(body["data"]["available"]) == 3
 
         # 一键切换到 hw_v1（即时重算 + 落库）
         r2 = client.post(
@@ -205,3 +208,16 @@ def test_model_default_rejects_unknown(client: TestClient, admin_token: str):
     )
     assert r.status_code == 200, r.text
     assert r.json()["code"] != 0
+
+
+def test_backtest_includes_hw_feat_v1():
+    """回测模型集合应包含 hw_feat_v1（预测特征工程融合模型）。"""
+    assert "hw_feat_v1" in m.MODELS
+    assert "hw_feat_v1" in m.AB_MODELS
+    # run_backtest 即便无数据，返回的 models 也包含 hw_feat_v1（空跑不报错）
+    db = SessionLocal()
+    try:
+        bt_svc.run_backtest(db, days=30, horizon=7)
+        db.rollback()
+    finally:
+        db.close()

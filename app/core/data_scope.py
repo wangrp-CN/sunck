@@ -27,6 +27,7 @@ from app.model.device import AntiIntrusionDevice, LocateDevice, TrainApproachDev
 from app.model.dispatch import DispatchOrder
 from app.model.disposition import AlarmDisposition
 from app.model.duty_roster import DutyRoster
+from app.model.feature import ExternalFeature
 from app.model.fence import ElectronicFence
 from app.model.forecast import Forecast
 from app.model.forecast_backtest import ForecastBacktest
@@ -151,6 +152,7 @@ _MODEL_DEPT_LINK: dict[type, str] = {
     DutyRoster: VIA_PROJECT,
     Forecast: VIA_PROJECT,
     ForecastBacktest: VIA_PROJECT,
+    ExternalFeature: VIA_PROJECT,
     AlarmPolicy: VIA_PROJECT,
     Playbook: VIA_PROJECT,
     KnowledgeArticle: VIA_PROJECT,

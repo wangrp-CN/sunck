@@ -31,6 +31,7 @@ from app.core.database import SessionLocal
 from app.service import alarm_correlation as corr_svc
 from app.service import anomaly_service as anomaly_svc
 from app.service import backtest_service as bt_svc
+from app.service import feature_provider as feat_svc
 from app.service import forecast_service as forecast_svc
 from app.service import metrics_snapshot as svc
 from app.service import risk_alert as alert_svc
@@ -80,6 +81,14 @@ def main() -> None:
         # （进既有告警流 + 可在告警管理页「一键派单」接入根因派单闭环）。
         anoms = anomaly_svc.run_anomaly_detection(db)
         print(f"[snapshot] anomaly alarms created={anoms['created']}", flush=True)
+
+        # 外部特征回填（预测特征工程：突破单序列）。保证近 N 天外部特征已落库，
+        # 供 hw_feat_v1 残差融合校正使用。独立 try 保护，避免影响关键快照。
+        try:
+            filled = feat_svc.ensure_external_features(db, days=settings.feature_backfill_days)
+            print(f"[snapshot] external features backfilled={filled}", flush=True)
+        except Exception as exc:  # noqa: BLE001
+            print(f"[snapshot] external feature backfill skipped: {exc}", flush=True)
 
         # 风险预测（Phase 5 M1）：对每个项目的 risk_index 日序列做 OLS 趋势
         # 外推，upsert 落 forecast 表（供预测列表 / 预测性预警 / 驾驶舱预测卡）。
