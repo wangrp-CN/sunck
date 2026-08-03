@@ -14,7 +14,9 @@ const itemStub = {
   props: ["index"],
   emits: ["select"],
 };
-const subStub = { template: "<div class='el-sub-menu'><slot /></div>" };
+const subStub = {
+  template: "<div class='el-sub-menu'><slot name='title' /><slot /></div>",
+};
 
 describe("SideMenu", () => {
   it("渲染核心导航项", () => {
