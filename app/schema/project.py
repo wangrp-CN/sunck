@@ -2,7 +2,9 @@
 
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from app.core.constants import PROJECT_STATUSES
 
 
 class ProjectCreate(BaseModel):
@@ -18,6 +20,13 @@ class ProjectCreate(BaseModel):
     coordinate: str | None = Field(None, max_length=128, description="坐标")
     status: str = Field("在建", description="项目状态(在建/停工/竣工)")
 
+    @field_validator("status")
+    @classmethod
+    def _validate_status_create(cls, v):
+        if v not in PROJECT_STATUSES:
+            raise ValueError("项目状态必须为：在建 / 停工 / 竣工")
+        return v
+
 
 class ProjectUpdate(BaseModel):
     name: str | None = Field(None, max_length=128, description="项目名称")
@@ -31,6 +40,13 @@ class ProjectUpdate(BaseModel):
     section: str | None = Field(None, max_length=128, description="区间")
     coordinate: str | None = Field(None, max_length=128, description="坐标")
     status: str | None = Field(None, description="项目状态")
+
+    @field_validator("status")
+    @classmethod
+    def _validate_status_update(cls, v):
+        if v is not None and v not in PROJECT_STATUSES:
+            raise ValueError("项目状态必须为：在建 / 停工 / 竣工")
+        return v
 
 
 class ProjectOut(BaseModel):

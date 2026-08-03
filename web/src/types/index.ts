@@ -74,6 +74,24 @@ export interface ProjectPage {
   size: number;
 }
 
+// 项目列表查询参数（对应后端 GET /v1/projects 过滤条件）
+export interface ProjectListParams {
+  name?: string;
+  dept_id?: number | null;
+  start_date_from?: string | null;
+  start_date_to?: string | null;
+  end_date_from?: string | null;
+  end_date_to?: string | null;
+  status?: ProjectStatus | null;
+  page?: number;
+  size?: number;
+}
+
+// 部门树节点（在 Department 基础上携带 children）
+export interface DepartmentTree extends Department {
+  children?: DepartmentTree[];
+}
+
 // 新建项目请求
 export interface ProjectCreate {
   name: string;

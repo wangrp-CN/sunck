@@ -1,5 +1,10 @@
 import { http } from "@/utils/request";
-import type { Department, DepartmentCreate, DepartmentUpdate } from "@/types";
+import type {
+  Department,
+  DepartmentCreate,
+  DepartmentTree,
+  DepartmentUpdate,
+} from "@/types";
 
 // 部门列表（扁平）
 export function fetchDepartments(keyword?: string): Promise<Department[]> {
@@ -11,8 +16,8 @@ export function fetchDepartments(keyword?: string): Promise<Department[]> {
 }
 
 // 部门树形
-export function fetchDepartmentTree(): Promise<Department[]> {
-  return http<Department[]>({ url: "/v1/departments/tree", method: "GET" });
+export function fetchDepartmentTree(): Promise<DepartmentTree[]> {
+  return http<DepartmentTree[]>({ url: "/v1/departments/tree", method: "GET" });
 }
 
 // 新建部门

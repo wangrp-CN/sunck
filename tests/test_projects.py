@@ -230,3 +230,98 @@ def test_project_data_isolation_by_dept(client, admin_token):
         assert r.status_code == 200, r.text
     finally:
         _cleanup(u)
+
+
+def test_project_list_filters(client, admin_token):
+    """列表过滤：名称模糊、状态、归属部门(含下级)、开工日期区间。"""
+    u = _uid()
+    try:
+        dept_a = _make_dept(client, admin_token, u, "A")
+        dept_b = _make_dept(client, admin_token, u, "B", parent_id=dept_a["id"])
+        pa = client.post(
+            "/api/v1/projects",
+            headers=_headers(admin_token),
+            json={
+                "name": f"P{u}_Alpha",
+                "dept_id": dept_a["id"],
+                "status": "在建",
+                "start_date": "2026-01-01",
+                "end_date": "2026-03-01",
+            },
+        ).json()["data"]
+        pb = client.post(
+            "/api/v1/projects",
+            headers=_headers(admin_token),
+            json={
+                "name": f"P{u}_Beta",
+                "dept_id": dept_b["id"],
+                "status": "竣工",
+                "start_date": "2026-05-01",
+                "end_date": "2026-06-01",
+            },
+        ).json()["data"]
+
+        # 名称左右模糊
+        r = client.get("/api/v1/projects", headers=_headers(admin_token), params={"name": "Alpha"})
+        assert r.status_code == 200, r.text
+        assert {it["id"] for it in r.json()["data"]["items"]} == {pa["id"]}
+
+        # 状态精确匹配
+        r = client.get("/api/v1/projects", headers=_headers(admin_token), params={"status": "竣工"})
+        assert {it["id"] for it in r.json()["data"]["items"]} == {pb["id"]}
+
+        # 归属部门 A 含下级 B：两个都应命中
+        r = client.get(
+            "/api/v1/projects", headers=_headers(admin_token), params={"dept_id": dept_a["id"]}
+        )
+        ids = {it["id"] for it in r.json()["data"]["items"]}
+        assert pa["id"] in ids and pb["id"] in ids
+
+        # 开工日期区间
+        r = client.get(
+            "/api/v1/projects",
+            headers=_headers(admin_token),
+            params={"start_date_from": "2026-04-01", "start_date_to": "2026-12-31"},
+        )
+        assert {it["id"] for it in r.json()["data"]["items"]} == {pb["id"]}
+    finally:
+        _cleanup(u)
+
+
+def test_project_duration_auto_calc(client, admin_token):
+    """创建 / 更新时按起止日期自动计算工期；日期清空则工期为 None。"""
+    u = _uid()
+    try:
+        dept = _make_dept(client, admin_token, u, "A")
+        r = client.post(
+            "/api/v1/projects",
+            headers=_headers(admin_token),
+            json={
+                "name": f"P{u}_Dur",
+                "dept_id": dept["id"],
+                "start_date": "2026-01-01",
+                "end_date": "2026-01-31",
+            },
+        )
+        assert r.status_code == 200, r.text
+        pid = r.json()["data"]["id"]
+        assert r.json()["data"]["duration"] == 30  # 1/1 -> 1/31
+
+        r = client.put(
+            f"/api/v1/projects/{pid}",
+            headers=_headers(admin_token),
+            json={"start_date": "2026-02-01", "end_date": "2026-02-11"},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["duration"] == 10
+
+        # 清空起止日期 → 工期 None
+        r = client.put(
+            f"/api/v1/projects/{pid}",
+            headers=_headers(admin_token),
+            json={"start_date": None, "end_date": None},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["data"]["duration"] is None
+    finally:
+        _cleanup(u)

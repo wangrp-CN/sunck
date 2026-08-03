@@ -4,11 +4,13 @@
 - 创建：project:add 权限，自动写入 created_by 为当前用户。
 """
 
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.data_scope import DataScope, apply_data_scope
+from app.core.data_scope import DataScope, apply_data_scope, get_department_descendant_ids
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.exceptions import BusinessError
@@ -16,6 +18,7 @@ from app.core.responses import ApiResponse
 from app.model.project import Project
 from app.model.system import Department, User
 from app.schema.project import ProjectCreate, ProjectOut, ProjectPage, ProjectUpdate
+from app.service.project_service import apply_project_list_filters, calc_duration
 
 router = APIRouter(tags=["项目管理"])
 
@@ -33,15 +36,39 @@ def _project_out(p: Project) -> ProjectOut:
 def list_projects(
     db: Session = Depends(get_db),
     scope: DataScope = Depends(get_data_scope),
+    name: str | None = None,
     keyword: str | None = None,
+    dept_id: int | None = None,
+    start_date_from: date | None = None,
+    start_date_to: date | None = None,
+    end_date_from: date | None = None,
+    end_date_to: date | None = None,
+    status: str | None = None,
     page: int = 1,
     size: int = 20,
 ) -> ApiResponse:
-    """分页查询项目，并施加部门数据隔离（本部门及以下/自定义部门/仅本人）。"""
+    """分页查询项目。
+
+    过滤条件（全部可选、AND 叠加）：
+    - name：项目名称左右模糊（兼容旧参数 keyword）。
+    - dept_id：按归属部门过滤，自动展开含其全部下级部门。
+    - start_date_from/to、end_date_from/to：开工 / 完工日期区间。
+    - status：项目状态精确匹配。
+
+    此外统一施加部门数据隔离（本部门及以下 / 自定义部门 / 仅本人），按创建时间倒序返回。
+    """
     stmt = select(Project).where(Project.is_deleted.is_(False))
-    if keyword:
-        kw = f"%{keyword}%"
-        stmt = stmt.where(Project.name.ilike(kw))
+    dept_ids = get_department_descendant_ids(db, dept_id) if dept_id is not None else None
+    stmt = apply_project_list_filters(
+        stmt,
+        dept_ids=dept_ids,
+        name=name or keyword,
+        start_date_from=start_date_from,
+        start_date_to=start_date_to,
+        end_date_from=end_date_from,
+        end_date_to=end_date_to,
+        status=status,
+    )
     stmt = apply_data_scope(stmt, Project, scope)
     total = db.scalar(select(func.count()).select_from(stmt.subquery()))
     rows = db.scalars(stmt.order_by(Project.id.desc()).offset((page - 1) * size).limit(size)).all()
@@ -104,7 +131,7 @@ def create_project(
         intro=req.intro,
         start_date=req.start_date,
         end_date=req.end_date,
-        duration=req.duration,
+        duration=calc_duration(req.start_date, req.end_date),
         mileage=req.mileage,
         section=req.section,
         coordinate=req.coordinate,
@@ -135,8 +162,12 @@ def update_project(
     project = db.scalars(stmt).first()
     if project is None:
         raise HTTPException(status_code=404, detail="项目不存在或无权访问")
-    for field, value in req.model_dump(exclude_unset=True).items():
+    updates = req.model_dump(exclude_unset=True)
+    for field, value in updates.items():
         setattr(project, field, value)
+    # 起止日期被修改时，按新日期重算工期（前端工期为只读展示，以服务端计算为准）
+    if "start_date" in updates or "end_date" in updates:
+        project.duration = calc_duration(project.start_date, project.end_date)
     db.commit()
     db.refresh(project)
     return ApiResponse.success(_project_out(project), message="项目更新成功")

@@ -201,6 +201,24 @@ DISPOSITION_OUTCOMES: tuple[str, ...] = (
 )
 
 
+# ---------------------------------------------------------------------------
+# 项目管理·项目列表（需求：项目状态枚举）
+# ---------------------------------------------------------------------------
+PROJECT_STATUS_IN_PROGRESS = "在建"
+PROJECT_STATUS_SUSPENDED = "停工"
+PROJECT_STATUS_COMPLETED = "竣工"
+PROJECT_STATUSES: tuple[str, ...] = (
+    PROJECT_STATUS_IN_PROGRESS,
+    PROJECT_STATUS_SUSPENDED,
+    PROJECT_STATUS_COMPLETED,
+)
+PROJECT_STATUS_LABELS: dict[str, str] = {
+    PROJECT_STATUS_IN_PROGRESS: "在建",
+    PROJECT_STATUS_SUSPENDED: "停工",
+    PROJECT_STATUS_COMPLETED: "竣工",
+}
+
+
 def up_topic(device_type: str) -> str:
     """设备上行主题。"""
     return f"device/{device_type}/up"

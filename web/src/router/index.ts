@@ -39,8 +39,16 @@ const routes: RouteRecordRaw[] = [
       {
         path: "projects",
         name: "projects",
-        component: () => import("@/views/ProjectView.vue"),
+        redirect: "/projects/list",
         meta: { title: "项目管理" },
+        children: [
+          {
+            path: "list",
+            name: "projects-list",
+            component: () => import("@/views/ProjectListView.vue"),
+            meta: { title: "项目列表" },
+          },
+        ],
       },
       {
         path: "devices",
