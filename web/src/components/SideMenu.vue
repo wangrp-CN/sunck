@@ -24,6 +24,7 @@ import {
   Monitor,
   Clock,
   Switch,
+  VideoPlay,
 } from "@element-plus/icons-vue";
 
 const route = useRoute();
@@ -46,6 +47,10 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
     <el-menu-item index="/realtime">
       <el-icon><Position /></el-icon>
       <span>实时监控</span>
+    </el-menu-item>
+    <el-menu-item index="/track">
+      <el-icon><VideoPlay /></el-icon>
+      <span>轨迹回放</span>
     </el-menu-item>
     <el-menu-item index="/projects">
       <el-icon><Folder /></el-icon>
