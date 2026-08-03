@@ -254,7 +254,7 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
 <style scoped>
 .menu {
   border-right: none;
-  /* 玻璃拟态：菜单本身透明，玻璃质感由父层 aside 的半透明+模糊承载 */
+  /* 白底侧栏：菜单本身透明，底色由父层 aside 的白底承载 */
   background: transparent;
   /* 长菜单在矮屏内独立滚动，避免溢出遮挡底部 */
   height: 100%;
@@ -283,13 +283,13 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
   height: 46px;
   line-height: 46px;
   border-radius: 8px;
-  color: #c0c4cc;
+  color: #5b6675;
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.3px;
-  /* 模块边界：比玻璃底略亮的微透明面板 + 柔和投影，退后不抢眼 */
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.18);
+  /* 白底侧栏：模块以「略深面板 + 柔和投影」区分，无分割线 */
+  background: rgba(0, 0, 0, 0.03);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
 }
 /* 模块之间靠留白与明度差分隔，移除分割线 */
 .menu :deep(.el-menu > .el-sub-menu:not(:first-child) > .el-sub-menu__title),
@@ -298,13 +298,13 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
 }
 .menu :deep(.el-menu > .el-sub-menu > .el-sub-menu__title):hover,
 .menu :deep(.el-menu > .el-menu-item):hover {
-  background: rgba(255, 255, 255, 0.07);
-  color: #ffffff;
+  background: rgba(24, 144, 255, 0.08);
+  color: #1890ff;
 }
-/* 当前展开的一级模块：强调所属分类（仅背景加深，文字颜色不变） */
+/* 当前展开的一级模块：强调所属分类（品牌色浅底，文字点亮） */
 .menu :deep(.el-sub-menu.is-opened > .el-sub-menu__title) {
-  color: #ffffff;
-  background: rgba(0, 0, 0, 0.12);
+  color: #1890ff;
+  background: rgba(24, 144, 255, 0.1);
 }
 /* 一级图标统一样式 */
 .menu :deep(.el-menu > .el-sub-menu > .el-sub-menu__title .el-icon),
@@ -324,21 +324,21 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
   padding-left: 54px !important;
   border-left: 2px solid transparent;
   border-radius: 0 8px 8px 0;
-  color: #a8abb2;
+  color: #909399;
   font-size: 13px;
   font-weight: 400;
 }
 .menu :deep(.el-menu--inline .el-menu-item):hover {
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.06);
+  color: #1890ff;
+  background: rgba(24, 144, 255, 0.08);
 }
 
-/* 激活态：左侧高亮条 + 加深背景 + 加粗（仅背景变化，文字/图标颜色不变） */
+/* 激活态：左侧品牌色高亮条 + 浅蓝底 + 加粗（白底可读，符合浅色规范） */
 .menu :deep(.el-menu--inline .el-menu-item.is-active),
 .menu :deep(.el-menu > .el-menu-item.is-active) {
-  color: #ffffff;
+  color: #1890ff;
   font-weight: 600;
-  background: rgba(0, 0, 0, 0.22);
+  background: rgba(24, 144, 255, 0.1);
   border-left: 3px solid #1890ff;
 }
 .menu :deep(.el-menu--inline .el-menu-item.is-active .el-icon) {
