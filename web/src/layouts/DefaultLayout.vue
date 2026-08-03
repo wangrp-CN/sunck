@@ -286,13 +286,29 @@ onUnmounted(() => {
 <style scoped>
 .layout {
   height: 100vh;
+  /* 底层柔和蓝调环境光：供玻璃侧栏模糊「透出」，整体退后不抢眼 */
+  background:
+    radial-gradient(120% 90% at 0% 0%, rgba(64, 124, 214, 0.16) 0%, rgba(64, 124, 214, 0) 55%),
+    radial-gradient(120% 90% at 100% 100%, rgba(41, 73, 148, 0.14) 0%, rgba(41, 73, 148, 0) 55%),
+    #eef1f6;
 }
 .aside {
-  background: #0d47a1;
+  position: relative;
+  /* 玻璃拟态：半透明蓝调底 + 背景模糊，隐约透出底层渐变 */
+  background:
+    radial-gradient(120% 100% at 50% 40%, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 70%),
+    radial-gradient(130% 120% at 50% 0%, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 55%),
+    radial-gradient(150% 150% at 50% 110%, rgba(0, 0, 0, 0.14) 0%, rgba(0, 0, 0, 0) 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"),
+    rgba(18, 46, 92, 0.42);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
   color: #fff;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  /* 柔和投影让玻璃浮于底层，但不抢眼（符合 60% 退后约束） */
+  box-shadow: 2px 0 20px rgba(15, 35, 75, 0.18);
 }
 .logo {
   height: 56px;
@@ -316,12 +332,12 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
 }
-/* 折叠切换：常驻底部，明确的可点击态 */
+/* 折叠切换：常驻底部，明确的可点击态；靠柔和投影与底层区分，不用分割线 */
 .collapse-toggle {
   flex-shrink: 0;
   height: 40px;
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 -1px 8px rgba(0, 0, 0, 0.22);
   background: rgba(0, 0, 0, 0.18);
   color: #c0c4cc;
   cursor: pointer;
@@ -375,6 +391,19 @@ onUnmounted(() => {
 }
 .main {
   background: #f0f2f5;
+}
+
+/* 移动端抽屉同样走玻璃拟态：模糊背后页面内容，材质与桌面一致 */
+.mobile-menu-drawer :deep(.el-drawer__body) {
+  padding: 0;
+  background:
+    radial-gradient(120% 100% at 50% 40%, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 70%),
+    radial-gradient(130% 120% at 50% 0%, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0) 55%),
+    radial-gradient(150% 150% at 50% 110%, rgba(0, 0, 0, 0.14) 0%, rgba(0, 0, 0, 0) 60%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E"),
+    rgba(18, 46, 92, 0.42);
+  backdrop-filter: blur(18px) saturate(150%);
+  -webkit-backdrop-filter: blur(18px) saturate(150%);
 }
 
 /* 通知抽屉 */

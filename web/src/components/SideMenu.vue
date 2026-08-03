@@ -254,8 +254,8 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
 <style scoped>
 .menu {
   border-right: none;
-  /* 蓝色侧栏背景（与主题主色一致）；前景文字/图标颜色保持原样 */
-  background: linear-gradient(180deg, #1976d2 0%, #0d47a1 100%);
+  /* 玻璃拟态：菜单本身透明，玻璃质感由父层 aside 的半透明+模糊承载 */
+  background: transparent;
   /* 长菜单在矮屏内独立滚动，避免溢出遮挡底部 */
   height: 100%;
   overflow-y: auto;
@@ -273,7 +273,7 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
   background: transparent;
 }
 
-/* 一级模块：卡片化分组，强化模块边界 */
+/* 一级模块：卡片化分组（玻璃拟态下，以「明度差 + 柔和投影」区分，不用分割线） */
 .menu :deep(.el-menu) {
   background: transparent;
 }
@@ -287,13 +287,14 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.3px;
+  /* 模块边界：比玻璃底略亮的微透明面板 + 柔和投影，退后不抢眼 */
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.18);
 }
-/* 模块之间以留白+浅分隔线区分 */
+/* 模块之间靠留白与明度差分隔，移除分割线 */
 .menu :deep(.el-menu > .el-sub-menu:not(:first-child) > .el-sub-menu__title),
 .menu :deep(.el-menu > .el-menu-item:not(:first-child)) {
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  margin-top: 10px;
-  padding-top: 4px;
+  margin-top: 8px;
 }
 .menu :deep(.el-menu > .el-sub-menu > .el-sub-menu__title):hover,
 .menu :deep(.el-menu > .el-menu-item):hover {
