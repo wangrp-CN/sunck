@@ -20,10 +20,10 @@ import type {
 
 const auth = useAuthStore();
 
-// 权限门控（后端仍会二次校验）
-const canAdd = computed(() => auth.user?.permission_codes.includes("project:add") ?? false);
-const canEdit = computed(() => auth.user?.permission_codes.includes("project:edit") ?? false);
-const canDelete = computed(() => auth.user?.permission_codes.includes("project:delete") ?? false);
+// 权限门控（后端仍会二次校验）；使用 hasPermission 以兼容超管（超管 permission_codes 可能为空）
+const canAdd = computed(() => auth.hasPermission("project:add"));
+const canEdit = computed(() => auth.hasPermission("project:edit"));
+const canDelete = computed(() => auth.hasPermission("project:delete"));
 
 const loading = ref(false);
 const tableData = ref<Project[]>([]);
