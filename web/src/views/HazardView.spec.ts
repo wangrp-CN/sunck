@@ -14,10 +14,14 @@ vi.mock("element-plus", async (importOriginal) => {
 });
 
 vi.mock("@/stores/auth", () => ({
-  useAuthStore: vi.fn(() => ({
-    user: { permission_codes: ["hazard:list", "hazard:handle", "hazard:create", "hazard:update", "hazard:delete"] },
-    loadProfile: vi.fn(),
-  })),
+  useAuthStore: vi.fn(() => {
+    const permission_codes = ["hazard:list", "hazard:handle", "hazard:create", "hazard:update", "hazard:delete"];
+    return {
+      user: { permission_codes },
+      hasPermission: (code: string) => permission_codes.includes(code),
+      loadProfile: vi.fn(),
+    };
+  }),
 }));
 
 const hazards = {

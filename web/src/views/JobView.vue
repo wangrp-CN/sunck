@@ -22,9 +22,9 @@ import AttachmentManager from "@/components/AttachmentManager.vue";
 import WorkPlanGantt from "@/components/WorkPlanGantt.vue";
 
 const auth = useAuthStore();
-const canAdd = computed(() => auth.user?.permission_codes.includes("job:add") ?? false);
-const canEdit = computed(() => auth.user?.permission_codes.includes("job:edit") ?? false);
-const canDelete = computed(() => auth.user?.permission_codes.includes("job:delete") ?? false);
+const canAdd = computed(() => auth.hasPermission("job:add"));
+const canEdit = computed(() => auth.hasPermission("job:edit"));
+const canDelete = computed(() => auth.hasPermission("job:delete"));
 
 const STATUS_OPTIONS = ["草稿", "执行中", "已完成"];
 

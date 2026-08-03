@@ -26,10 +26,10 @@ const mapTypeLabel = (t: string) =>
   MAP_TYPE_OPTIONS.find((o) => o.value === t)?.label ?? t;
 
 const auth = useAuthStore();
-const canAdd = computed(() => auth.user?.permission_codes.includes("map:add") ?? false);
-const canEdit = computed(() => auth.user?.permission_codes.includes("map:edit") ?? false);
+const canAdd = computed(() => auth.hasPermission("map:add"));
+const canEdit = computed(() => auth.hasPermission("map:edit"));
 const canDelete = computed(
-  () => auth.user?.permission_codes.includes("map:delete") ?? false,
+  () => auth.hasPermission("map:delete"),
 );
 
 const loading = ref(false);

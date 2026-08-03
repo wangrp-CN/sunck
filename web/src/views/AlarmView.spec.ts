@@ -15,10 +15,14 @@ vi.mock("element-plus", async (importOriginal) => {
 });
 
 vi.mock("@/stores/auth", () => ({
-  useAuthStore: vi.fn(() => ({
-    user: { permission_codes: ["alarm:handle", "alarm:config", "alarm:list", "dispatch:create"] },
-    loadProfile: vi.fn(),
-  })),
+  useAuthStore: vi.fn(() => {
+    const permission_codes = ["alarm:handle", "alarm:config", "alarm:list", "dispatch:create"];
+    return {
+      user: { permission_codes },
+      hasPermission: (code: string) => permission_codes.includes(code),
+      loadProfile: vi.fn(),
+    };
+  }),
 }));
 
 // AlarmView 现使用 useRouter（转隐患成功跳转），测试无 router 插件，桩掉避免告警

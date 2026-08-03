@@ -14,9 +14,9 @@ import AttachmentManager from "@/components/AttachmentManager.vue";
 
 const auth = useAuthStore();
 
-const canAdd = computed(() => auth.user?.permission_codes.includes("machine:add") ?? false);
-const canEdit = computed(() => auth.user?.permission_codes.includes("machine:edit") ?? false);
-const canDelete = computed(() => auth.user?.permission_codes.includes("machine:delete") ?? false);
+const canAdd = computed(() => auth.hasPermission("machine:add"));
+const canEdit = computed(() => auth.hasPermission("machine:edit"));
+const canDelete = computed(() => auth.hasPermission("machine:delete"));
 
 const loading = ref(false);
 const keyword = ref("");

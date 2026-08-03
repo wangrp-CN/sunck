@@ -51,10 +51,10 @@ import { useAuthStore } from "@/stores/auth";
 const auth = useAuthStore();
 const router = useRouter();
 const route = useRoute();
-const canHandle = computed(() => auth.user?.permission_codes.includes("alarm:handle") ?? false);
-const canConfig = computed(() => auth.user?.permission_codes.includes("alarm:config") ?? false);
-const canReport = computed(() => auth.user?.permission_codes.includes("alarm:list") ?? false);
-const canDispatch = computed(() => auth.user?.permission_codes.includes("dispatch:create") ?? false);
+const canHandle = computed(() => auth.hasPermission("alarm:handle"));
+const canConfig = computed(() => auth.hasPermission("alarm:config"));
+const canReport = computed(() => auth.hasPermission("alarm:list"));
+const canDispatch = computed(() => auth.hasPermission("dispatch:create"));
 
 // ----- 告警一键派单（接入根因派单闭环，含趋势异常告警） -----
 const dispatchVisible = ref(false);

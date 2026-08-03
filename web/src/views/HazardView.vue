@@ -24,10 +24,10 @@ import { wgs84ToGcj02 } from "@/utils/geo";
 import MapPanel from "@/components/MapPanel.vue";
 
 const auth = useAuthStore();
-const canCreate = computed(() => auth.user?.permission_codes.includes("hazard:create") ?? false);
-const canEdit = computed(() => auth.user?.permission_codes.includes("hazard:update") ?? false);
-const canDelete = computed(() => auth.user?.permission_codes.includes("hazard:delete") ?? false);
-const canHandle = computed(() => auth.user?.permission_codes.includes("hazard:handle") ?? false);
+const canCreate = computed(() => auth.hasPermission("hazard:create"));
+const canEdit = computed(() => auth.hasPermission("hazard:update"));
+const canDelete = computed(() => auth.hasPermission("hazard:delete"));
+const canHandle = computed(() => auth.hasPermission("hazard:handle"));
 
 const options = ref<HazardOptions>({
   levels: ["重大", "较大", "一般", "低"],

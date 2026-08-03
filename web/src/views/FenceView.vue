@@ -15,9 +15,9 @@ import { gcj02ToWgs84, pointsToWkt } from "@/utils/geo";
 
 const auth = useAuthStore();
 
-const canAdd = computed(() => auth.user?.permission_codes.includes("fence:add") ?? false);
-const canEdit = computed(() => auth.user?.permission_codes.includes("fence:edit") ?? false);
-const canDelete = computed(() => auth.user?.permission_codes.includes("fence:delete") ?? false);
+const canAdd = computed(() => auth.hasPermission("fence:add"));
+const canEdit = computed(() => auth.hasPermission("fence:edit"));
+const canDelete = computed(() => auth.hasPermission("fence:delete"));
 
 const loading = ref(false);
 const keyword = ref("");

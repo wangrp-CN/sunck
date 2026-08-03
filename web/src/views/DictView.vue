@@ -16,13 +16,13 @@ import {
 
 const auth = useAuthStore();
 const canCreate = computed(
-  () => auth.user?.permission_codes.includes("dict:create") ?? false,
+  () => auth.hasPermission("dict:create"),
 );
 const canUpdate = computed(
-  () => auth.user?.permission_codes.includes("dict:update") ?? false,
+  () => auth.hasPermission("dict:update"),
 );
 const canDelete = computed(
-  () => auth.user?.permission_codes.includes("dict:delete") ?? false,
+  () => auth.hasPermission("dict:delete"),
 );
 
 const loading = ref(false);

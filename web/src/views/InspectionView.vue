@@ -17,10 +17,10 @@ import { listUsers } from "@/api/user";
 import type { InspectionTask, InspectionStats, Project, SysUser } from "@/types";
 
 const auth = useAuthStore();
-const canAdd = computed(() => auth.user?.permission_codes.includes("inspection:create") ?? false);
-const canEdit = computed(() => auth.user?.permission_codes.includes("inspection:update") ?? false);
-const canDelete = computed(() => auth.user?.permission_codes.includes("inspection:delete") ?? false);
-const canCheckin = computed(() => auth.user?.permission_codes.includes("inspection:checkin") ?? false);
+const canAdd = computed(() => auth.hasPermission("inspection:create"));
+const canEdit = computed(() => auth.hasPermission("inspection:update"));
+const canDelete = computed(() => auth.hasPermission("inspection:delete"));
+const canCheckin = computed(() => auth.hasPermission("inspection:checkin"));
 
 const STATUS_OPTIONS = ["待巡检", "巡检中", "已完成", "已取消"];
 
