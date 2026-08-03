@@ -27,6 +27,7 @@ from app.model import (  # noqa: F401
     job,
     knowledge,
     map_asset,
+    map_drawing,
     notification,
     notification_delivery,
     person,

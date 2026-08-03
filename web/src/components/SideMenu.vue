@@ -31,6 +31,8 @@ import {
   OfficeBuilding,
   Collection,
   MapLocation,
+  Files,
+  EditPen,
   Document,
   ChatDotRound,
   ChatLineRound,
@@ -235,10 +237,20 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
         <el-icon><Collection /></el-icon>
         <span>数据字典</span>
       </el-menu-item>
-      <el-menu-item index="/maps">
-        <el-icon><MapLocation /></el-icon>
-        <span>地图维护</span>
-      </el-menu-item>
+      <el-sub-menu index="/maps-group">
+        <template #title>
+          <el-icon><MapLocation /></el-icon>
+          <span>地图维护</span>
+        </template>
+        <el-menu-item index="/maps">
+          <el-icon><Files /></el-icon>
+          <span>地图资源库</span>
+        </el-menu-item>
+        <el-menu-item index="/maps/draw">
+          <el-icon><EditPen /></el-icon>
+          <span>手动绘制</span>
+        </el-menu-item>
+      </el-sub-menu>
       <el-menu-item index="/audit-logs">
         <el-icon><Document /></el-icon>
         <span>操作审计</span>

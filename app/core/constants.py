@@ -149,6 +149,44 @@ MAP_ASSET_TYPE_LABELS: dict[str, str] = {
 }
 
 # ---------------------------------------------------------------------------
+# 地图手动绘制（系统管理·⑧ 地图维护 - 手动标注）
+# ---------------------------------------------------------------------------
+MAP_DRAWING_KIND_POINT = "point"  # 画点
+MAP_DRAWING_KIND_LINE = "line"  # 画线
+
+MAP_DRAWING_KINDS: tuple[str, ...] = (
+    MAP_DRAWING_KIND_POINT,
+    MAP_DRAWING_KIND_LINE,
+)
+
+MAP_DRAWING_KIND_LABELS: dict[str, str] = {
+    MAP_DRAWING_KIND_POINT: "标注点",
+    MAP_DRAWING_KIND_LINE: "标注线",
+}
+
+MAP_DRAWING_MODE_FREE = "free"  # 自由绘制（地图点击）
+MAP_DRAWING_MODE_COORD = "coord"  # 坐标录入
+MAP_DRAWING_MODE_ROAD = "road"  # 沿路绘制
+
+MAP_DRAWING_MODES: tuple[str, ...] = (
+    MAP_DRAWING_MODE_FREE,
+    MAP_DRAWING_MODE_COORD,
+    MAP_DRAWING_MODE_ROAD,
+)
+
+MAP_DRAWING_MODE_LABELS: dict[str, str] = {
+    MAP_DRAWING_MODE_FREE: "自由绘制",
+    MAP_DRAWING_MODE_COORD: "坐标录入",
+    MAP_DRAWING_MODE_ROAD: "沿路绘制",
+}
+
+# 每种 kind 允许的绘制模式
+MAP_DRAWING_KIND_MODES: dict[str, tuple[str, ...]] = {
+    MAP_DRAWING_KIND_POINT: (MAP_DRAWING_MODE_FREE, MAP_DRAWING_MODE_COORD),
+    MAP_DRAWING_KIND_LINE: (MAP_DRAWING_MODE_FREE, MAP_DRAWING_MODE_ROAD),
+}
+
+# ---------------------------------------------------------------------------
 # 告警处置结果（处置效果闭环）
 # ---------------------------------------------------------------------------
 DISPOSITION_RESOLVED = "已解决"
