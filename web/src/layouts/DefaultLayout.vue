@@ -11,12 +11,15 @@ import {
   markNotificationRead,
   type NotificationItem,
 } from "@/api/notification";
-import { Bell, Menu as MenuIcon } from "@element-plus/icons-vue";
+import { Bell, Menu as MenuIcon, ArrowLeft, ArrowRight } from "@element-plus/icons-vue";
 
 const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const { isMobile } = useBreakpoint();
+
+// 桌面侧栏折叠：窄桌面或用户手动收起时仅显示图标，提升可读性
+const collapsed = ref(false);
 
 // 移动端抽屉式侧栏（窄屏下替代固定侧栏）
 const drawerVisible = ref(false);
@@ -161,9 +164,22 @@ onUnmounted(() => {
 
 <template>
   <el-container class="layout">
-    <el-aside v-show="!isMobile" width="220px" class="aside">
-      <div class="logo">涉铁监控平台</div>
-      <SideMenu />
+    <el-aside v-show="!isMobile" :width="collapsed ? '64px' : '220px'" class="aside">
+      <div v-if="!collapsed" class="logo">涉铁监控平台</div>
+      <div v-else class="logo collapsed-logo">涉</div>
+      <div class="menu-wrap">
+        <SideMenu :collapse="collapsed" />
+      </div>
+      <button
+        class="collapse-toggle"
+        :title="collapsed ? '展开侧栏' : '收起侧栏'"
+        @click="collapsed = !collapsed"
+      >
+        <el-icon :size="16">
+          <ArrowLeft v-if="!collapsed" />
+          <ArrowRight v-else />
+        </el-icon>
+      </button>
     </el-aside>
     <el-container>
       <el-header class="header">
@@ -274,6 +290,9 @@ onUnmounted(() => {
 .aside {
   background: #001529;
   color: #fff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .logo {
   height: 56px;
@@ -283,17 +302,37 @@ onUnmounted(() => {
   font-weight: 700;
   font-size: 16px;
   color: #fff;
+  flex-shrink: 0;
+  letter-spacing: 1px;
 }
-.menu {
-  border-right: none;
+.logo.collapsed-logo {
+  font-size: 18px;
+  letter-spacing: 0;
+}
+/* 菜单滚动容器：在 aside 内占据剩余高度，内部长列表独立滚动 */
+.menu-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+/* 折叠切换：常驻底部，明确的可点击态 */
+.collapse-toggle {
+  flex-shrink: 0;
+  height: 40px;
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
   background: #001529;
-}
-.menu :deep(.el-menu-item) {
   color: #c0c4cc;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
 }
-.menu :deep(.el-menu-item.is-active) {
+.collapse-toggle:hover {
+  background: rgba(255, 255, 255, 0.07);
   color: #fff;
-  background: #1890ff;
 }
 .header {
   display: flex;

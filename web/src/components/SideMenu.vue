@@ -5,6 +5,7 @@ import { computed } from "vue";
 import { useRoute } from "vue-router";
 import {
   DataLine,
+  DataBoard,
   Position,
   Folder,
   TrendCharts,
@@ -16,7 +17,6 @@ import {
   Promotion,
   User,
   Setting,
-  Location,
   Notebook,
   Compass,
   VideoCamera,
@@ -25,7 +25,20 @@ import {
   Clock,
   Switch,
   VideoPlay,
+  LocationFilled,
+  Tools,
+  Avatar,
+  OfficeBuilding,
+  Collection,
+  MapLocation,
+  Document,
+  ChatDotRound,
+  ChatLineRound,
+  Odometer,
 } from "@element-plus/icons-vue";
+
+// 折叠态由父层（DefaultLayout）控制：窄桌面/手动收起时仅显示图标
+const props = defineProps<{ collapse?: boolean }>();
 
 const route = useRoute();
 // 普通路由用 path 匹配；带 query 的菜单项（如列车接近告警）用 fullPath 精确匹配高亮
@@ -42,6 +55,8 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
 <template>
   <el-menu
     :default-active="activeMenu"
+    :collapse="props.collapse"
+    :collapse-transition="false"
     router
     class="menu"
     @select="emit('navigate')"
@@ -53,7 +68,7 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
         <span>大屏</span>
       </template>
       <el-menu-item index="/dashboard">
-        <el-icon><DataLine /></el-icon>
+        <el-icon><DataBoard /></el-icon>
         <span>监控大屏</span>
       </el-menu-item>
       <el-menu-item index="/projects/compare">
@@ -62,7 +77,7 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
       </el-menu-item>
       <el-menu-item index="/track">
         <el-icon><VideoPlay /></el-icon>
-        <span>设备轨迹页(轨迹回放)</span>
+        <span>设备轨迹页</span>
       </el-menu-item>
     </el-sub-menu>
 
@@ -80,7 +95,7 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
 
     <!-- ④ 电子围栏管理 -->
     <el-menu-item index="/fences">
-      <el-icon><Location /></el-icon>
+      <el-icon><LocationFilled /></el-icon>
       <span>电子围栏管理</span>
     </el-menu-item>
 
@@ -99,7 +114,7 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
         <span>在线看板</span>
       </el-menu-item>
       <el-menu-item index="/devices/health">
-        <el-icon><Monitor /></el-icon>
+        <el-icon><Odometer /></el-icon>
         <span>设备健康</span>
       </el-menu-item>
       <el-menu-item index="/devices/commands">
@@ -127,7 +142,7 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
         <span>人员管理</span>
       </el-menu-item>
       <el-menu-item index="/machines">
-        <el-icon><Setting /></el-icon>
+        <el-icon><Tools /></el-icon>
         <span>机械管理</span>
       </el-menu-item>
       <el-menu-item index="/inspections">
@@ -147,7 +162,7 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
         <span>设备告警</span>
       </el-menu-item>
       <el-menu-item index="/alarms?alarm_type=train_approach">
-        <el-icon><Warning /></el-icon>
+        <el-icon><Position /></el-icon>
         <span>列车接近告警</span>
       </el-menu-item>
       <el-menu-item index="/dispatch">
@@ -163,7 +178,7 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
         <span>隐患治理</span>
       </el-menu-item>
       <el-menu-item index="/notifications">
-        <el-icon><Bell /></el-icon>
+        <el-icon><ChatDotRound /></el-icon>
         <span>消息中心</span>
       </el-menu-item>
       <el-menu-item index="/intelligence/correlation">
@@ -192,7 +207,7 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
           <span>阈值自学习</span>
         </el-menu-item>
         <el-menu-item index="/intelligence/subscriptions">
-          <el-icon><Bell /></el-icon>
+          <el-icon><ChatLineRound /></el-icon>
           <span>报告订阅</span>
         </el-menu-item>
       </el-sub-menu>
@@ -204,13 +219,34 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
         <el-icon><Setting /></el-icon>
         <span>系统管理</span>
       </template>
-      <el-menu-item index="/system/users">用户管理</el-menu-item>
-      <el-menu-item index="/system/roles">角色管理</el-menu-item>
-      <el-menu-item index="/system/departments">部门管理</el-menu-item>
-      <el-menu-item index="/dicts">数据字典</el-menu-item>
-      <el-menu-item index="/maps">地图维护</el-menu-item>
-      <el-menu-item index="/audit-logs">操作审计</el-menu-item>
-      <el-menu-item index="/intelligence/report-center">报表中心</el-menu-item>
+      <el-menu-item index="/system/users">
+        <el-icon><User /></el-icon>
+        <span>用户管理</span>
+      </el-menu-item>
+      <el-menu-item index="/system/roles">
+        <el-icon><Avatar /></el-icon>
+        <span>角色管理</span>
+      </el-menu-item>
+      <el-menu-item index="/system/departments">
+        <el-icon><OfficeBuilding /></el-icon>
+        <span>部门管理</span>
+      </el-menu-item>
+      <el-menu-item index="/dicts">
+        <el-icon><Collection /></el-icon>
+        <span>数据字典</span>
+      </el-menu-item>
+      <el-menu-item index="/maps">
+        <el-icon><MapLocation /></el-icon>
+        <span>地图维护</span>
+      </el-menu-item>
+      <el-menu-item index="/audit-logs">
+        <el-icon><Document /></el-icon>
+        <span>操作审计</span>
+      </el-menu-item>
+      <el-menu-item index="/intelligence/report-center">
+        <el-icon><Histogram /></el-icon>
+        <span>报表中心</span>
+      </el-menu-item>
     </el-sub-menu>
   </el-menu>
 </template>
@@ -219,12 +255,105 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
 .menu {
   border-right: none;
   background: #001529;
+  /* 长菜单在矮屏内独立滚动，避免溢出遮挡底部 */
+  height: 100%;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
-.menu :deep(.el-menu-item) {
+/* 细滚动条，弱化存在感 */
+.menu::-webkit-scrollbar {
+  width: 6px;
+}
+.menu::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 3px;
+}
+.menu::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 一级模块：卡片化分组，强化模块边界 */
+.menu :deep(.el-menu) {
+  background: transparent;
+}
+.menu :deep(.el-menu > .el-sub-menu > .el-sub-menu__title),
+.menu :deep(.el-menu > .el-menu-item) {
+  margin: 6px 10px;
+  height: 46px;
+  line-height: 46px;
+  border-radius: 8px;
   color: #c0c4cc;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
 }
-.menu :deep(.el-menu-item.is-active) {
-  color: #fff;
-  background: #1890ff;
+/* 模块之间以留白+浅分隔线区分 */
+.menu :deep(.el-menu > .el-sub-menu:not(:first-child) > .el-sub-menu__title),
+.menu :deep(.el-menu > .el-menu-item:not(:first-child)) {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin-top: 10px;
+  padding-top: 4px;
+}
+.menu :deep(.el-menu > .el-sub-menu > .el-sub-menu__title):hover,
+.menu :deep(.el-menu > .el-menu-item):hover {
+  background: rgba(255, 255, 255, 0.07);
+  color: #ffffff;
+}
+/* 当前展开的一级模块：强调所属分类 */
+.menu :deep(.el-sub-menu.is-opened > .el-sub-menu__title) {
+  color: #ffffff;
+  background: rgba(24, 144, 255, 0.14);
+}
+/* 一级图标统一样式 */
+.menu :deep(.el-menu > .el-sub-menu > .el-sub-menu__title .el-icon),
+.menu :deep(.el-menu > .el-menu-item .el-icon) {
+  font-size: 18px;
+}
+
+/* 内联子项：缩进、弱化字号，与一级形成层级落差 */
+.menu :deep(.el-menu--inline) {
+  background: transparent;
+  padding: 2px 0;
+}
+.menu :deep(.el-menu--inline .el-menu-item) {
+  height: 40px;
+  line-height: 40px;
+  margin: 2px 10px 2px 0;
+  padding-left: 54px !important;
+  border-left: 2px solid transparent;
+  border-radius: 0 8px 8px 0;
+  color: #a8abb2;
+  font-size: 13px;
+  font-weight: 400;
+}
+.menu :deep(.el-menu--inline .el-menu-item):hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* 激活态：左侧高亮条 + 渐变背景 + 加粗 + 图标点亮，强辨识 */
+.menu :deep(.el-menu--inline .el-menu-item.is-active),
+.menu :deep(.el-menu > .el-menu-item.is-active) {
+  color: #ffffff;
+  font-weight: 600;
+  background: linear-gradient(
+    90deg,
+    rgba(24, 144, 255, 0.24),
+    rgba(24, 144, 255, 0.04)
+  );
+  border-left: 3px solid #1890ff;
+}
+.menu :deep(.el-menu--inline .el-menu-item.is-active .el-icon) {
+  color: #1890ff;
+}
+
+/* 折叠态：仅图标，宽度由父层容器控制 */
+.menu.el-menu--collapse {
+  width: 100%;
+}
+.menu :deep(.el-menu--collapse .el-sub-menu__title),
+.menu :deep(.el-menu--collapse .el-menu-item) {
+  margin: 6px 10px;
+  text-align: center;
 }
 </style>
