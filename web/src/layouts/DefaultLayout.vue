@@ -288,7 +288,7 @@ onUnmounted(() => {
   height: 100vh;
 }
 .aside {
-  background: #001529;
+  background: #0d47a1;
   color: #fff;
   display: flex;
   flex-direction: column;
@@ -321,8 +321,8 @@ onUnmounted(() => {
   flex-shrink: 0;
   height: 40px;
   border: none;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: #001529;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.18);
   color: #c0c4cc;
   cursor: pointer;
   display: flex;
@@ -331,7 +331,7 @@ onUnmounted(() => {
   transition: background 0.15s, color 0.15s;
 }
 .collapse-toggle:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(0, 0, 0, 0.3);
   color: #fff;
 }
 .header {

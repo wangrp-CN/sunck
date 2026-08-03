@@ -254,7 +254,8 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
 <style scoped>
 .menu {
   border-right: none;
-  background: #001529;
+  /* 蓝色侧栏背景（与主题主色一致）；前景文字/图标颜色保持原样 */
+  background: linear-gradient(180deg, #1976d2 0%, #0d47a1 100%);
   /* 长菜单在矮屏内独立滚动，避免溢出遮挡底部 */
   height: 100%;
   overflow-y: auto;
@@ -299,10 +300,10 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
   background: rgba(255, 255, 255, 0.07);
   color: #ffffff;
 }
-/* 当前展开的一级模块：强调所属分类 */
+/* 当前展开的一级模块：强调所属分类（仅背景加深，文字颜色不变） */
 .menu :deep(.el-sub-menu.is-opened > .el-sub-menu__title) {
   color: #ffffff;
-  background: rgba(24, 144, 255, 0.14);
+  background: rgba(0, 0, 0, 0.12);
 }
 /* 一级图标统一样式 */
 .menu :deep(.el-menu > .el-sub-menu > .el-sub-menu__title .el-icon),
@@ -331,16 +332,12 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
   background: rgba(255, 255, 255, 0.06);
 }
 
-/* 激活态：左侧高亮条 + 渐变背景 + 加粗 + 图标点亮，强辨识 */
+/* 激活态：左侧高亮条 + 加深背景 + 加粗（仅背景变化，文字/图标颜色不变） */
 .menu :deep(.el-menu--inline .el-menu-item.is-active),
 .menu :deep(.el-menu > .el-menu-item.is-active) {
   color: #ffffff;
   font-weight: 600;
-  background: linear-gradient(
-    90deg,
-    rgba(24, 144, 255, 0.24),
-    rgba(24, 144, 255, 0.04)
-  );
+  background: rgba(0, 0, 0, 0.22);
   border-left: 3px solid #1890ff;
 }
 .menu :deep(.el-menu--inline .el-menu-item.is-active .el-icon) {
