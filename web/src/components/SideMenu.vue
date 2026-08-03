@@ -208,6 +208,7 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
       <el-menu-item index="/system/roles">角色管理</el-menu-item>
       <el-menu-item index="/system/departments">部门管理</el-menu-item>
       <el-menu-item index="/dicts">数据字典</el-menu-item>
+      <el-menu-item index="/maps">地图维护</el-menu-item>
       <el-menu-item index="/audit-logs">操作审计</el-menu-item>
       <el-menu-item index="/intelligence/report-center">报表中心</el-menu-item>
     </el-sub-menu>

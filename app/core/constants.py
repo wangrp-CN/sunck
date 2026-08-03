@@ -127,6 +127,28 @@ DISPATCH_SOURCES: tuple[str, ...] = (
 DISPATCH_LEVELS: tuple[str, ...] = ("严重", "警告", "提示")
 
 # ---------------------------------------------------------------------------
+# 地图资源库（系统管理·⑧ 地图维护）
+# ---------------------------------------------------------------------------
+MAP_ASSET_TYPE_STATION_PLAN = "station_plan"  # 站点平面图
+MAP_ASSET_TYPE_PLAN_IMAGE = "plan_image"  # 平面图图片
+MAP_ASSET_TYPE_SATELLITE = "satellite"  # 卫星影像底图
+MAP_ASSET_TYPE_CUSTOM_BASEMAP = "custom_basemap"  # 自定义底图
+
+MAP_ASSET_TYPES: tuple[str, ...] = (
+    MAP_ASSET_TYPE_STATION_PLAN,
+    MAP_ASSET_TYPE_PLAN_IMAGE,
+    MAP_ASSET_TYPE_SATELLITE,
+    MAP_ASSET_TYPE_CUSTOM_BASEMAP,
+)
+
+MAP_ASSET_TYPE_LABELS: dict[str, str] = {
+    MAP_ASSET_TYPE_STATION_PLAN: "站点平面图",
+    MAP_ASSET_TYPE_PLAN_IMAGE: "平面图图片",
+    MAP_ASSET_TYPE_SATELLITE: "卫星影像底图",
+    MAP_ASSET_TYPE_CUSTOM_BASEMAP: "自定义底图",
+}
+
+# ---------------------------------------------------------------------------
 # 告警处置结果（处置效果闭环）
 # ---------------------------------------------------------------------------
 DISPOSITION_RESOLVED = "已解决"

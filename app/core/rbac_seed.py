@@ -42,6 +42,10 @@ _CHILDREN = {
         "dept:add",
         "dept:edit",
         "dept:delete",
+        "map:list",
+        "map:add",
+        "map:edit",
+        "map:delete",
     ],
     "project": ["project:list", "project:add", "project:edit", "project:delete"],
     "device": [

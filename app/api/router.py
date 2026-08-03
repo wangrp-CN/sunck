@@ -27,6 +27,7 @@ from app.api.v1 import (
     jobs,
     knowledge,
     machines,
+    map_assets,
     media,
     metrics,
     notifications,
@@ -63,6 +64,7 @@ api_router.include_router(attachments.router, prefix="/v1/attachments", tags=["�
 api_router.include_router(audit_logs.router, prefix="/v1/audit-logs", tags=["操作审计"])
 api_router.include_router(dicts.router, prefix="/v1/dicts", tags=["数据字典"])
 api_router.include_router(duty.router, prefix="/v1/duty", tags=["值班排班"])
+api_router.include_router(map_assets.router, prefix="/v1/maps", tags=["地图维护"])
 api_router.include_router(inspections.router, prefix="/v1/inspections", tags=["巡检打卡"])
 api_router.include_router(videos.router, prefix="/v1/videos", tags=["视频AI"])
 api_router.include_router(metrics.router, prefix="/v1/metrics", tags=["指标快照"])

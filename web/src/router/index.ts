@@ -193,6 +193,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "数据字典" },
       },
       {
+        path: "maps",
+        name: "maps",
+        component: () => import("@/views/MapManageView.vue"),
+        meta: { title: "地图维护" },
+      },
+      {
         path: "system/users",
         name: "system-users",
         component: () => import("@/views/SystemUserView.vue"),
