@@ -1,6 +1,8 @@
 // ProjectListView 单测（项目管理·项目列表：查询渲染、状态色、新增弹窗）
 import { flushPromises, mount } from "@vue/test-utils";
+import { nextTick } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { createProject } from "@/api/project";
 import ProjectListView from "@/views/ProjectListView.vue";
 
 const hoist = vi.hoisted(() => {
@@ -93,7 +95,7 @@ describe("ProjectListView", () => {
     expect(text).toContain("在建");
   });
 
-  it("点击新增打开弹窗并展示经纬度与只读工期字段", async () => {
+  it("点击新增打开弹窗并展示坐标与只读工期字段", async () => {
     const wrapper = mount(ProjectListView);
     await flushPromises();
 
@@ -101,9 +103,55 @@ describe("ProjectListView", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("新增项目");
-    expect(wrapper.text()).toContain("经度");
-    expect(wrapper.text()).toContain("纬度");
+    expect(wrapper.text()).toContain("坐标");
     expect(wrapper.text()).toContain("项目工期");
+  });
+
+  it("新增表单对必填项与坐标格式做基本校验，并以结构化对象提交", async () => {
+    const wrapper = mount(ProjectListView);
+    await flushPromises();
+    await btnByText(wrapper, "新增")!.trigger("click");
+    await flushPromises();
+
+    const createMock = createProject as ReturnType<typeof vi.fn>;
+    createMock.mockClear();
+
+    // 直接提交空表单：必填校验应阻断，不调用接口
+    await btnByText(wrapper, "保存")!.trigger("click");
+    await flushPromises();
+    expect(createMock).not.toHaveBeenCalled();
+    expect(wrapper.text()).toContain("项目名称");
+
+    // 通过暴露的 form 填写合法数据（日期早于完工，触发工期计算与结构化对象）
+    const vm = wrapper.vm as unknown as { form: Record<string, unknown> };
+    vm.form.name = "测试项目A";
+    vm.form.short_name = "A";
+    vm.form.intro = "介绍内容";
+    vm.form.coordinate = "116.397,39.909";
+    vm.form.dept_id = 10;
+    vm.form.start_date = "2026-01-01";
+    vm.form.end_date = "2026-06-01";
+    await nextTick();
+
+    await btnByText(wrapper, "保存")!.trigger("click");
+    await flushPromises();
+    expect(createMock).toHaveBeenCalledTimes(1);
+    const payload = createMock.mock.calls[0][0];
+    // 结构化对象字段校验
+    expect(payload.name).toBe("测试项目A");
+    expect(payload.short_name).toBe("A");
+    expect(payload.intro).toBe("介绍内容");
+    expect(payload.coordinate).toBe("116.397,39.909");
+    expect(payload.dept_id).toBe(10);
+    expect(payload.start_date).toBe("2026-01-01");
+    expect(payload.end_date).toBe("2026-06-01");
+    expect(payload.status).toBe("在建");
+    // 坐标格式非法时也应被阻断
+    createMock.mockClear();
+    vm.form.coordinate = "not-a-coord";
+    await btnByText(wrapper, "保存")!.trigger("click");
+    await flushPromises();
+    expect(createMock).not.toHaveBeenCalled();
   });
 
   it("点击查看打开只读详情弹窗且不显示保存按钮", async () => {

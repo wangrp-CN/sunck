@@ -16,7 +16,6 @@ import type {
   ProjectCreate,
   ProjectListParams,
   ProjectStatus,
-  ProjectUpdate,
 } from "@/types";
 
 const auth = useAuthStore();
@@ -131,8 +130,7 @@ const emptyForm = () => ({
   status: "在建" as ProjectStatus,
   section: "",
   mileage: "",
-  lng: "",
-  lat: "",
+  coordinate: "",
   start_date: "" as string | null,
   end_date: "" as string | null,
   intro: "",
@@ -152,18 +150,50 @@ const computedDuration = computed<number | null>(() => {
 
 const isView = computed(() => dialogMode.value === "view");
 
+const COORD_PATTERN = /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/;
+
 const rules: FormRules = {
   name: [{ required: true, message: "请输入项目名称", trigger: "blur" }],
   dept_id: [{ required: true, message: "请选择归属部门", trigger: "change" }],
   short_name: [{ required: true, message: "请输入项目简称", trigger: "blur" }],
   intro: [{ required: true, message: "请输入项目介绍", trigger: "blur" }],
+  coordinate: [
+    { required: true, message: "请输入坐标", trigger: "blur" },
+    {
+      validator: (_rule, value, callback) => {
+        const v = (value || "").trim();
+        if (!v) return callback();
+        if (!COORD_PATTERN.test(v)) {
+          return callback(new Error("坐标格式应为：经度,纬度（如 116.397,39.909）"));
+        }
+        callback();
+      },
+      trigger: "blur",
+    },
+  ],
+  start_date: [
+    {
+      validator: (_rule, _value, callback) => {
+        if (form.start_date && form.end_date && form.start_date > form.end_date) {
+          return callback(new Error("开工日期不能晚于完工日期"));
+        }
+        callback();
+      },
+      trigger: "change",
+    },
+  ],
+  end_date: [
+    {
+      validator: (_rule, _value, callback) => {
+        if (form.start_date && form.end_date && form.start_date > form.end_date) {
+          return callback(new Error("开工日期不能晚于完工日期"));
+        }
+        callback();
+      },
+      trigger: "change",
+    },
+  ],
 };
-
-function parseCoord(c?: string | null): { lng: string; lat: string } {
-  if (!c || !c.includes(",")) return { lng: "", lat: "" };
-  const [lng, lat] = c.split(",");
-  return { lng: (lng ?? "").trim(), lat: (lat ?? "").trim() };
-}
 
 function openCreate() {
   dialogMode.value = "create";
@@ -185,7 +215,7 @@ function openEdit(row: Project) {
     intro: row.intro ?? "",
     start_date: row.start_date,
     end_date: row.end_date,
-    ...parseCoord(row.coordinate),
+    coordinate: row.coordinate ?? "",
   });
   dialogVisible.value = true;
 }
@@ -203,9 +233,25 @@ function openView(row: Project) {
     intro: row.intro ?? "",
     start_date: row.start_date,
     end_date: row.end_date,
-    ...parseCoord(row.coordinate),
+    coordinate: row.coordinate ?? "",
   });
   dialogVisible.value = true;
+}
+
+// 将表单数据整理为结构化的项目对象（字段与后端 ProjectCreate/ProjectUpdate 对齐）
+function buildProjectData(): ProjectCreate {
+  return {
+    name: form.name.trim(),
+    dept_id: form.dept_id as number,
+    short_name: form.short_name.trim() || null,
+    intro: form.intro.trim() || null,
+    start_date: form.start_date || null,
+    end_date: form.end_date || null,
+    mileage: form.mileage.trim() || null,
+    section: form.section.trim() || null,
+    coordinate: form.coordinate.trim() || null,
+    status: form.status,
+  };
 }
 
 async function handleSubmit() {
@@ -214,28 +260,13 @@ async function handleSubmit() {
     if (!valid) return;
     submitting.value = true;
     try {
-      const coord =
-        form.lng.trim() && form.lat.trim()
-          ? `${form.lng.trim()},${form.lat.trim()}`
-          : null;
-      // 工期由服务端按起止日期计算，前端不传 duration
-      const payload: ProjectCreate | ProjectUpdate = {
-        name: form.name,
-        dept_id: form.dept_id as number,
-        short_name: form.short_name ? form.short_name : null,
-        intro: form.intro ? form.intro : null,
-        start_date: form.start_date || null,
-        end_date: form.end_date || null,
-        mileage: form.mileage ? form.mileage : null,
-        section: form.section ? form.section : null,
-        coordinate: coord,
-        status: form.status,
-      };
+      // 结构化的项目数据对象（含只读派生的项目工期）
+      const projectData = buildProjectData();
       if (dialogMode.value === "create") {
-        await createProject(payload as ProjectCreate);
+        await createProject(projectData);
         ElMessage.success("项目创建成功");
       } else {
-        await updateProject(editingId.value as number, payload as ProjectUpdate);
+        await updateProject(editingId.value as number, projectData);
         ElMessage.success("项目更新成功");
       }
       dialogVisible.value = false;
@@ -278,6 +309,9 @@ onMounted(async () => {
   loadDepartments();
   loadData();
 });
+
+// 暴露表单状态以便单测确定性地构造数据
+defineExpose({ form, computedDuration });
 </script>
 
 <template>
@@ -392,7 +426,7 @@ onMounted(async () => {
         <el-form-item label="项目名称" prop="name">
           <el-input v-model="form.name" placeholder="请输入项目名称" />
         </el-form-item>
-        <el-form-item label="开工日期">
+        <el-form-item label="开工日期" prop="start_date">
           <el-date-picker
             v-model="form.start_date"
             type="date"
@@ -400,7 +434,7 @@ onMounted(async () => {
             placeholder="选择日期"
           />
         </el-form-item>
-        <el-form-item label="完工日期">
+        <el-form-item label="完工日期" prop="end_date">
           <el-date-picker
             v-model="form.end_date"
             type="date"
@@ -420,8 +454,8 @@ onMounted(async () => {
         <el-form-item label="区间">
           <el-input v-model="form.section" placeholder="如：K12+300~K15+800" />
         </el-form-item>
-        <el-form-item label="经度">
-          <el-input v-model="form.lng" placeholder="如：116.397" />
+        <el-form-item label="坐标" prop="coordinate">
+          <el-input v-model="form.coordinate" placeholder="经度,纬度（如：116.397,39.909）" />
         </el-form-item>
         <el-form-item label="项目工期">
           <el-input
@@ -437,9 +471,6 @@ onMounted(async () => {
             <el-option label="停工" value="停工" />
             <el-option label="竣工" value="竣工" />
           </el-select>
-        </el-form-item>
-        <el-form-item label="纬度">
-          <el-input v-model="form.lat" placeholder="如：39.909" />
         </el-form-item>
       </el-form>
       <template #footer>
