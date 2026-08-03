@@ -6,23 +6,36 @@ import { createProject } from "@/api/project";
 import ProjectListView from "@/views/ProjectListView.vue";
 
 const hoist = vi.hoisted(() => {
-  const sample = {
-    id: 1,
-    name: "XX涉铁工程",
-    short_name: "XX",
+  const make = (
+    id: number,
+    name: string,
+    status: "在建" | "停工" | "竣工",
+    duration: number,
+  ) => ({
+    id,
+    name,
+    short_name: name.slice(0, 2),
     dept_id: 10,
-    intro: "重点涉铁施工项目",
+    intro: `${name}介绍`,
     start_date: "2026-01-01",
     end_date: "2026-06-01",
-    duration: 151,
+    duration,
     mileage: "3km",
     section: "K1~K2",
     coordinate: "116.4,39.9",
-    status: "在建" as const,
+    status,
     created_by: 1,
     created_at: "2026-01-02 10:00:00",
-  };
-  return { sample };
+  });
+  // 测试数据：在建 1 条、停工 2 条、竣工 2 条，用于验证展示与筛选
+  const allProjects = [
+    make(1, "XX在建工程", "在建", 151),
+    make(2, "XX停工工程A", "停工", 60),
+    make(3, "XX停工工程B", "停工", 80),
+    make(4, "XX竣工工程A", "竣工", 200),
+    make(5, "XX竣工工程B", "竣工", 180),
+  ];
+  return { allProjects };
 });
 
 vi.mock("element-plus", async (importOriginal) => {
@@ -51,14 +64,15 @@ vi.mock("vue-router", () => ({
 }));
 
 vi.mock("@/api/project", () => ({
-  fetchProjects: vi.fn().mockResolvedValue({
-    items: [hoist.sample],
-    total: 1,
-    page: 1,
-    size: 20,
+  fetchProjects: vi.fn().mockImplementation(async (params?: Record<string, unknown>) => {
+    const status = params?.status as string | undefined;
+    const items = status
+      ? hoist.allProjects.filter((p) => p.status === status)
+      : hoist.allProjects;
+    return { items, total: items.length, page: (params?.page as number) ?? 1, size: (params?.size as number) ?? 20 };
   }),
-  createProject: vi.fn().mockResolvedValue(hoist.sample),
-  updateProject: vi.fn().mockResolvedValue(hoist.sample),
+  createProject: vi.fn().mockResolvedValue(hoist.allProjects[0]),
+  updateProject: vi.fn().mockResolvedValue(hoist.allProjects[0]),
   deleteProject: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -80,21 +94,57 @@ describe("ProjectListView", () => {
     vi.clearAllMocks();
   });
 
-  it("渲染查询区、列表与状态标签（在建=蓝 tag）", async () => {
+  it("渲染查询区、表头（含项目周期（日））、5 行数据，且已移除项目介绍列", async () => {
     const wrapper = mount(ProjectListView);
     await flushPromises();
     const text = wrapper.text();
     expect(text).toContain("项目名称");
     expect(text).toContain("项目状态");
+    expect(text).toContain("项目周期（日）");
     expect(text).toContain("查询");
     expect(text).toContain("重置");
     expect(text).toContain("新增");
-    // 列表数据
-    expect(text).toContain("XX涉铁工程");
-    expect(text).toContain("重点涉铁施工项目");
+    // 已移除「项目介绍」列：表头与单元格均不应出现介绍内容
+    expect(text).not.toContain("项目介绍");
+    expect(text).not.toContain("XX在建工程介绍");
+    // 列表数据（5 条测试数据：在建/停工/竣工）
+    expect(text).toContain("XX在建工程");
     expect(text).toContain("151 天");
-    // 状态标签
     expect(text).toContain("在建");
+    expect(text).toContain("停工");
+    expect(text).toContain("竣工");
+    // 行数 = 5
+    expect(wrapper.findAll(".el-table__row").length).toBe(5);
+  });
+
+  it("按项目状态筛选：停工/竣工 仅展示对应记录", async () => {
+    const wrapper = mount(ProjectListView);
+    await flushPromises();
+    const vm = wrapper.vm as unknown as { query: Record<string, unknown> };
+
+    // 筛选「停工」
+    vm.query.status = "停工";
+    await nextTick();
+    await btnByText(wrapper, "查询")!.trigger("click");
+    await flushPromises();
+    let rows = wrapper.findAll(".el-table__row");
+    expect(rows.length).toBe(2);
+    rows.forEach((r) => expect(r.text()).toContain("停工"));
+    expect(wrapper.text()).not.toContain("XX竣工工程A");
+
+    // 筛选「竣工」
+    vm.query.status = "竣工";
+    await nextTick();
+    await btnByText(wrapper, "查询")!.trigger("click");
+    await flushPromises();
+    rows = wrapper.findAll(".el-table__row");
+    expect(rows.length).toBe(2);
+    rows.forEach((r) => expect(r.text()).toContain("竣工"));
+
+    // 重置后恢复全部 5 条
+    await btnByText(wrapper, "重置")!.trigger("click");
+    await flushPromises();
+    expect(wrapper.findAll(".el-table__row").length).toBe(5);
   });
 
   it("点击新增打开弹窗并展示坐标与只读工期字段", async () => {
@@ -168,7 +218,7 @@ describe("ProjectListView", () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain("项目详情");
-    expect(wrapper.text()).toContain("XX涉铁工程");
+    expect(wrapper.text()).toContain("XX在建工程");
     // 查看态：保存按钮不应出现
     expect(btnByText(wrapper, "保存")).toBeUndefined();
   });

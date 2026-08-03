@@ -310,8 +310,8 @@ onMounted(async () => {
   loadData();
 });
 
-// 暴露表单状态以便单测确定性地构造数据
-defineExpose({ form, computedDuration });
+// 暴露表单与查询状态以便单测确定性地构造数据 / 模拟筛选
+defineExpose({ form, computedDuration, query });
 </script>
 
 <template>
@@ -358,20 +358,19 @@ defineExpose({ form, computedDuration });
       <el-button v-if="canAdd" type="success" @click="openCreate">新增</el-button>
     </div>
 
-    <!-- 列表 -->
+    <!-- 列表：序号/归属部门/项目名称 三列为固定列（冻结），不随横向滚动移动 -->
     <el-table v-loading="loading" :data="tableData" border stripe class="table">
-      <el-table-column label="序号" width="64" align="center">
+      <el-table-column label="序号" width="64" align="center" fixed="left">
         <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
       </el-table-column>
-      <el-table-column label="归属部门" width="150" show-overflow-tooltip>
+      <el-table-column label="归属部门" width="150" show-overflow-tooltip fixed="left">
         <template #default="{ row }">{{ deptName(row.dept_id) }}</template>
       </el-table-column>
-      <el-table-column prop="name" label="项目名称" min-width="160" show-overflow-tooltip />
+      <el-table-column prop="name" label="项目名称" min-width="160" show-overflow-tooltip fixed="left" />
       <el-table-column prop="short_name" label="项目简称" width="120" show-overflow-tooltip />
-      <el-table-column prop="intro" label="项目介绍" min-width="200" show-overflow-tooltip />
       <el-table-column prop="start_date" label="开工日期" width="120" />
       <el-table-column prop="end_date" label="完工日期" width="120" />
-      <el-table-column label="项目工期" width="100" align="center">
+      <el-table-column label="项目周期（日）" width="110" align="center">
         <template #default="{ row }">{{ row.duration != null ? row.duration + " 天" : "—" }}</template>
       </el-table-column>
       <el-table-column prop="created_at" label="创建时间" width="170" show-overflow-tooltip />
