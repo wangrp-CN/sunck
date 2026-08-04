@@ -6,6 +6,7 @@ import { fetchProjects } from "@/api/project";
 import { getHealthTrend } from "@/api/metrics";
 import { DEVICE_TYPE_LABELS } from "@/api/realtime";
 import TrendLine from "@/components/TrendLine.vue";
+import TablePager from "@/components/TablePager.vue";
 import type { DeviceHealthResp, Project } from "@/types";
 
 const auth = useAuthStore();
@@ -13,6 +14,9 @@ const auth = useAuthStore();
 const projects = ref<Project[]>([]);
 const resp = ref<DeviceHealthResp | null>(null);
 const loading = ref(false);
+const page = ref(1);
+const size = ref(20);
+const total = ref(0);
 const filters = reactive({
   device_type: "" as string,
   project_id: null as number | null,
@@ -34,16 +38,26 @@ async function loadProjects() {
 async function load() {
   loading.value = true;
   try {
-    resp.value = await fetchDeviceHealth({
+    const data = await fetchDeviceHealth({
       device_type: filters.device_type || undefined,
       project_id: filters.project_id ?? undefined,
       hours: filters.hours,
+      page: page.value,
+      size: size.value,
     });
+    resp.value = data;
+    total.value = data.total;
   } catch (e: any) {
     ElMessage.error(e?.message || "加载设备健康失败");
   } finally {
     loading.value = false;
   }
+}
+
+/** 条件查询：回到第 1 页再拉取 */
+function search() {
+  page.value = 1;
+  load();
 }
 function projectName(id?: number | null) {
   if (id == null) return "—";
@@ -158,7 +172,7 @@ onMounted(async () => {
           <el-input-number v-model="filters.hours" :min="1" :max="720" />
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" @click="load">查询</el-button>
+          <el-button type="primary" @click="search">查询</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -211,6 +225,9 @@ onMounted(async () => {
           </div>
         </template>
       </el-table-column>
+      <el-table-column label="序号" width="64" align="center">
+        <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+      </el-table-column>
       <el-table-column prop="device_no" label="设备编号" width="150" />
       <el-table-column prop="name" label="名称" min-width="140" />
       <el-table-column label="类型" width="110">
@@ -245,6 +262,8 @@ onMounted(async () => {
       </el-table-column>
       <template #empty>暂无设备</template>
     </el-table>
+
+    <TablePager v-model:page="page" v-model:size="size" :total="total" @change="load" />
   </div>
 </template>
 

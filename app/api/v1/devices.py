@@ -220,11 +220,16 @@ def device_health(
     device_type: str | None = None,
     project_id: int | None = None,
     hours: int = Query(24, ge=1, le=720, description="统计窗口(小时)"),
+    page: int = Query(1, ge=1, description="页码"),
+    size: int = Query(20, ge=1, le=200, description="每页条数"),
 ) -> ApiResponse:
     """按设备聚合健康指标：最近上报/在线判定/窗口内上报量与告警数。
 
     在线定义与实时看板同源（settings.online_threshold_seconds）；
     健康分 = 在线(60) + 上报活跃(20，窗口有上报) + 无告警(20，窗口零告警)。
+
+    items 按健康分升序分页返回；total/online/offline 为全量口径（供概览卡展示），
+    与分页无关。
     """
     from datetime import timedelta
     from datetime import timezone as _tz
@@ -271,6 +276,8 @@ def device_health(
                 "total": 0,
                 "online": 0,
                 "offline": 0,
+                "page": page,
+                "size": size,
                 "items": [],
             }
         )
@@ -354,6 +361,8 @@ def device_health(
     # 健康分升序（最差在前，运维视角优先关注）
     items.sort(key=lambda x: (x["health_score"], -(x["alarm_count"])))
 
+    # 分页切片：total/online/offline 保持全量口径，供页面概览卡使用
+    offset = (page - 1) * size
     return ApiResponse.success(
         data={
             "window_hours": hours,
@@ -361,7 +370,9 @@ def device_health(
             "total": len(items),
             "online": online_n,
             "offline": len(items) - online_n,
-            "items": items,
+            "page": page,
+            "size": size,
+            "items": items[offset : offset + size],
         }
     )
 

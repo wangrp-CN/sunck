@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { type FormInstance, type FormRules } from "element-plus";
 import { useAuthStore } from "@/stores/auth";
+import TablePager from "@/components/TablePager.vue";
 import {
   createDictItem,
   createDictType,
@@ -221,6 +222,9 @@ onMounted(load);
             highlight-current-row
             @current-change="(row: DictType | null) => row && selectType(row)"
           >
+            <el-table-column label="序号" width="64" align="center">
+              <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+            </el-table-column>
             <el-table-column prop="code" label="编码" min-width="140" />
             <el-table-column prop="name" label="名称" min-width="120" />
             <el-table-column label="内置" width="70" align="center">
@@ -256,7 +260,7 @@ onMounted(load);
             </el-table-column>
           </el-table>
 
-          <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" class="pager" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="load" />
+          <TablePager v-model:page="page" v-model:size="size" :total="total" @change="load" />
         </el-card>
       </el-col>
 

@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useAuthStore } from "@/stores/auth";
 import { fetchProjects } from "@/api/project";
 import { searchKnowledge, type KnowledgeSearchItem } from "@/api/knowledge";
+import TablePager from "@/components/TablePager.vue";
 import {
   createPlaybook,
   deletePlaybook,
@@ -322,6 +323,9 @@ onMounted(async () => {
     </div>
 
     <el-table :data="items" v-loading="loading" border stripe style="width: 100%">
+      <el-table-column label="序号" width="64" align="center">
+        <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+      </el-table-column>
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column prop="name" label="名称" min-width="160" />
       <el-table-column label="归属" min-width="110">
@@ -363,7 +367,7 @@ onMounted(async () => {
       <template #empty>暂无预案</template>
     </el-table>
 
-    <el-pagination :current-page="page" :page-size="size" :total="total" class="pager" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="(p: number) => { page = p; load(); }" />
+    <TablePager v-model:page="page" v-model:size="size" :total="total" @change="load" />
 
     <el-dialog
       v-model="dialogVisible"

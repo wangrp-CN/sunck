@@ -9,6 +9,7 @@ import {
   updateProject,
 } from "@/api/project";
 import { fetchDepartmentTree, fetchDepartments } from "@/api/department";
+import TablePager from "@/components/TablePager.vue";
 import type {
   Department,
   DepartmentTree,
@@ -111,10 +112,6 @@ function handleReset() {
   loadData();
 }
 
-function handlePageChange(p: number) {
-  page.value = p;
-  loadData();
-}
 
 // ---- 新增 / 编辑 / 查看 弹窗 ----
 const dialogVisible = ref(false);
@@ -391,7 +388,7 @@ defineExpose({ form, computedDuration, query });
 
     <!-- 分页 -->
     <div class="pager">
-      <el-pagination :current-page="page" :page-size="size" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="handlePageChange" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" @change="loadData" />
     </div>
 
     <!-- 新增 / 编辑 / 查看 弹窗 -->

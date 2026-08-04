@@ -637,9 +637,12 @@ export interface DeviceHealthItem {
 export interface DeviceHealthResp {
   window_hours: number;
   threshold_seconds: number;
+  /** 全量设备数：概览卡与分页总数共用（不随当前页变化） */
   total: number;
   online: number;
   offline: number;
+  page: number;
+  size: number;
   items: DeviceHealthItem[];
 }
 

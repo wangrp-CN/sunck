@@ -12,6 +12,7 @@ import { fetchProjects } from "@/api/project";
 import MapPanel from "@/components/MapPanel.vue";
 import type { Fence, FenceCreate, FenceUpdate, MapFence, Project } from "@/types";
 import { gcj02ToWgs84, pointsToWkt } from "@/utils/geo";
+import TablePager from "@/components/TablePager.vue";
 
 const auth = useAuthStore();
 
@@ -75,10 +76,6 @@ function handleSearch() {
 function handleReset() {
   keyword.value = "";
   page.value = 1;
-  loadData();
-}
-function handlePageChange(p: number) {
-  page.value = p;
   loadData();
 }
 
@@ -223,6 +220,9 @@ onMounted(async () => {
     </div>
 
     <el-table v-loading="loading" :data="tableData" border stripe class="table">
+      <el-table-column label="序号" width="64" align="center">
+        <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+      </el-table-column>
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column prop="name" label="围栏名称" min-width="160" show-overflow-tooltip />
       <el-table-column label="类型" width="120">
@@ -248,7 +248,7 @@ onMounted(async () => {
     </el-table>
 
     <div class="pager">
-      <el-pagination :current-page="page" :page-size="size" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="handlePageChange" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" @change="loadData" />
     </div>
 
     <el-dialog

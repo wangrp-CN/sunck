@@ -14,6 +14,7 @@ import {
 import { fetchProjects } from "@/api/project";
 import type { Project } from "@/types";
 import { uploadMedia } from "@/api/media";
+import TablePager from "@/components/TablePager.vue";
 
 // 资源类型下拉（前端本地枚举，与后端 constants.MAP_ASSET_TYPES 对齐）
 const MAP_TYPE_OPTIONS: { value: MapAssetType; label: string }[] = [
@@ -216,6 +217,9 @@ onMounted(() => {
       </template>
 
       <el-table v-loading="loading" :data="tableData" row-key="id">
+        <el-table-column label="序号" width="64" align="center">
+          <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+        </el-table-column>
         <el-table-column prop="name" label="名称" min-width="140" />
         <el-table-column label="类型" width="130">
           <template #default="{ row }">
@@ -268,7 +272,7 @@ onMounted(() => {
         </el-table-column>
       </el-table>
 
-      <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" class="pager" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="load" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" @change="load" />
     </el-card>
 
     <el-dialog

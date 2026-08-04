@@ -222,6 +222,53 @@ def test_device_health(client, admin_token):
         assert 0 <= it["health_score"] <= 100
 
 
+def test_device_health_pagination(client, admin_token):
+    """设备健康列表分页：items 按页切片，total/online/offline 保持全量口径。"""
+    full = client.get(
+        f"{API_DEVICE}/health", params={"hours": 24, "size": 200}, headers=_auth(admin_token)
+    )
+    assert full.status_code == 200, full.text
+    fd = full.json()["data"]
+    total = fd["total"]
+
+    first = client.get(
+        f"{API_DEVICE}/health",
+        params={"hours": 24, "page": 1, "size": 1},
+        headers=_auth(admin_token),
+    )
+    assert first.status_code == 200, first.text
+    d1 = first.json()["data"]
+    # 分页元信息回显，且概览口径不随分页收缩
+    assert d1["page"] == 1 and d1["size"] == 1
+    assert d1["total"] == total
+    assert d1["online"] + d1["offline"] == total
+    assert len(d1["items"]) == min(1, total)
+
+    if total >= 2:
+        second = client.get(
+            f"{API_DEVICE}/health",
+            params={"hours": 24, "page": 2, "size": 1},
+            headers=_auth(admin_token),
+        )
+        d2 = second.json()["data"]
+        assert len(d2["items"]) == 1
+        # 相邻两页不重复，且与全量顺序一致（健康分升序）
+        assert d1["items"][0]["device_no"] != d2["items"][0]["device_no"]
+        assert [d1["items"][0]["device_no"], d2["items"][0]["device_no"]] == [
+            fd["items"][0]["device_no"],
+            fd["items"][1]["device_no"],
+        ]
+
+    # 超出范围的页返回空列表而非报错
+    over = client.get(
+        f"{API_DEVICE}/health",
+        params={"hours": 24, "page": total + 5, "size": 10},
+        headers=_auth(admin_token),
+    )
+    assert over.status_code == 200, over.text
+    assert over.json()["data"]["items"] == []
+
+
 def test_project_compare(client, admin_token):
     r = client.get(f"{API_DASH}/project-compare", params={"days": 7}, headers=_auth(admin_token))
     assert r.status_code == 200, r.text

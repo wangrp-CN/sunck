@@ -79,6 +79,8 @@ export function fetchDeviceHealth(params?: {
   device_type?: string;
   project_id?: number;
   hours?: number;
+  page?: number;
+  size?: number;
 }): Promise<DeviceHealthResp> {
   return http<DeviceHealthResp>({
     url: "/v1/devices/health",

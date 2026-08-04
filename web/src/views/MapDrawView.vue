@@ -23,6 +23,7 @@ import {
 } from "@/api/map_drawings";
 import { fetchProjects } from "@/api/project";
 import type { Project } from "@/types";
+import TablePager from "@/components/TablePager.vue";
 
 // ---------------------------------------------------------------- 权限
 const auth = useAuthStore();
@@ -456,6 +457,9 @@ onMounted(() => {
       </template>
 
       <el-table v-loading="loading" :data="tableData" size="small" border stripe>
+        <el-table-column label="序号" width="64" align="center">
+          <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+        </el-table-column>
         <el-table-column prop="name" label="名称" min-width="150" />
         <el-table-column label="类型" width="90">
           <template #default="{ row }">
@@ -490,7 +494,7 @@ onMounted(() => {
       </el-table>
 
       <div class="pager">
-        <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" />
+        <TablePager v-model:page="page" v-model:size="size" :total="total" @change="load" />
       </div>
     </el-card>
   </div>

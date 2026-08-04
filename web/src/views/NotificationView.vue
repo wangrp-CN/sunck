@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
+import TablePager from "@/components/TablePager.vue";
 import {
   fetchNotifications,
   markAllNotificationsRead,
@@ -57,15 +58,6 @@ async function load() {
 }
 
 function onTabChange() {
-  page.value = 1;
-  load();
-}
-function onPageChange(p: number) {
-  page.value = p;
-  load();
-}
-function onSizeChange(s: number) {
-  size.value = s;
   page.value = 1;
   load();
 }
@@ -135,6 +127,9 @@ onMounted(load);
         height="calc(100vh - 220px)"
         @row-click="onRowClick"
       >
+        <el-table-column label="序号" width="64" align="center">
+          <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+        </el-table-column>
         <el-table-column label="类别" width="90">
           <template #default="{ row }">
             <el-tag :type="categoryMeta(row.category).type" size="small" effect="light">
@@ -188,7 +183,7 @@ onMounted(load);
       </el-table>
 
       <div class="pager">
-        <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" background :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="onSizeChange" @current-change="onPageChange" />
+        <TablePager v-model:page="page" v-model:size="size" :total="total" @change="load" />
       </div>
     </el-card>
   </div>

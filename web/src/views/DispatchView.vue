@@ -14,6 +14,7 @@ import {
   type DispatchStats,
 } from "@/api/dispatch";
 import DispatchCreateDialog from "@/components/DispatchCreateDialog.vue";
+import TablePager from "@/components/TablePager.vue";
 
 const auth = useAuthStore();
 const canCreate = computed(() => auth.hasPermission("dispatch:create"));
@@ -131,6 +132,9 @@ onMounted(load);
     </div>
 
     <el-table :data="items" v-loading="loading" border stripe style="width: 100%">
+      <el-table-column label="序号" width="64" align="center">
+        <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+      </el-table-column>
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column prop="title" label="标题" min-width="160" />
       <el-table-column label="来源" width="150">
@@ -175,7 +179,7 @@ onMounted(load);
       <template #empty>暂无派单</template>
     </el-table>
 
-    <el-pagination :current-page="page" :page-size="size" :total="total" class="pager" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="(p: number) => { page = p; load(); }" />
+    <TablePager v-model:page="page" v-model:size="size" :total="total" @change="load" />
 
     <DispatchCreateDialog v-model="createVisible" @created="load" />
 

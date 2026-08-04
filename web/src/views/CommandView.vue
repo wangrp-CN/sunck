@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
 import { listCommands, retryCommand } from "@/api/command";
 import type { DeviceCommand } from "@/types";
+import TablePager from "@/components/TablePager.vue";
 
 const DEVICE_TYPE_LABELS: Record<string, string> = {
   locate: "人机定位",
@@ -108,6 +109,9 @@ onMounted(load);
       </div>
 
       <el-table :data="rows" v-loading="loading" border stripe style="width: 100%">
+        <el-table-column label="序号" width="64" align="center">
+          <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+        </el-table-column>
         <el-table-column prop="id" label="ID" width="80" />
         <el-table-column label="设备编号" prop="device_no" min-width="130" />
         <el-table-column label="设备类型" width="120">
@@ -152,7 +156,7 @@ onMounted(load);
       </el-table>
 
       <div class="pager">
-        <el-pagination :current-page="page" :page-size="size" :total="pagedTotal" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="(p: number) => { page = p; load(); }" />
+        <TablePager v-model:page="page" v-model:size="size" :total="pagedTotal" @change="load" />
       </div>
     </el-card>
   </div>

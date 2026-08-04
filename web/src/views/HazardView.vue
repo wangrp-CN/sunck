@@ -22,6 +22,7 @@ import type { Person, Project } from "@/types";
 import { useAuthStore } from "@/stores/auth";
 import { wgs84ToGcj02 } from "@/utils/geo";
 import MapPanel from "@/components/MapPanel.vue";
+import TablePager from "@/components/TablePager.vue";
 
 const auth = useAuthStore();
 const canCreate = computed(() => auth.hasPermission("hazard:create"));
@@ -124,15 +125,6 @@ function resetFilters() {
   filters.status = "";
   filters.keyword = "";
   filters.overdue = false;
-  page.value = 1;
-  loadHazards();
-}
-function onPageChange(p: number) {
-  page.value = p;
-  loadHazards();
-}
-function onSizeChange(s: number) {
-  size.value = s;
   page.value = 1;
   loadHazards();
 }
@@ -431,6 +423,9 @@ onMounted(async () => {
     </div>
 
     <el-table :data="list" v-loading="loading" border stripe style="width: 100%" row-key="id">
+      <el-table-column label="序号" width="64" align="center">
+        <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+      </el-table-column>
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column prop="title" label="隐患标题" min-width="160" show-overflow-tooltip />
       <el-table-column label="等级" width="90">
@@ -468,7 +463,7 @@ onMounted(async () => {
     </el-table>
 
     <div class="pager">
-      <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" background :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="onSizeChange" @current-change="onPageChange" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" @change="loadHazards" />
     </div>
 
     <!-- 创建 / 编辑 弹窗 -->

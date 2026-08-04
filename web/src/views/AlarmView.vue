@@ -47,6 +47,7 @@ import DispatchCreateDialog from "@/components/DispatchCreateDialog.vue";
 import type { DispatchPreset } from "@/api/dispatch";
 import type { Alarm, AlarmConfig, AlarmDisposition, MapDevice, MapFence, Project } from "@/types";
 import { useAuthStore } from "@/stores/auth";
+import TablePager from "@/components/TablePager.vue";
 
 const auth = useAuthStore();
 const router = useRouter();
@@ -205,10 +206,6 @@ async function loadAlarms() {
 }
 
 // 换页：仅重载列表（趋势图随 loadAlarms 一并刷新）
-function onPageChange(p: number) {
-  page.value = p;
-  loadAlarms();
-}
 
 // 把当前列表里所有告警媒体的代理 URL 解析为部门隔离的预签名直连 URL
 async function resolveAllMedia() {
@@ -229,11 +226,6 @@ async function resolveAllMedia() {
   mediaSrc.value = m;
 }
 
-function onSizeChange(s: number) {
-  size.value = s;
-  page.value = 1;
-  loadAlarms();
-}
 
 // 应用筛选：回到第 1 页再重载（避免停留在超出范围的页码）
 function applyFilters() {
@@ -1002,6 +994,9 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
           :row-class-name="rowClassName"
         >
           <el-table-column v-if="canHandle" type="selection" width="48" :reserve-selection="true" />
+      <el-table-column label="序号" width="64" align="center">
+        <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+      </el-table-column>
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column label="时间" width="170">
         <template #default="{ row }">{{ row.alarm_time || "-" }}</template>
@@ -1130,7 +1125,7 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
     </el-table>
 
     <div class="pager">
-      <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" background :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="onSizeChange" @current-change="onPageChange" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" :selected="selectedRows.length" @change="loadAlarms" />
     </div>
       </div><!-- /main -->
 

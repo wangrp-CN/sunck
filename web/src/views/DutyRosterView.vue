@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from "element-plus";
 import { useAuthStore } from "@/stores/auth";
 import { fetchProjects } from "@/api/project";
 import { listUsers } from "@/api/user";
+import TablePager from "@/components/TablePager.vue";
 import {
   createDutyRoster,
   deleteDutyRoster,
@@ -257,6 +258,9 @@ onMounted(async () => {
     </div>
 
     <el-table :data="items" v-loading="loading" border stripe style="width: 100%">
+      <el-table-column label="序号" width="64" align="center">
+        <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+      </el-table-column>
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column prop="project_name" label="项目" min-width="120" />
       <el-table-column prop="user_name" label="值班人" width="120" />
@@ -288,7 +292,7 @@ onMounted(async () => {
       <template #empty>暂无排班</template>
     </el-table>
 
-    <el-pagination :current-page="page" :page-size="size" :total="total" class="pager" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="(p: number) => { page = p; load(); }" />
+    <TablePager v-model:page="page" v-model:size="size" :total="total" @change="load" />
 
     <el-dialog
       v-model="dialogVisible"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
+import TablePager from "@/components/TablePager.vue";
 import {
   fetchAuditLogs,
   fetchAuditMeta,
@@ -76,10 +77,6 @@ function onReset() {
   loadData();
 }
 
-function onPageChange(p: number) {
-  page.value = p;
-  loadData();
-}
 
 function actionTag(action: string): string {
   return ACTION_TAG[action] ?? "info";
@@ -142,6 +139,9 @@ onMounted(() => {
 
     <el-card shadow="never" class="table-card">
       <el-table :data="list" v-loading="loading" stripe border height="100%">
+        <el-table-column label="序号" width="64" align="center">
+          <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+        </el-table-column>
         <el-table-column prop="created_at" label="时间" width="180" />
         <el-table-column prop="username" label="操作人" width="140">
           <template #default="{ row }">
@@ -166,7 +166,7 @@ onMounted(() => {
       </el-table>
 
       <div class="pager">
-        <el-pagination :current-page="page" :page-size="size" :total="total" background :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="onPageChange" />
+        <TablePager v-model:page="page" v-model:size="size" :total="total" @change="loadData" />
       </div>
     </el-card>
   </div>

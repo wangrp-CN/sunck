@@ -15,6 +15,7 @@ import {
 import { fetchProjects } from "@/api/project";
 import { listUsers } from "@/api/user";
 import type { InspectionTask, InspectionStats, Project, SysUser } from "@/types";
+import TablePager from "@/components/TablePager.vue";
 
 const auth = useAuthStore();
 const canAdd = computed(() => auth.hasPermission("inspection:create"));
@@ -84,10 +85,6 @@ function reset() {
   filters.status = "";
   filters.keyword = "";
   search();
-}
-function pageChange(p: number) {
-  page.value = p;
-  loadTasks();
 }
 
 function projectName(id?: number | null) {
@@ -324,6 +321,9 @@ onMounted(async () => {
     </div>
 
     <el-table :data="list" v-loading="loading" border stripe style="width: 100%">
+      <el-table-column label="序号" width="64" align="center">
+        <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+      </el-table-column>
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column prop="name" label="任务名称" min-width="150" />
       <el-table-column label="项目" min-width="130">
@@ -370,7 +370,7 @@ onMounted(async () => {
     </el-table>
 
     <div class="pager">
-      <el-pagination :current-page="page" :page-size="size" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="pageChange" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" @change="loadTasks" />
     </div>
 
     <!-- 创建/编辑 -->

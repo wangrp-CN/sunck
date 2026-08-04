@@ -12,6 +12,7 @@ import {
   type NotificationItem,
 } from "@/api/notification";
 import { Bell, Menu as MenuIcon, ArrowLeft, ArrowRight } from "@element-plus/icons-vue";
+import TablePager from "@/components/TablePager.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -108,10 +109,6 @@ async function onNotifTabChange() {
   await loadNotifList();
 }
 
-async function onNotifPageChange(p: number) {
-  notifPage.value = p;
-  await loadNotifList();
-}
 
 async function markRead(item: NotificationItem) {
   if (item.is_read) return;
@@ -235,13 +232,14 @@ onUnmounted(() => {
       <el-scrollbar v-loading="notifLoading" class="notif-scroll">
         <div v-if="notifList.length === 0" class="notif-empty">暂无通知</div>
         <div
-          v-for="item in notifList"
+          v-for="(item, idx) in notifList"
           :key="item.id"
           class="notif-item"
           :class="{ unread: !item.is_read }"
           @click="onNotifClick(item)"
         >
           <div class="notif-row">
+            <span class="notif-index">{{ (notifPage - 1) * notifSize + idx + 1 }}</span>
             <el-tag :type="categoryMeta(item.category).type" size="small" effect="light">
               {{ categoryMeta(item.category).label }}
             </el-tag>
@@ -264,7 +262,7 @@ onUnmounted(() => {
         </div>
       </el-scrollbar>
       <div v-if="notifTotal > notifSize" class="notif-pager">
-        <el-pagination v-model:current-page="notifPage" :page-size="notifSize" :total="notifTotal" background small :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { notifSize = s; }" @current-change="onNotifPageChange" />
+        <TablePager v-model:page="notifPage" v-model:size="notifSize" :total="notifTotal" small @change="loadNotifList" />
       </div>
       <div class="notif-footer">
         <el-button text type="primary" size="small" @click="goAllNotif">
@@ -414,6 +412,12 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+.notif-index {
+  min-width: 18px;
+  font-size: 12px;
+  color: #909399;
+  font-variant-numeric: tabular-nums;
 }
 .notif-title {
   flex: 1;

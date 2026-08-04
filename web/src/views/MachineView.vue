@@ -11,6 +11,7 @@ import {
 import { fetchProjects } from "@/api/project";
 import type { Machine, MachineCreate, MachineUpdate, Project } from "@/types";
 import AttachmentManager from "@/components/AttachmentManager.vue";
+import TablePager from "@/components/TablePager.vue";
 
 const auth = useAuthStore();
 
@@ -74,10 +75,6 @@ function handleSearch() {
 function handleReset() {
   keyword.value = "";
   page.value = 1;
-  loadData();
-}
-function handlePageChange(p: number) {
-  page.value = p;
   loadData();
 }
 
@@ -202,6 +199,9 @@ onMounted(async () => {
     </div>
 
     <el-table v-loading="loading" :data="tableData" border stripe class="table">
+      <el-table-column label="序号" width="64" align="center">
+        <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+      </el-table-column>
       <el-table-column prop="id" label="ID" width="70" />
       <el-table-column prop="machine_no" label="大机编号" width="140" />
       <el-table-column label="类型" width="140" show-overflow-tooltip>
@@ -225,7 +225,7 @@ onMounted(async () => {
     </el-table>
 
     <div class="pager">
-      <el-pagination :current-page="page" :page-size="size" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="handlePageChange" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" @change="loadData" />
     </div>
 
     <el-dialog

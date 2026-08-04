@@ -5,6 +5,7 @@ import { listRoles } from "@/api/role";
 import { fetchDepartments } from "@/api/department";
 import { useAuthStore } from "@/stores/auth";
 import type { Department, Role, SysUser } from "@/types";
+import TablePager from "@/components/TablePager.vue";
 
 const auth = useAuthStore();
 const loading = ref(false);
@@ -160,10 +161,6 @@ function onSearch() {
   page.value = 1;
   loadUsers();
 }
-function onPageChange(p: number) {
-  page.value = p;
-  loadUsers();
-}
 
 async function loadRoles() {
   roles.value = await listRoles();
@@ -198,6 +195,9 @@ onMounted(async () => {
     </div>
 
     <el-table v-loading="loading" :data="users" border stripe>
+      <el-table-column label="序号" width="64" align="center">
+        <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+      </el-table-column>
       <el-table-column prop="username" label="账号" width="140" />
       <el-table-column prop="nickname" label="昵称" width="140" />
       <el-table-column label="角色" min-width="180">
@@ -254,7 +254,7 @@ onMounted(async () => {
     </el-table>
 
     <div class="pager">
-      <el-pagination :current-page="page" :page-size="size" :total="total" background :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="onPageChange" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" @change="loadUsers" />
     </div>
 
     <el-dialog
