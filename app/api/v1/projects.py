@@ -17,7 +17,9 @@ from app.core.exceptions import BusinessError
 from app.core.responses import ApiResponse
 from app.model.project import Project
 from app.model.system import Department, User
+from app.schema.common import IdList
 from app.schema.project import ProjectCreate, ProjectOut, ProjectPage, ProjectUpdate
+from app.service.batch_ops import batch_soft_delete
 from app.service.project_service import apply_project_list_filters, calc_duration
 
 router = APIRouter(tags=["项目管理"])
@@ -194,3 +196,24 @@ def delete_project(
     project.is_deleted = True
     db.commit()
     return ApiResponse.success(message="项目已删除")
+
+
+@router.post(
+    "/batch-delete",
+    response_model=ApiResponse,
+    summary="批量删除项目（软删）",
+    dependencies=[Depends(require_permissions("project:delete"))],
+)
+def batch_delete(
+    items: IdList,
+    db: Session = Depends(get_db),
+    scope: DataScope = Depends(get_data_scope),
+) -> ApiResponse:
+    """批量软删：仅删除数据范围内、尚未删除的记录；返回删除条数与跳过条数。"""
+    deleted = batch_soft_delete(Project, db, scope, items.ids)
+    total = len(items.ids)
+    db.commit()
+    return ApiResponse.success(
+        data={"deleted": deleted, "total": total, "skipped": total - deleted},
+        message=f"已删除 {deleted} 条",
+    )

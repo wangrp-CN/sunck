@@ -28,6 +28,7 @@ from app.model.device import (
 )
 from app.model.project import Project
 from app.model.system import User
+from app.schema.common import IdList
 from app.schema.device import (
     DeviceCreate,
     DeviceOut,
@@ -474,3 +475,29 @@ def delete_device(
     obj.is_deleted = True
     db.commit()
     return ApiResponse.success(message="设备已删除")
+
+
+@router.post(
+    "/batch-delete",
+    response_model=ApiResponse,
+    summary="批量删除设备（软删）",
+    dependencies=[Depends(require_permissions("device:delete"))],
+)
+def batch_delete_devices(
+    items: IdList,
+    db: Session = Depends(get_db),
+    scope: DataScope = Depends(get_data_scope),
+) -> ApiResponse:
+    """批量软删：跨三类设备表，仅删除数据范围内、尚未删除的记录。"""
+    deleted = 0
+    for did in items.ids:
+        obj = _find_device(db, scope, did, None)
+        if obj is not None:
+            obj.is_deleted = True
+            deleted += 1
+    db.commit()
+    total = len(items.ids)
+    return ApiResponse.success(
+        data={"deleted": deleted, "total": total, "skipped": total - deleted},
+        message=f"已删除 {deleted} 条",
+    )

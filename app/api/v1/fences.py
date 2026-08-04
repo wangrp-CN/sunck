@@ -17,7 +17,9 @@ from app.core.responses import ApiResponse
 from app.model.fence import ElectronicFence
 from app.model.project import Project
 from app.model.system import User
+from app.schema.common import IdList
 from app.schema.fence import FenceCreate, FenceOut, FencePage, FenceUpdate
+from app.service.batch_ops import batch_soft_delete
 
 router = APIRouter(tags=["电子围栏"])
 
@@ -169,3 +171,24 @@ def delete_fence(
     fence.is_deleted = True
     db.commit()
     return ApiResponse.success(message="围栏已删除")
+
+
+@router.post(
+    "/batch-delete",
+    response_model=ApiResponse,
+    summary="批量删除围栏（软删）",
+    dependencies=[Depends(require_permissions("fence:delete"))],
+)
+def batch_delete(
+    items: IdList,
+    db: Session = Depends(get_db),
+    scope: DataScope = Depends(get_data_scope),
+) -> ApiResponse:
+    """批量软删：仅删除数据范围内、尚未删除的记录；返回删除条数与跳过条数。"""
+    deleted = batch_soft_delete(ElectronicFence, db, scope, items.ids)
+    total = len(items.ids)
+    db.commit()
+    return ApiResponse.success(
+        data={"deleted": deleted, "total": total, "skipped": total - deleted},
+        message=f"已删除 {deleted} 条",
+    )

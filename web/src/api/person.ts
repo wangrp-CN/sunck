@@ -1,5 +1,6 @@
 import { http } from "@/utils/request";
 import type { Person, PersonPage, PersonCreate, PersonUpdate } from "@/types";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 // 人员分页列表
 export function fetchPersons(params: {
@@ -46,4 +47,9 @@ export function deletePerson(id: number): Promise<null> {
     url: `/v1/persons/${id}`,
     method: "DELETE",
   });
+}
+
+/** 批量删除人员 */
+export function batchDeletePersons(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/persons/batch-delete", ids);
 }

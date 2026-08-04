@@ -1,5 +1,6 @@
 // 隐患治理闭环 API 封装
 import request, { http } from "@/utils/request";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 export type HazardLevel = "重大" | "较大" | "一般" | "低";
 export type HazardStatus =
@@ -141,4 +142,9 @@ export async function exportHazardReport(
     responseType: "blob",
   });
   return resp.data as Blob;
+}
+
+/** 批量删除隐患 */
+export function batchDeleteHazards(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/hazards/batch-delete", ids);
 }

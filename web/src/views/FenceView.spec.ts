@@ -39,6 +39,7 @@ const fences = {
 };
 
 vi.mock("@/api/fence", () => ({
+  batchDeleteFences: vi.fn().mockResolvedValue({ deleted: 1, total: 1, skipped: 0 }),
   fetchFences: vi.fn(),
   fetchFence: vi.fn(),
   createFence: vi.fn(),
@@ -50,7 +51,7 @@ vi.mock("@/components/MapPanel.vue", () => ({
   default: { name: "MapPanelStub", template: "<div class='map-stub'/>" },
 }));
 
-import { fetchFences, deleteFence } from "@/api/fence";
+import { batchDeleteFences, fetchFences, deleteFence } from "@/api/fence";
 import { fetchProjects } from "@/api/project";
 
 let wrapper: ReturnType<typeof mount> | null = null;
@@ -122,5 +123,46 @@ describe("views/FenceView.vue", () => {
     await vm.handleDelete(vm.tableData[0]);
     expect(vi.mocked(ElMessageBox.confirm)).toHaveBeenCalled();
     expect(vi.mocked(deleteFence)).toHaveBeenCalledWith(1);
+  });
+
+  it("批量删除：工具条展示已选条数，未选中时按钮禁用", async () => {
+    wrapper = mount(FenceView);
+    await flushPromises();
+    const bar = wrapper.find(".batch-actions");
+    expect(bar.exists()).toBe(true);
+    expect(bar.text()).toContain("已选择");
+    expect(wrapper.find(".batch-actions__delete").attributes("disabled")).toBeDefined();
+
+    (wrapper.vm as any).onSelectionChange(fences.items);
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find(".batch-actions").text()).toContain("1");
+    expect(wrapper.find(".batch-actions__delete").attributes("disabled")).toBeUndefined();
+  });
+
+  it("批量删除：确认后调用 batchDeleteFences 并重新加载列表", async () => {
+    wrapper = mount(FenceView);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    vm.onSelectionChange(fences.items);
+    vi.mocked(fetchFences).mockClear();
+
+    await vm.onBatchDelete();
+    await flushPromises();
+
+    expect(vi.mocked(ElMessageBox.confirm)).toHaveBeenCalled();
+    expect(vi.mocked(batchDeleteFences)).toHaveBeenCalledWith([1]);
+    expect(vi.mocked(fetchFences)).toHaveBeenCalled();
+    expect(vm.selectedRows.length).toBe(0);
+  });
+
+  it("批量删除：用户取消确认时不调用接口", async () => {
+    wrapper = mount(FenceView);
+    await flushPromises();
+    const vm = wrapper.vm as any;
+    vm.onSelectionChange(fences.items);
+    vi.mocked(ElMessageBox.confirm).mockRejectedValueOnce(new Error("cancel"));
+
+    await vm.onBatchDelete();
+    expect(vi.mocked(batchDeleteFences)).not.toHaveBeenCalled();
   });
 });

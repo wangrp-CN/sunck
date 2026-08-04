@@ -89,6 +89,7 @@ const hazards = {
 };
 
 vi.mock("@/api/hazard", () => ({
+  batchDeleteHazards: vi.fn().mockResolvedValue({ deleted: 1, total: 1, skipped: 0 }),
   fetchHazards: vi.fn(),
   fetchHazardStats: vi.fn(),
   fetchHazardOptions: vi.fn(),

@@ -1,5 +1,6 @@
 // 地图资源库 API 封装
 import { http } from "@/utils/request";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 export type MapAssetType =
   | "station_plan"
@@ -76,4 +77,9 @@ export function updateMapAsset(
 // 删除资源
 export async function deleteMapAsset(id: number): Promise<void> {
   await http({ url: `/v1/maps/${id}`, method: "delete" });
+}
+
+/** 批量删除地图资源 */
+export function batchDeleteMapAssets(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/maps/batch-delete", ids);
 }

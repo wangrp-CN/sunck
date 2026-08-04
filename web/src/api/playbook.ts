@@ -10,6 +10,7 @@
 //   DELETE /{id}             删除（逻辑，playbook:manage）
 // 约定：http<T> 已解包 data，失败时抛 Error(message)。
 import { http } from "@/utils/request";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 /** 知识库链接 */
 export interface PlaybookRef {
@@ -148,4 +149,9 @@ export function suggestPlaybookReferences(
     method: "POST",
     data: params,
   });
+}
+
+/** 批量删除处置预案 */
+export function batchDeletePlaybooks(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/playbooks/batch-delete", ids);
 }

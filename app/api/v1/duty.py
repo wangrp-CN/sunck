@@ -20,9 +20,12 @@ from app.core.data_scope import DataScope
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.responses import ApiResponse
+from app.model.duty_roster import DutyRoster
 from app.model.system import User
+from app.schema.common import IdList
 from app.schema.duty import DutyRosterCreate, DutyRosterUpdate
 from app.service import duty_service as svc
+from app.service.batch_ops import batch_soft_delete
 
 router = APIRouter(tags=["值班排班"])
 
@@ -123,3 +126,24 @@ def delete(rid: int, db=Depends(get_db), scope: DataScope = Depends(get_data_sco
         return ApiResponse.fail(code=404, message="排班不存在或无权访问")
     db.commit()
     return ApiResponse.success(data={"deleted": True})
+
+
+@router.post(
+    "/batch-delete",
+    response_model=ApiResponse,
+    summary="批量删除排班（软删）",
+    dependencies=[Depends(require_permissions("duty:manage"))],
+)
+def batch_delete(
+    items: IdList,
+    db=Depends(get_db),
+    scope: DataScope = Depends(get_data_scope),
+) -> ApiResponse:
+    """批量软删：仅删除数据范围内、尚未删除的记录；返回删除条数与跳过条数。"""
+    deleted = batch_soft_delete(DutyRoster, db, scope, items.ids)
+    total = len(items.ids)
+    db.commit()
+    return ApiResponse.success(
+        data={"deleted": deleted, "total": total, "skipped": total - deleted},
+        message=f"已删除 {deleted} 条",
+    )

@@ -56,6 +56,7 @@ from app.schema.auth import (
     UserProfileUpdate,
     UserUpdateRequest,
 )
+from app.schema.common import IdList
 
 router = APIRouter(tags=["认证"])
 
@@ -589,3 +590,28 @@ def delete_user(user_id: int, db: Session = Depends(get_db)) -> ApiResponse:
     user.is_deleted = True
     db.commit()
     return ApiResponse.success(message="用户已删除")
+
+
+@router.post(
+    "/users/batch-delete",
+    response_model=ApiResponse,
+    summary="批量删除用户（软删）",
+    dependencies=[Depends(require_permissions("user:delete"))],
+)
+def batch_delete_users(items: IdList, db: Session = Depends(get_db)) -> ApiResponse:
+    """批量软删用户：跳过超管账号与已删除账号；不做数据隔离（与单选删除一致）。"""
+    deleted = 0
+    for uid in items.ids:
+        user = db.get(User, uid)
+        if user is None or user.is_deleted:
+            continue
+        if user.is_superuser:
+            continue
+        user.is_deleted = True
+        deleted += 1
+    db.commit()
+    total = len(items.ids)
+    return ApiResponse.success(
+        data={"deleted": deleted, "total": total, "skipped": total - deleted},
+        message=f"已删除 {deleted} 条",
+    )

@@ -19,7 +19,9 @@ from app.core.data_scope import DataScope
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.responses import ApiResponse
+from app.model.hazard import Hazard
 from app.model.system import User
+from app.schema.common import IdList
 from app.schema.hazard import (
     HAZARD_CATEGORY_OPTIONS,
     HAZARD_LEVEL_OPTIONS,
@@ -30,6 +32,7 @@ from app.schema.hazard import (
     HazardUpdate,
 )
 from app.service import hazard_service as svc
+from app.service.batch_ops import batch_soft_delete
 
 router = APIRouter(tags=["隐患治理"])
 
@@ -318,3 +321,24 @@ def transition(
     out = svc.transition_hazard(db, hazard_id, req.action, req.note, scope, operator_name=operator)
     db.commit()
     return ApiResponse.success(data=out, message="状态已更新")
+
+
+@router.post(
+    "/batch-delete",
+    response_model=ApiResponse,
+    summary="批量删除隐患（软删）",
+    dependencies=[Depends(require_permissions("hazard:delete"))],
+)
+def batch_delete(
+    items: IdList,
+    db=Depends(get_db),
+    scope: DataScope = Depends(get_data_scope),
+) -> ApiResponse:
+    """批量软删：仅删除数据范围内、尚未删除的记录；返回删除条数与跳过条数。"""
+    deleted = batch_soft_delete(Hazard, db, scope, items.ids)
+    total = len(items.ids)
+    db.commit()
+    return ApiResponse.success(
+        data={"deleted": deleted, "total": total, "skipped": total - deleted},
+        message=f"已删除 {deleted} 条",
+    )

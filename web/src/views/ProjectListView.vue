@@ -18,6 +18,9 @@ import type {
   ProjectListParams,
   ProjectStatus,
 } from "@/types";
+import { batchDeleteProjects } from "@/api/project";
+import BatchActions from "@/components/BatchActions.vue";
+import { useBatchSelection } from "@/composables/useBatchSelection";
 
 const auth = useAuthStore();
 
@@ -308,6 +311,20 @@ onMounted(async () => {
 
 // 暴露表单与查询状态以便单测确定性地构造数据 / 模拟筛选
 defineExpose({ form, computedDuration, query });
+
+// ---- 批量选择 / 批量删除（统一交互，见 useBatchSelection + BatchActions）----
+const {
+  tableRef,
+  selectedRows,
+  batchDeleting,
+  onSelectionChange,
+  clearSelection,
+  onBatchDelete,
+} = useBatchSelection({
+  deleteApi: batchDeleteProjects,
+  reload: () => loadData(),
+  label: "项目",
+});
 </script>
 
 <template>
@@ -355,7 +372,15 @@ defineExpose({ form, computedDuration, query });
     </div>
 
     <!-- 列表：序号/归属部门/项目名称 三列为固定列（冻结），不随横向滚动移动 -->
-    <el-table v-loading="loading" :data="tableData" border stripe class="table">
+    <BatchActions
+      v-if="canDelete"
+      :selected="selectedRows.length"
+      :loading="batchDeleting"
+      @batch-delete="onBatchDelete"
+      @clear="clearSelection"
+    />
+    <el-table v-loading="loading" :data="tableData" border stripe class="table" row-key="id" ref="tableRef" @selection-change="onSelectionChange">
+      <el-table-column v-if="canDelete" type="selection" width="48" :reserve-selection="true" fixed="left" />
       <el-table-column label="序号" width="64" align="center" fixed="left">
         <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
       </el-table-column>
@@ -388,7 +413,7 @@ defineExpose({ form, computedDuration, query });
 
     <!-- 分页 -->
     <div class="pager">
-      <TablePager v-model:page="page" v-model:size="size" :total="total" @change="loadData" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" :selected="selectedRows.length" @change="loadData" />
     </div>
 
     <!-- 新增 / 编辑 / 查看 弹窗 -->

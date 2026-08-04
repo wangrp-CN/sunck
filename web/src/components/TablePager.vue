@@ -5,7 +5,7 @@
  * 统一以下交互，避免各列表页各写一套：
  * 1. 每页条数下拉：默认 [10, 20, 30, 50, 100]；
  * 2. 切换每页条数后自动回到第 1 页并立即刷新列表（无需手动再点分页）；
- * 3. 多选场景在左侧展示「已选 N 项」；
+ * 3. 多选场景在左侧展示「已选择 N 项」；
  * 4. 文案由全局 el-config-provider(zh-cn) 统一中文化。
  *
  * 用法：
@@ -19,7 +19,7 @@ const props = withDefaults(
     size: number;
     /** 总条数 */
     total: number;
-    /** 多选场景下的已选条数；大于 0 时展示「已选 N 项」 */
+    /** 多选场景下的已选条数；大于 0 时展示「已选择 N 项」 */
     selected?: number;
     /** 分页按钮背景样式 */
     background?: boolean;
@@ -66,7 +66,7 @@ function handleCurrentChange(value: number) {
 <template>
   <div class="table-pager">
     <span v-if="selected > 0" class="table-pager__selected">
-      已选 <b>{{ selected }}</b> 项
+      已选择 <b>{{ selected }}</b> 项
     </span>
     <el-pagination
       :current-page="page"

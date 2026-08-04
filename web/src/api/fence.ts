@@ -1,5 +1,6 @@
 import { http } from "@/utils/request";
 import type { Fence, FencePage, FenceCreate, FenceUpdate } from "@/types";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 // 围栏分页列表
 export function fetchFences(params: {
@@ -46,4 +47,9 @@ export function deleteFence(id: number): Promise<null> {
     url: `/v1/fences/${id}`,
     method: "DELETE",
   });
+}
+
+/** 批量删除电子围栏 */
+export function batchDeleteFences(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/fences/batch-delete", ids);
 }

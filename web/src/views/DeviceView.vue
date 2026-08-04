@@ -24,6 +24,9 @@ import type {
 } from "@/types";
 import AttachmentManager from "@/components/AttachmentManager.vue";
 import TablePager from "@/components/TablePager.vue";
+import { batchDeleteDevices } from "@/api/device";
+import BatchActions from "@/components/BatchActions.vue";
+import { useBatchSelection } from "@/composables/useBatchSelection";
 
 const auth = useAuthStore();
 
@@ -321,6 +324,20 @@ onMounted(async () => {
   loadProjects();
   loadData();
 });
+
+// ---- 批量选择 / 批量删除（统一交互，见 useBatchSelection + BatchActions）----
+const {
+  tableRef,
+  selectedRows,
+  batchDeleting,
+  onSelectionChange,
+  clearSelection,
+  onBatchDelete,
+} = useBatchSelection({
+  deleteApi: batchDeleteDevices,
+  reload: () => loadData(),
+  label: "设备",
+});
 </script>
 
 <template>
@@ -347,7 +364,15 @@ onMounted(async () => {
       <el-button :loading="exporting === 'pdf'" @click="doExport('pdf')">导出 PDF</el-button>
     </div>
 
-    <el-table v-loading="loading" :data="tableData" border stripe class="table">
+    <BatchActions
+      v-if="canDelete"
+      :selected="selectedRows.length"
+      :loading="batchDeleting"
+      @batch-delete="onBatchDelete"
+      @clear="clearSelection"
+    />
+    <el-table v-loading="loading" :data="tableData" border stripe class="table" row-key="id" ref="tableRef" @selection-change="onSelectionChange">
+      <el-table-column v-if="canDelete" type="selection" width="48" :reserve-selection="true" fixed="left" />
       <el-table-column label="序号" width="64" align="center">
         <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
       </el-table-column>
@@ -391,7 +416,7 @@ onMounted(async () => {
     </el-table>
 
     <div class="pager">
-      <TablePager v-model:page="page" v-model:size="size" :total="total" @change="loadData" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" :selected="selectedRows.length" @change="loadData" />
     </div>
 
     <el-dialog

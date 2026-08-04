@@ -5,6 +5,7 @@ import type {
   InspectionTaskPage,
   InspectionStats,
 } from "@/types";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 // 巡检统计
 export function fetchInspectionStats(): Promise<InspectionStats> {
@@ -118,4 +119,9 @@ export function convertCheckinToHazard(recordId: number): Promise<{ hazard_id: n
     url: `/v1/inspections/records/${recordId}/convert-to-hazard`,
     method: "POST",
   });
+}
+
+/** 批量删除巡检任务 */
+export function batchDeleteInspectionTasks(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/inspections/batch-delete", ids);
 }

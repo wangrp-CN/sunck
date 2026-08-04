@@ -1,5 +1,6 @@
 // 地图手动绘制（标注点/线）API 封装
 import { http } from "@/utils/request";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 export type MapDrawingKind = "point" | "line";
 export type MapDrawingMode = "free" | "coord" | "road";
@@ -90,4 +91,9 @@ export function updateMapDrawing(
 // 删除标注
 export async function deleteMapDrawing(id: number): Promise<void> {
   await http({ url: `/v1/map-drawings/${id}`, method: "delete" });
+}
+
+/** 批量删除地图绘制 */
+export function batchDeleteMapDrawings(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/map-drawings/batch-delete", ids);
 }

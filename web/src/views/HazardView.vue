@@ -23,6 +23,9 @@ import { useAuthStore } from "@/stores/auth";
 import { wgs84ToGcj02 } from "@/utils/geo";
 import MapPanel from "@/components/MapPanel.vue";
 import TablePager from "@/components/TablePager.vue";
+import { batchDeleteHazards } from "@/api/hazard";
+import BatchActions from "@/components/BatchActions.vue";
+import { useBatchSelection } from "@/composables/useBatchSelection";
 
 const auth = useAuthStore();
 const canCreate = computed(() => auth.hasPermission("hazard:create"));
@@ -367,6 +370,20 @@ onMounted(async () => {
   await loadHazards();
   await loadStats();
 });
+
+// ---- 批量选择 / 批量删除（统一交互，见 useBatchSelection + BatchActions）----
+const {
+  tableRef,
+  selectedRows,
+  batchDeleting,
+  onSelectionChange,
+  clearSelection,
+  onBatchDelete,
+} = useBatchSelection({
+  deleteApi: batchDeleteHazards,
+  reload: () => loadHazards(),
+  label: "隐患",
+});
 </script>
 
 <template>
@@ -422,7 +439,15 @@ onMounted(async () => {
       </div>
     </div>
 
-    <el-table :data="list" v-loading="loading" border stripe style="width: 100%" row-key="id">
+    <BatchActions
+      v-if="canDelete"
+      :selected="selectedRows.length"
+      :loading="batchDeleting"
+      @batch-delete="onBatchDelete"
+      @clear="clearSelection"
+    />
+    <el-table :data="list" v-loading="loading" border stripe style="width: 100%" row-key="id" ref="tableRef" @selection-change="onSelectionChange">
+      <el-table-column v-if="canDelete" type="selection" width="48" :reserve-selection="true" fixed="left" />
       <el-table-column label="序号" width="64" align="center">
         <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
       </el-table-column>
@@ -463,7 +488,7 @@ onMounted(async () => {
     </el-table>
 
     <div class="pager">
-      <TablePager v-model:page="page" v-model:size="size" :total="total" @change="loadHazards" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" :selected="selectedRows.length" @change="loadHazards" />
     </div>
 
     <!-- 创建 / 编辑 弹窗 -->

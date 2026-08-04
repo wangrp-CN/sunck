@@ -6,6 +6,7 @@ import type {
   ProjectCreate,
   ProjectUpdate,
 } from "@/types";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 // 项目分页列表（支持归属部门 / 名称 / 开工 / 完工日期区间 / 状态过滤）
 export function fetchProjects(params: ProjectListParams): Promise<ProjectPage> {
@@ -48,4 +49,9 @@ export function deleteProject(id: number): Promise<null> {
     url: `/v1/projects/${id}`,
     method: "DELETE",
   });
+}
+
+/** 批量删除项目 */
+export function batchDeleteProjects(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/projects/batch-delete", ids);
 }

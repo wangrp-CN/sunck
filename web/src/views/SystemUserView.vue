@@ -1,13 +1,23 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import { createUser, deleteUser, listUsers, updateUser } from "@/api/user";
+import {
+  batchDeleteUsers,
+  createUser,
+  deleteUser,
+  listUsers,
+  updateUser,
+} from "@/api/user";
 import { listRoles } from "@/api/role";
 import { fetchDepartments } from "@/api/department";
 import { useAuthStore } from "@/stores/auth";
 import type { Department, Role, SysUser } from "@/types";
 import TablePager from "@/components/TablePager.vue";
+import BatchActions from "@/components/BatchActions.vue";
+import { useBatchSelection } from "@/composables/useBatchSelection";
 
 const auth = useAuthStore();
+/** 删除权限（超管账号由后端保护，批量删除时自动跳过） */
+const canDelete = computed(() => auth.hasPermission("user:delete"));
 const loading = ref(false);
 const users = ref<SysUser[]>([]);
 const total = ref(0);
@@ -173,6 +183,20 @@ onMounted(async () => {
   await Promise.all([loadRoles(), loadDepartments()]);
   loadUsers();
 });
+
+// ---- 批量选择 / 批量删除（统一交互，见 useBatchSelection + BatchActions）----
+const {
+  tableRef,
+  selectedRows,
+  batchDeleting,
+  onSelectionChange,
+  clearSelection,
+  onBatchDelete,
+} = useBatchSelection({
+  deleteApi: batchDeleteUsers,
+  reload: () => loadUsers(),
+  label: "系统用户",
+});
 </script>
 
 <template>
@@ -194,7 +218,15 @@ onMounted(async () => {
       >
     </div>
 
-    <el-table v-loading="loading" :data="users" border stripe>
+    <BatchActions
+      v-if="canDelete"
+      :selected="selectedRows.length"
+      :loading="batchDeleting"
+      @batch-delete="onBatchDelete"
+      @clear="clearSelection"
+    />
+    <el-table v-loading="loading" :data="users" border stripe row-key="id" ref="tableRef" @selection-change="onSelectionChange">
+      <el-table-column v-if="canDelete" type="selection" width="48" :reserve-selection="true" fixed="left" />
       <el-table-column label="序号" width="64" align="center">
         <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
       </el-table-column>
@@ -254,7 +286,7 @@ onMounted(async () => {
     </el-table>
 
     <div class="pager">
-      <TablePager v-model:page="page" v-model:size="size" :total="total" @change="loadUsers" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" :selected="selectedRows.length" @change="loadUsers" />
     </div>
 
     <el-dialog

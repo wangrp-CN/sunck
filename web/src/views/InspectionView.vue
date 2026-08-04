@@ -16,6 +16,9 @@ import { fetchProjects } from "@/api/project";
 import { listUsers } from "@/api/user";
 import type { InspectionTask, InspectionStats, Project, SysUser } from "@/types";
 import TablePager from "@/components/TablePager.vue";
+import { batchDeleteInspectionTasks } from "@/api/inspection";
+import BatchActions from "@/components/BatchActions.vue";
+import { useBatchSelection } from "@/composables/useBatchSelection";
 
 const auth = useAuthStore();
 const canAdd = computed(() => auth.hasPermission("inspection:create"));
@@ -269,6 +272,20 @@ onMounted(async () => {
   await loadStats();
   await loadTasks();
 });
+
+// ---- 批量选择 / 批量删除（统一交互，见 useBatchSelection + BatchActions）----
+const {
+  tableRef,
+  selectedRows,
+  batchDeleting,
+  onSelectionChange,
+  clearSelection,
+  onBatchDelete,
+} = useBatchSelection({
+  deleteApi: batchDeleteInspectionTasks,
+  reload: () => loadTasks(),
+  label: "巡检任务",
+});
 </script>
 
 <template>
@@ -320,7 +337,15 @@ onMounted(async () => {
       <el-button v-if="canAdd" type="primary" @click="openCreate">新建巡检任务</el-button>
     </div>
 
-    <el-table :data="list" v-loading="loading" border stripe style="width: 100%">
+    <BatchActions
+      v-if="canDelete"
+      :selected="selectedRows.length"
+      :loading="batchDeleting"
+      @batch-delete="onBatchDelete"
+      @clear="clearSelection"
+    />
+    <el-table :data="list" v-loading="loading" border stripe style="width: 100%" row-key="id" ref="tableRef" @selection-change="onSelectionChange">
+      <el-table-column v-if="canDelete" type="selection" width="48" :reserve-selection="true" fixed="left" />
       <el-table-column label="序号" width="64" align="center">
         <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
       </el-table-column>
@@ -370,7 +395,7 @@ onMounted(async () => {
     </el-table>
 
     <div class="pager">
-      <TablePager v-model:page="page" v-model:size="size" :total="total" @change="loadTasks" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" :selected="selectedRows.length" @change="loadTasks" />
     </div>
 
     <!-- 创建/编辑 -->

@@ -1,5 +1,6 @@
 import { http } from "@/utils/request";
 import type { SysUser, UserPage, UserCreate, UserUpdate } from "@/types";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 // 用户列表（分页 + 关键字）
 export function listUsers(params?: {
@@ -23,4 +24,9 @@ export function updateUser(id: number, data: UserUpdate): Promise<SysUser> {
 // 删除用户（软删）
 export function deleteUser(id: number): Promise<null> {
   return http<null>({ url: `/v1/auth/users/${id}`, method: "DELETE" });
+}
+
+/** 批量删除系统用户 */
+export function batchDeleteUsers(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/auth/users/batch-delete", ids);
 }

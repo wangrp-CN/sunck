@@ -25,4 +25,10 @@ class Page(BaseModel, Generic[T]):
     page_size: int = 20
 
 
-__all__ = ["ApiResponse", "PageQuery", "Page", "T"]
+class IdList(BaseModel):
+    """批量操作请求体：待操作记录的主键列表。"""
+
+    ids: list[int] = Field(..., description="待操作记录的主键列表（1~200 个）", max_length=200)
+
+
+__all__ = ["ApiResponse", "PageQuery", "Page", "IdList", "T"]

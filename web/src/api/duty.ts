@@ -3,6 +3,7 @@
 //           POST / 新增；PUT /{id} 编辑；DELETE /{id} 删除（逻辑）
 // 约定：http<T> 已解包 data，失败时抛 Error(message)。
 import { http } from "@/utils/request";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 /** 单条排班记录（与后端 DutyRosterOut 对齐） */
 export interface DutyRoster {
@@ -87,4 +88,9 @@ export function updateDutyRoster(id: number, data: Partial<DutyRosterPayload>): 
 
 export function deleteDutyRoster(id: number): Promise<{ deleted: boolean }> {
   return http<{ deleted: boolean }>({ url: `/v1/duty/${id}`, method: "DELETE" });
+}
+
+/** 批量删除值班排班 */
+export function batchDeleteDutyRosters(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/duty/batch-delete", ids);
 }

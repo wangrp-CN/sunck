@@ -65,6 +65,7 @@ const policies = {
 };
 
 vi.mock("@/api/alarm-policy", () => ({
+  batchDeleteAlarmPolicies: vi.fn().mockResolvedValue({ deleted: 1, total: 1, skipped: 0 }),
   listAlarmPolicies: vi.fn(),
   getAlarmPolicyMeta: vi.fn(),
   createAlarmPolicy: vi.fn(),

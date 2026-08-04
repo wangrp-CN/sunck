@@ -15,6 +15,9 @@ import { fetchProjects } from "@/api/project";
 import type { Project } from "@/types";
 import { uploadMedia } from "@/api/media";
 import TablePager from "@/components/TablePager.vue";
+import { batchDeleteMapAssets } from "@/api/maps";
+import BatchActions from "@/components/BatchActions.vue";
+import { useBatchSelection } from "@/composables/useBatchSelection";
 
 // 资源类型下拉（前端本地枚举，与后端 constants.MAP_ASSET_TYPES 对齐）
 const MAP_TYPE_OPTIONS: { value: MapAssetType; label: string }[] = [
@@ -179,6 +182,20 @@ onMounted(() => {
   loadProjects();
   load();
 });
+
+// ---- 批量选择 / 批量删除（统一交互，见 useBatchSelection + BatchActions）----
+const {
+  tableRef,
+  selectedRows,
+  batchDeleting,
+  onSelectionChange,
+  clearSelection,
+  onBatchDelete,
+} = useBatchSelection({
+  deleteApi: batchDeleteMapAssets,
+  reload: () => load(),
+  label: "地图资源",
+});
 </script>
 
 <template>
@@ -216,7 +233,15 @@ onMounted(() => {
         </div>
       </template>
 
-      <el-table v-loading="loading" :data="tableData" row-key="id">
+      <BatchActions
+        v-if="canDelete"
+        :selected="selectedRows.length"
+        :loading="batchDeleting"
+        @batch-delete="onBatchDelete"
+        @clear="clearSelection"
+      />
+      <el-table v-loading="loading" :data="tableData" row-key="id" ref="tableRef" @selection-change="onSelectionChange">
+        <el-table-column v-if="canDelete" type="selection" width="48" :reserve-selection="true" fixed="left" />
         <el-table-column label="序号" width="64" align="center">
           <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
         </el-table-column>
@@ -272,7 +297,7 @@ onMounted(() => {
         </el-table-column>
       </el-table>
 
-      <TablePager v-model:page="page" v-model:size="size" :total="total" @change="load" />
+      <TablePager v-model:page="page" v-model:size="size" :total="total" :selected="selectedRows.length" @change="load" />
     </el-card>
 
     <el-dialog

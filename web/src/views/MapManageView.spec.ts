@@ -48,6 +48,7 @@ vi.mock("vue-router", () => ({
 }));
 
 vi.mock("@/api/maps", () => ({
+  batchDeleteMapAssets: vi.fn().mockResolvedValue({ deleted: 1, total: 1, skipped: 0 }),
   fetchMapAssets: vi.fn().mockResolvedValue({
     items: [hoist.sample],
     total: 1,

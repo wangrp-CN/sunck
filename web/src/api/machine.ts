@@ -1,5 +1,6 @@
 import { http } from "@/utils/request";
 import type { Machine, MachinePage, MachineCreate, MachineUpdate } from "@/types";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 // 机械分页列表
 export function fetchMachines(params: {
@@ -46,4 +47,9 @@ export function deleteMachine(id: number): Promise<null> {
     url: `/v1/machines/${id}`,
     method: "DELETE",
   });
+}
+
+/** 批量删除机械 */
+export function batchDeleteMachines(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/machines/batch-delete", ids);
 }

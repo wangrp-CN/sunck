@@ -15,6 +15,9 @@ import {
   type DutyRoster,
   type OnDutyResult,
 } from "@/api/duty";
+import { batchDeleteDutyRosters } from "@/api/duty";
+import BatchActions from "@/components/BatchActions.vue";
+import { useBatchSelection } from "@/composables/useBatchSelection";
 
 const auth = useAuthStore();
 const canManage = computed(() => auth.hasPermission("duty:manage"));
@@ -217,6 +220,20 @@ onMounted(async () => {
   }
   load();
 });
+
+// ---- 批量选择 / 批量删除（统一交互，见 useBatchSelection + BatchActions）----
+const {
+  tableRef,
+  selectedRows,
+  batchDeleting,
+  onSelectionChange,
+  clearSelection,
+  onBatchDelete,
+} = useBatchSelection({
+  deleteApi: batchDeleteDutyRosters,
+  reload: () => load(),
+  label: "值班排班",
+});
 </script>
 
 <template>
@@ -257,7 +274,15 @@ onMounted(async () => {
       <el-button @click="load">刷新</el-button>
     </div>
 
-    <el-table :data="items" v-loading="loading" border stripe style="width: 100%">
+    <BatchActions
+      v-if="canManage"
+      :selected="selectedRows.length"
+      :loading="batchDeleting"
+      @batch-delete="onBatchDelete"
+      @clear="clearSelection"
+    />
+    <el-table :data="items" v-loading="loading" border stripe style="width: 100%" row-key="id" ref="tableRef" @selection-change="onSelectionChange">
+      <el-table-column v-if="canManage" type="selection" width="48" :reserve-selection="true" fixed="left" />
       <el-table-column label="序号" width="64" align="center">
         <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
       </el-table-column>
@@ -292,7 +317,7 @@ onMounted(async () => {
       <template #empty>暂无排班</template>
     </el-table>
 
-    <TablePager v-model:page="page" v-model:size="size" :total="total" @change="load" />
+    <TablePager v-model:page="page" v-model:size="size" :total="total" :selected="selectedRows.length" @change="load" />
 
     <el-dialog
       v-model="dialogVisible"

@@ -18,6 +18,8 @@ from fastapi import APIRouter, Depends, Query
 from app.core.database import get_db
 from app.core.deps import require_permissions
 from app.core.responses import ApiResponse
+from app.model.dict import DictItem
+from app.schema.common import IdList
 from app.schema.dict import (
     DictItemCreate,
     DictItemOut,
@@ -27,6 +29,7 @@ from app.schema.dict import (
     DictTypeUpdate,
 )
 from app.service import dict_service as svc
+from app.service.batch_ops import batch_hard_delete
 
 router = APIRouter(tags=["数据字典"])
 
@@ -153,3 +156,20 @@ def delete_item(item_id: int, db=Depends(get_db)) -> ApiResponse:
     svc.delete_item(db, item_id)
     db.commit()
     return ApiResponse.success(message="删除成功")
+
+
+@router.post(
+    "/items/batch-delete",
+    response_model=ApiResponse,
+    summary="批量删除字典项（硬删）",
+    dependencies=[Depends(require_permissions("dict:update"))],
+)
+def batch_delete_items(items: IdList, db=Depends(get_db)) -> ApiResponse:
+    """批量删除字典项（物理删除，全局配置不做数据隔离，与单选删除权限一致）。"""
+    deleted = batch_hard_delete(DictItem, db, items.ids)
+    db.commit()
+    total = len(items.ids)
+    return ApiResponse.success(
+        data={"deleted": deleted, "total": total, "skipped": total - deleted},
+        message=f"已删除 {deleted} 条",
+    )

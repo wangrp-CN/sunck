@@ -1,5 +1,6 @@
 // 数据字典 API 封装
 import { http } from "@/utils/request";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 export interface DictItem {
   id: number;
@@ -104,4 +105,9 @@ export function updateDictItem(itemId: number, payload: DictItemUpdate): Promise
 // 删除字典项
 export async function deleteDictItem(itemId: number): Promise<void> {
   await http({ url: `/v1/dicts/items/${itemId}`, method: "delete" });
+}
+
+/** 批量删除字典项 */
+export function batchDeleteDictItems(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/dicts/items/batch-delete", ids);
 }

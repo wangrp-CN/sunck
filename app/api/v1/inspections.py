@@ -18,7 +18,9 @@ from app.core.data_scope import DataScope
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.responses import ApiResponse
+from app.model.inspection import InspectionTask
 from app.model.system import User
+from app.schema.common import IdList
 from app.schema.inspection import (
     InspectionCheckin,
     InspectionRecordOut,
@@ -26,6 +28,7 @@ from app.schema.inspection import (
     InspectionTaskUpdate,
 )
 from app.service import inspection_service as svc
+from app.service.batch_ops import batch_soft_delete
 
 router = APIRouter(tags=["巡检打卡"])
 
@@ -137,6 +140,26 @@ def delete_task(
         return ApiResponse.fail(message="巡检任务不存在或无权访问", code=404)
     db.commit()
     return ApiResponse.success(message="删除成功")
+
+
+@router.post(
+    "/batch-delete",
+    summary="批量删除巡检任务（软删）",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("inspection:delete"))],
+)
+def batch_delete_tasks(
+    items: IdList,
+    db=Depends(get_db),
+    scope: DataScope = Depends(get_data_scope),
+) -> ApiResponse:
+    deleted = batch_soft_delete(InspectionTask, db, scope, items.ids)
+    total = len(items.ids)
+    db.commit()
+    return ApiResponse.success(
+        data={"deleted": deleted, "total": total, "skipped": total - deleted},
+        message=f"已删除 {deleted} 条",
+    )
 
 
 class TransitionBody(BaseModel):

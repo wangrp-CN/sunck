@@ -3,7 +3,10 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { type FormInstance, type FormRules } from "element-plus";
 import { useAuthStore } from "@/stores/auth";
 import TablePager from "@/components/TablePager.vue";
+import BatchActions from "@/components/BatchActions.vue";
+import { useBatchSelection } from "@/composables/useBatchSelection";
 import {
+  batchDeleteDictItems,
   createDictItem,
   createDictType,
   deleteDictItem,
@@ -36,6 +39,24 @@ const size = ref(20);
 // 当前选中类型（右侧字典项面板）
 const currentType = ref<DictType | null>(null);
 
+// ---- 批量选择 / 批量删除（统一交互，见 useBatchSelection + BatchActions）----
+// 字典项删除与单条删除保持一致：需 dict:update 权限，且内置类型不可删
+const canBatchDeleteItems = computed(
+  () => canUpdate.value && !!currentType.value && !currentType.value.system,
+);
+const {
+  tableRef,
+  selectedRows,
+  batchDeleting,
+  onSelectionChange,
+  clearSelection,
+  onBatchDelete,
+} = useBatchSelection({
+  deleteApi: batchDeleteDictItems,
+  reload: () => load(),
+  label: "字典项",
+});
+
 async function load() {
   loading.value = true;
   try {
@@ -63,6 +84,7 @@ function handleSearch() {
 
 function selectType(row: DictType) {
   currentType.value = row;
+  clearSelection(); // 切换字典类型时重置已选字典项，避免跨类型误删
 }
 
 // ----- 类型新增/编辑 -----
@@ -286,8 +308,28 @@ onMounted(load);
             </div>
           </template>
 
+          <BatchActions
+            v-if="canBatchDeleteItems"
+            :selected="selectedRows.length"
+            :loading="batchDeleting"
+            @batch-delete="onBatchDelete"
+            @clear="clearSelection"
+          />
           <el-empty v-if="!currentType" description="点击左侧类型查看字典项" />
-          <el-table v-else :data="currentType.items">
+          <el-table
+            v-else
+            ref="tableRef"
+            :data="currentType.items"
+            row-key="id"
+            @selection-change="onSelectionChange"
+          >
+            <el-table-column
+              v-if="canBatchDeleteItems"
+              type="selection"
+              width="48"
+              :reserve-selection="true"
+              fixed="left"
+            />
             <el-table-column prop="sort" label="排序" width="70" align="center" />
             <el-table-column prop="label" label="显示名称" min-width="120" />
             <el-table-column prop="value" label="存储值" min-width="110" />

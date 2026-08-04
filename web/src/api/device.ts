@@ -6,6 +6,7 @@ import type {
   DeviceUpdate,
   DeviceHealthResp,
 } from "@/types";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 // 设备分页列表（device_type 可选，空则跨三类合并）
 export function fetchDevices(params: {
@@ -87,4 +88,9 @@ export function fetchDeviceHealth(params?: {
     method: "GET",
     params,
   });
+}
+
+/** 批量删除设备 */
+export function batchDeleteDevices(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/devices/batch-delete", ids);
 }

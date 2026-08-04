@@ -9,6 +9,7 @@
 //   DELETE /{id}          删除（逻辑，alarm_policy:manage）
 // 约定：http<T> 已解包 data，失败时抛 Error(message)。
 import { http } from "@/utils/request";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 /** 单条策略（与后端 AlarmPolicyOut 对齐） */
 export interface AlarmPolicy {
@@ -102,4 +103,9 @@ export function deleteAlarmPolicy(id: number): Promise<{ deleted: boolean }> {
 
 export function runEscalations(): Promise<EscalationResult> {
   return http<EscalationResult>({ url: "/v1/alarm-policies/run-escalations", method: "POST" });
+}
+
+/** 批量删除告警策略 */
+export function batchDeleteAlarmPolicies(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/alarm-policies/batch-delete", ids);
 }

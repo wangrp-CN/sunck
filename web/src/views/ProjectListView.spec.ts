@@ -64,6 +64,7 @@ vi.mock("vue-router", () => ({
 }));
 
 vi.mock("@/api/project", () => ({
+  batchDeleteProjects: vi.fn().mockResolvedValue({ deleted: 1, total: 1, skipped: 0 }),
   fetchProjects: vi.fn().mockImplementation(async (params?: Record<string, unknown>) => {
     const status = params?.status as string | undefined;
     const items = status
