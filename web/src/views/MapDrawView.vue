@@ -490,15 +490,7 @@ onMounted(() => {
       </el-table>
 
       <div class="pager">
-        <el-pagination
-          v-model:current-page="page"
-          v-model:page-size="size"
-          :total="total"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="load"
-          @size-change="handleSearch"
-        />
+        <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" />
       </div>
     </el-card>
   </div>

@@ -115,15 +115,16 @@ def create_project(
     current: User = Depends(get_current_user),
 ) -> ApiResponse:
     """创建项目，自动记录归属部门与创建人（供数据范围过滤）。"""
-    if (
-        db.scalar(
-            select(Department.id).where(
-                Department.id == req.dept_id, Department.is_deleted.is_(False)
+    if req.dept_id is not None:
+        if (
+            db.scalar(
+                select(Department.id).where(
+                    Department.id == req.dept_id, Department.is_deleted.is_(False)
+                )
             )
-        )
-        is None
-    ):
-        raise BusinessError("归属部门不存在", code=400)
+            is None
+        ):
+            raise BusinessError("归属部门不存在", code=400)
     project = Project(
         name=req.name,
         dept_id=req.dept_id,

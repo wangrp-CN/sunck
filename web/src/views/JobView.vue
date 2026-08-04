@@ -607,7 +607,7 @@ onMounted(async () => {
                   type="datetime"
                   placeholder="开始时间"
                   value-format="YYYY-MM-DDTHH:mm:ss"
-                  style="width: 100%"
+                  style="width: 100%" format="YYYY年MM月DD日 HH:mm"
                 />
                 <span class="range-sep">~</span>
                 <el-date-picker
@@ -615,7 +615,7 @@ onMounted(async () => {
                   type="datetime"
                   placeholder="结束时间"
                   value-format="YYYY-MM-DDTHH:mm:ss"
-                  style="width: 100%"
+                  style="width: 100%" format="YYYY年MM月DD日 HH:mm"
                 />
               </div>
             </el-form-item>

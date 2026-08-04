@@ -152,13 +152,7 @@ onMounted(load);
       </el-table>
 
       <div class="pager">
-        <el-pagination
-          :current-page="page"
-          :page-size="size"
-          :total="pagedTotal"
-          layout="total, prev, pager, next"
-          @current-change="(p: number) => { page = p; load(); }"
-        />
+        <el-pagination :current-page="page" :page-size="size" :total="pagedTotal" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="(p: number) => { page = p; load(); }" />
       </div>
     </el-card>
   </div>

@@ -9,7 +9,7 @@ from app.core.constants import PROJECT_STATUSES
 
 class ProjectCreate(BaseModel):
     name: str = Field(..., max_length=128, description="项目名称")
-    dept_id: int = Field(..., description="归属部门ID(数据隔离依据)")
+    dept_id: int | None = Field(None, description="归属部门ID(数据隔离依据，可留空)")
     short_name: str | None = Field(None, max_length=64, description="项目简称")
     intro: str | None = Field(None, max_length=1024, description="项目介绍")
     start_date: date | None = Field(None, description="开工日期")

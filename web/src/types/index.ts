@@ -95,7 +95,7 @@ export interface DepartmentTree extends Department {
 // 新建项目请求
 export interface ProjectCreate {
   name: string;
-  dept_id: number;
+  dept_id?: number | null;
   short_name?: string | null;
   intro?: string | null;
   start_date?: string | null;
@@ -110,7 +110,7 @@ export interface ProjectCreate {
 // 更新项目请求
 export interface ProjectUpdate {
   name?: string;
-  dept_id?: number;
+  dept_id?: number | null;
   short_name?: string | null;
   intro?: string | null;
   start_date?: string | null;

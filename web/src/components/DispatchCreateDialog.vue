@@ -215,7 +215,7 @@ async function submit() {
           v-model="form.deadline as any"
           type="datetime"
           value-format="YYYY-MM-DDTHH:mm:ss"
-          placeholder="处理时限"
+          placeholder="处理时限" format="YYYY年MM月DD日 HH:mm"
         />
       </el-form-item>
       <el-form-item label="处置要求">

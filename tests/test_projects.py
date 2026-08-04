@@ -24,6 +24,11 @@ def _uid() -> str:
     return secrets.token_hex(3)
 
 
+def _own_ids(items: list[dict], u: str) -> set[int]:
+    """从列表响应中筛出本测试自建的项目 ID（名称以 P{uid} 前缀，隔离开发库残留数据）。"""
+    return {it["id"] for it in items if (it.get("name") or "").startswith("P" + u)}
+
+
 @pytest.fixture
 def client():
     with TestClient(app) as c:
@@ -182,6 +187,31 @@ def test_project_create_requires_permission(client, admin_token):
         _cleanup(u)
 
 
+def test_project_create_without_dept_id(client, admin_token):
+    """归属部门为可选项：不传 dept_id 也能成功创建（dept_id 落库为 null）。"""
+    u = _uid()
+    try:
+        r = client.post(
+            "/api/v1/projects",
+            headers=_headers(admin_token),
+            json={"name": f"P{u}_无部门"},
+        )
+        assert r.status_code == 200, r.text
+        data = r.json()["data"]
+        assert data["dept_id"] is None
+        assert data["name"] == f"P{u}_无部门"
+        # 不传坐标也应成功
+        r2 = client.post(
+            "/api/v1/projects",
+            headers=_headers(admin_token),
+            json={"name": f"P{u}_无坐标"},
+        )
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["data"]["coordinate"] is None
+    finally:
+        _cleanup(u)
+
+
 def test_project_data_isolation_by_dept(client, admin_token):
     u = _uid()
     try:
@@ -264,17 +294,17 @@ def test_project_list_filters(client, admin_token):
         # 名称左右模糊
         r = client.get("/api/v1/projects", headers=_headers(admin_token), params={"name": "Alpha"})
         assert r.status_code == 200, r.text
-        assert {it["id"] for it in r.json()["data"]["items"]} == {pa["id"]}
+        assert _own_ids(r.json()["data"]["items"], u) == {pa["id"]}
 
         # 状态精确匹配
         r = client.get("/api/v1/projects", headers=_headers(admin_token), params={"status": "竣工"})
-        assert {it["id"] for it in r.json()["data"]["items"]} == {pb["id"]}
+        assert _own_ids(r.json()["data"]["items"], u) == {pb["id"]}
 
         # 归属部门 A 含下级 B：两个都应命中
         r = client.get(
             "/api/v1/projects", headers=_headers(admin_token), params={"dept_id": dept_a["id"]}
         )
-        ids = {it["id"] for it in r.json()["data"]["items"]}
+        ids = _own_ids(r.json()["data"]["items"], u)
         assert pa["id"] in ids and pb["id"] in ids
 
         # 开工日期区间
@@ -283,7 +313,7 @@ def test_project_list_filters(client, admin_token):
             headers=_headers(admin_token),
             params={"start_date_from": "2026-04-01", "start_date_to": "2026-12-31"},
         )
-        assert {it["id"] for it in r.json()["data"]["items"]} == {pb["id"]}
+        assert _own_ids(r.json()["data"]["items"], u) == {pb["id"]}
     finally:
         _cleanup(u)
 

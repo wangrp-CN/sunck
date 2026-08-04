@@ -899,7 +899,7 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
             range-separator="~"
             start-placeholder="开始"
             end-placeholder="结束"
-            style="width: 340px"
+            style="width: 340px" format="YYYY年MM月DD日 HH:mm"
           />
         </el-form-item>
         <el-form-item>
@@ -1130,16 +1130,7 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
     </el-table>
 
     <div class="pager">
-      <el-pagination
-        v-model:current-page="page"
-        v-model:page-size="size"
-        :total="total"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
-        background
-        @current-change="onPageChange"
-        @size-change="onSizeChange"
-      />
+      <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" background :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="onSizeChange" @current-change="onPageChange" />
     </div>
       </div><!-- /main -->
 
@@ -1324,7 +1315,7 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
             type="datetime"
             value-format="YYYY-MM-DDTHH:mm:ss"
             placeholder="选择期限"
-            style="width: 100%"
+            style="width: 100%" format="YYYY年MM月DD日 HH:mm"
           />
         </el-form-item>
         <el-form-item label="位置描述">
@@ -1467,7 +1458,7 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
                 type="date"
                 value-format="YYYY-MM-DD"
                 placeholder="起始日期"
-                style="width: 150px"
+                style="width: 150px" format="YYYY年MM月DD日"
               />
               <span class="snapshot-sep">~</span>
               <el-date-picker
@@ -1475,7 +1466,7 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
                 type="date"
                 value-format="YYYY-MM-DD"
                 placeholder="结束日期"
-                style="width: 150px"
+                style="width: 150px" format="YYYY年MM月DD日"
               />
             </div>
             <div class="snapshot-actions">

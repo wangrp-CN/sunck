@@ -288,14 +288,7 @@ onMounted(async () => {
       <template #empty>暂无排班</template>
     </el-table>
 
-    <el-pagination
-      class="pager"
-      :current-page="page"
-      :page-size="size"
-      :total="total"
-      layout="prev, pager, next, total"
-      @current-change="(p: number) => { page = p; load(); }"
-    />
+    <el-pagination :current-page="page" :page-size="size" :total="total" class="pager" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="(p: number) => { page = p; load(); }" />
 
     <el-dialog
       v-model="dialogVisible"
@@ -328,7 +321,7 @@ onMounted(async () => {
             type="datetime"
             value-format="YYYY-MM-DDTHH:mm:ss"
             placeholder="开始时间"
-            style="width: 100%"
+            style="width: 100%" format="YYYY年MM月DD日 HH:mm"
           />
         </el-form-item>
         <el-form-item label="结束时间">
@@ -337,7 +330,7 @@ onMounted(async () => {
             type="datetime"
             value-format="YYYY-MM-DDTHH:mm:ss"
             placeholder="结束时间"
-            style="width: 100%"
+            style="width: 100%" format="YYYY年MM月DD日 HH:mm"
           />
         </el-form-item>
         <el-form-item label="备注">

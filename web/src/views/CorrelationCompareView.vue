@@ -92,7 +92,7 @@ onMounted(() => {
           start-placeholder="窗口A 开始"
           end-placeholder="窗口A 结束"
           size="small"
-          @change="load"
+          @change="load" format="YYYY年MM月DD日 HH:mm"
         />
         <span class="vs">对比</span>
         <el-date-picker
@@ -102,7 +102,7 @@ onMounted(() => {
           start-placeholder="窗口B 开始"
           end-placeholder="窗口B 结束"
           size="small"
-          @change="load"
+          @change="load" format="YYYY年MM月DD日 HH:mm"
         />
         <el-switch
           v-model="onlyCross"

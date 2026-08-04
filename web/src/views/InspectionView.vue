@@ -370,13 +370,7 @@ onMounted(async () => {
     </el-table>
 
     <div class="pager">
-      <el-pagination
-        layout="prev, pager, next, total"
-        :total="total"
-        :page-size="size"
-        :current-page="page"
-        @current-change="pageChange"
-      />
+      <el-pagination :current-page="page" :page-size="size" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="pageChange" />
     </div>
 
     <!-- 创建/编辑 -->
@@ -405,9 +399,9 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item label="时间窗">
           <div class="time-range">
-            <el-date-picker v-model="form.start_time" type="datetime" placeholder="开始" value-format="YYYY-MM-DDTHH:mm:ss" style="width: 100%" />
+            <el-date-picker v-model="form.start_time" type="datetime" placeholder="开始" value-format="YYYY-MM-DDTHH:mm:ss" style="width: 100%" format="YYYY年MM月DD日 HH:mm" />
             <span class="sep">~</span>
-            <el-date-picker v-model="form.end_time" type="datetime" placeholder="结束" value-format="YYYY-MM-DDTHH:mm:ss" style="width: 100%" />
+            <el-date-picker v-model="form.end_time" type="datetime" placeholder="结束" value-format="YYYY-MM-DDTHH:mm:ss" style="width: 100%" format="YYYY年MM月DD日 HH:mm" />
           </div>
         </el-form-item>
         <el-form-item label="要求打卡">

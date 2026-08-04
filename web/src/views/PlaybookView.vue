@@ -363,14 +363,7 @@ onMounted(async () => {
       <template #empty>暂无预案</template>
     </el-table>
 
-    <el-pagination
-      class="pager"
-      :current-page="page"
-      :page-size="size"
-      :total="total"
-      layout="prev, pager, next, total"
-      @current-change="(p: number) => { page = p; load(); }"
-    />
+    <el-pagination :current-page="page" :page-size="size" :total="total" class="pager" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="(p: number) => { page = p; load(); }" />
 
     <el-dialog
       v-model="dialogVisible"

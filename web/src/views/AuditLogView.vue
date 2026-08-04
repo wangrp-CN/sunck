@@ -130,7 +130,7 @@ onMounted(() => {
             value-format="YYYY-MM-DD"
             range-separator="至"
             start-placeholder="开始日期"
-            end-placeholder="结束日期"
+            end-placeholder="结束日期" format="YYYY年MM月DD日"
           />
         </el-form-item>
         <el-form-item>
@@ -166,14 +166,7 @@ onMounted(() => {
       </el-table>
 
       <div class="pager">
-        <el-pagination
-          :current-page="page"
-          :page-size="size"
-          :total="total"
-          layout="total, prev, pager, next, jumper"
-          background
-          @current-change="onPageChange"
-        />
+        <el-pagination :current-page="page" :page-size="size" :total="total" background :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="onPageChange" />
       </div>
     </el-card>
   </div>

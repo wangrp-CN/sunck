@@ -264,15 +264,7 @@ onUnmounted(() => {
         </div>
       </el-scrollbar>
       <div v-if="notifTotal > notifSize" class="notif-pager">
-        <el-pagination
-          v-model:current-page="notifPage"
-          :total="notifTotal"
-          :page-size="notifSize"
-          layout="prev, pager, next"
-          background
-          small
-          @current-change="onNotifPageChange"
-        />
+        <el-pagination v-model:current-page="notifPage" :page-size="notifSize" :total="notifTotal" background small :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { notifSize = s; }" @current-change="onNotifPageChange" />
       </div>
       <div class="notif-footer">
         <el-button text type="primary" size="small" @click="goAllNotif">

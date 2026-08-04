@@ -154,11 +154,10 @@ const COORD_PATTERN = /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/;
 
 const rules: FormRules = {
   name: [{ required: true, message: "请输入项目名称", trigger: "blur" }],
-  dept_id: [{ required: true, message: "请选择归属部门", trigger: "change" }],
   short_name: [{ required: true, message: "请输入项目简称", trigger: "blur" }],
   intro: [{ required: true, message: "请输入项目介绍", trigger: "blur" }],
+  // 归属部门、坐标为可选项，允许用户留空提交；坐标若填写则做格式校验
   coordinate: [
-    { required: true, message: "请输入坐标", trigger: "blur" },
     {
       validator: (_rule, value, callback) => {
         const v = (value || "").trim();
@@ -242,7 +241,7 @@ function openView(row: Project) {
 function buildProjectData(): ProjectCreate {
   return {
     name: form.name.trim(),
-    dept_id: form.dept_id as number,
+    dept_id: (form.dept_id ?? null) as number | null,
     short_name: form.short_name.trim() || null,
     intro: form.intro.trim() || null,
     start_date: form.start_date || null,
@@ -337,7 +336,7 @@ defineExpose({ form, computedDuration, query });
         start-placeholder="开工起"
         end-placeholder="开工止"
         value-format="YYYY-MM-DD"
-        class="w-260"
+        class="w-260" format="YYYY年MM月DD日"
       />
       <el-date-picker
         v-model="query.end_date_range"
@@ -346,7 +345,7 @@ defineExpose({ form, computedDuration, query });
         start-placeholder="完工起"
         end-placeholder="完工止"
         value-format="YYYY-MM-DD"
-        class="w-260"
+        class="w-260" format="YYYY年MM月DD日"
       />
       <el-select v-model="query.status" placeholder="项目状态" clearable class="w-140">
         <el-option label="在建" value="在建" />
@@ -392,13 +391,7 @@ defineExpose({ form, computedDuration, query });
 
     <!-- 分页 -->
     <div class="pager">
-      <el-pagination
-        :current-page="page"
-        :page-size="size"
-        :total="total"
-        layout="total, prev, pager, next"
-        @current-change="handlePageChange"
-      />
+      <el-pagination :current-page="page" :page-size="size" :total="total" :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="handlePageChange" />
     </div>
 
     <!-- 新增 / 编辑 / 查看 弹窗 -->
@@ -430,7 +423,7 @@ defineExpose({ form, computedDuration, query });
             v-model="form.start_date"
             type="date"
             value-format="YYYY-MM-DD"
-            placeholder="选择日期"
+            placeholder="选择日期" format="YYYY年MM月DD日"
           />
         </el-form-item>
         <el-form-item label="完工日期" prop="end_date">
@@ -438,7 +431,7 @@ defineExpose({ form, computedDuration, query });
             v-model="form.end_date"
             type="date"
             value-format="YYYY-MM-DD"
-            placeholder="选择日期"
+            placeholder="选择日期" format="YYYY年MM月DD日"
           />
         </el-form-item>
         <el-form-item label="项目介绍" prop="intro">

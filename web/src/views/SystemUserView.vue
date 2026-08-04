@@ -254,14 +254,7 @@ onMounted(async () => {
     </el-table>
 
     <div class="pager">
-      <el-pagination
-        background
-        layout="total,prev,pager,next"
-        :total="total"
-        :page-size="size"
-        :current-page="page"
-        @current-change="onPageChange"
-      />
+      <el-pagination :current-page="page" :page-size="size" :total="total" background :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="(s: number) => { size = s; }" @current-change="onPageChange" />
     </div>
 
     <el-dialog

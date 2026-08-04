@@ -1417,7 +1417,7 @@ onUnmounted(() => {
                   end-placeholder="结束"
                   :clearable="false"
                   @change="onRangeChange"
-                  style="width: 220px"
+                  style="width: 220px" format="YYYY年MM月DD日"
                 />
                 <el-button
                   size="small"

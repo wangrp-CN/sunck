@@ -468,16 +468,7 @@ onMounted(async () => {
     </el-table>
 
     <div class="pager">
-      <el-pagination
-        v-model:current-page="page"
-        v-model:page-size="size"
-        :total="total"
-        :page-sizes="[10, 20, 50, 100]"
-        layout="total, sizes, prev, pager, next, jumper"
-        background
-        @current-change="onPageChange"
-        @size-change="onSizeChange"
-      />
+      <el-pagination v-model:current-page="page" v-model:page-size="size" :total="total" background :page-sizes="[10, 20, 50]" layout="total, sizes, prev, pager, next, jumper" @size-change="onSizeChange" @current-change="onPageChange" />
     </div>
 
     <!-- 创建 / 编辑 弹窗 -->
@@ -553,7 +544,7 @@ onMounted(async () => {
                 type="datetime"
                 value-format="YYYY-MM-DDTHH:mm:ss"
                 placeholder="可选"
-                style="width: 100%"
+                style="width: 100%" format="YYYY年MM月DD日 HH:mm"
               />
             </el-form-item>
           </el-col>
@@ -571,7 +562,7 @@ onMounted(async () => {
             type="datetime"
             value-format="YYYY-MM-DDTHH:mm:ss"
             placeholder="可选"
-            style="width: 240px"
+            style="width: 240px" format="YYYY年MM月DD日 HH:mm"
           />
         </el-form-item>
         <el-form-item label="位置预览">

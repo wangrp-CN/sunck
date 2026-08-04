@@ -272,7 +272,7 @@ onBeforeUnmount(() => cancelAnimationFrame(rafId));
           range-separator="至"
           start-placeholder="开始时间"
           end-placeholder="结束时间"
-          :clearable="false"
+          :clearable="false" format="YYYY年MM月DD日 HH:mm"
         />
         <el-button-group class="presets">
           <el-button size="small" @click="setPreset(1)">近1小时</el-button>
