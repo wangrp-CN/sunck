@@ -136,6 +136,15 @@ class RoleOut(BaseModel):
     dept_ids: list[int] = Field(default_factory=list, description="自定义数据范围部门ID")
 
 
+class RolePage(BaseModel):
+    """角色分页结果。"""
+
+    items: list[RoleOut]
+    total: int
+    page: int
+    size: int
+
+
 # ---------------------------------------------------------------------------
 # 权限
 # ---------------------------------------------------------------------------

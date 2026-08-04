@@ -1,9 +1,28 @@
 import { http } from "@/utils/request";
-import type { Role, RoleCreate, RoleUpdate } from "@/types";
+import type { Role, RoleCreate, RolePage, RoleUpdate } from "@/types";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
-// 角色列表
+// 角色列表（扁平，供下拉消费）
 export function listRoles(): Promise<Role[]> {
   return http<Role[]>({ url: "/v1/auth/roles", method: "GET" });
+}
+
+// 角色列表（分页，供角色管理页）
+export function listRolesPage(params: {
+  page: number;
+  size: number;
+  keyword?: string;
+}): Promise<RolePage> {
+  return http<RolePage>({
+    url: "/v1/auth/roles/page",
+    method: "GET",
+    params: { page: params.page, size: params.size, keyword: params.keyword || undefined },
+  });
+}
+
+// 批量删除角色
+export function batchDeleteRoles(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/auth/roles/batch-delete", ids);
 }
 
 // 新建角色

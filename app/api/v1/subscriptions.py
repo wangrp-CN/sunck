@@ -18,6 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.data_scope import DataScope
@@ -27,6 +28,8 @@ from app.core.exceptions import BusinessError
 from app.core.responses import ApiResponse
 from app.model.report_subscription import ReportSubscription as _Sub
 from app.model.system import User
+from app.schema.common import IdList
+from app.schema.subscriptions import SubscriptionOut, SubscriptionPage
 from app.service import report_subscription as svc
 from app.service.effectiveness_export import (
     disposition_header,
@@ -62,18 +65,58 @@ class SubscriptionUpdate(BaseModel):
     enabled: bool | None = None
 
 
-@router.get("")
+@router.get(
+    "",
+    response_model=ApiResponse[SubscriptionPage],
+    summary="订阅列表(分页)",
+)
 def list_subscriptions(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
     _: User = Depends(require_permissions("dashboard:view")),
     all_flag: bool = Query(False, description="超管查看全部订阅"),
+    page: int = 1,
+    size: int = 10,
 ) -> ApiResponse:
+    """分页列出订阅（仅本页消费，故直接改造为分页）；超管可 ``?all=true`` 看全部。"""
     stmt = _base_stmt()
     if not (all_flag and current_user.is_superuser):
         stmt = stmt.where(_Sub.user_id == current_user.id)
-    rows = db.scalars(stmt).all()
-    return ApiResponse.success(data=[r.to_dict() for r in rows])
+    total = db.scalar(select(func.count()).select_from(stmt.subquery()))
+    rows = db.scalars(stmt.offset((page - 1) * size).limit(size)).all()
+    items = [SubscriptionOut(**r.to_dict()) for r in rows]
+    return ApiResponse.success(
+        data=SubscriptionPage(items=items, total=total or 0, page=page, size=size)
+    )
+
+
+@router.post(
+    "/batch-delete",
+    response_model=ApiResponse,
+    summary="批量删除订阅(硬删,按归属隔离)",
+)
+def batch_delete_subscriptions(
+    items: IdList,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _: User = Depends(require_permissions("dashboard:view")),
+) -> ApiResponse:
+    """批量硬删：非超管仅可删除自身订阅；返回删除与跳过条数。"""
+    deleted = 0
+    for sid in items.ids:
+        sub = db.get(_Sub, sid)
+        if sub is None:
+            continue
+        if not current_user.is_superuser and sub.user_id != current_user.id:
+            continue
+        db.delete(sub)
+        deleted += 1
+    db.commit()
+    total = len(items.ids)
+    return ApiResponse.success(
+        data={"deleted": deleted, "total": total, "skipped": total - deleted},
+        message=f"已删除 {deleted} 条",
+    )
 
 
 @router.post("")

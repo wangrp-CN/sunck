@@ -106,3 +106,43 @@ def test_department_create_requires_permission(client, admin_token):
         assert r.status_code == 403, r.text
     finally:
         _cleanup(u)
+
+
+def test_departments_page_and_batch_delete(client, admin_token):
+    u = _uid()
+    try:
+        h = _headers(admin_token)
+        # 建两个无子部门/无用户的部门
+        ids = []
+        for i in range(2):
+            r = client.post(
+                "/api/v1/departments",
+                headers=h,
+                json={"name": f"批量部门_{i}", "code": f"T{u}_BD{i}"},
+            )
+            assert r.status_code == 200, r.text
+            ids.append(r.json()["data"]["id"])
+
+        # 分页：size=2
+        p = client.get("/api/v1/departments/page?page=1&size=2", headers=h)
+        assert p.status_code == 200, p.text
+        body = p.json()["data"]
+        assert body["page"] == 1 and body["size"] == 2
+        assert len(body["items"]) == 2
+
+        # 批量删除（软删）
+        bd = client.post(
+            "/api/v1/departments/batch-delete",
+            headers=h,
+            json={"ids": ids},
+        )
+        assert bd.status_code == 200, bd.text
+        res = bd.json()["data"]
+        assert res["deleted"] == 2 and res["skipped"] == 0
+
+        # 软删后分页中不再出现
+        after = client.get("/api/v1/departments/page", headers=h).json()["data"]
+        after_ids = [x["id"] for x in after["items"]]
+        assert ids[0] not in after_ids and ids[1] not in after_ids
+    finally:
+        _cleanup(u)

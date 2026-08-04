@@ -8,6 +8,7 @@ const hoisted = vi.hoisted(() => ({
   createSubscription: vi.fn(),
   updateSubscription: vi.fn(),
   deleteSubscription: vi.fn(),
+  batchDeleteSubscriptions: vi.fn(),
   triggerSubscription: vi.fn(),
   downloadSubscription: vi.fn(),
   fetchProjects: vi.fn(),
@@ -19,6 +20,7 @@ vi.mock("@/api/subscriptions", () => ({
   createSubscription: (...a: any[]) => hoisted.createSubscription(...a),
   updateSubscription: (...a: any[]) => hoisted.updateSubscription(...a),
   deleteSubscription: (...a: any[]) => hoisted.deleteSubscription(...a),
+  batchDeleteSubscriptions: (...a: any[]) => hoisted.batchDeleteSubscriptions(...a),
   triggerSubscription: (...a: any[]) => hoisted.triggerSubscription(...a),
   downloadSubscription: (...a: any[]) => hoisted.downloadSubscription(...a),
 }));
@@ -53,6 +55,15 @@ function clickByText(wrapper: any, text: string) {
   return btn;
 }
 
+// 精确匹配按钮文案（避开 BatchActions 的「批量删除」按钮）
+function clickExact(wrapper: any, text: string) {
+  const btn = wrapper
+    .findAll("button")
+    .find((b: any) => (b.text() as string).trim() === text);
+  if (!btn) throw new Error(`button not found exact: ${text}`);
+  return btn;
+}
+
 const SAMPLE_SUB = {
   id: 11,
   user_id: 1,
@@ -79,7 +90,7 @@ afterEach(() => {
 
 describe("SubscriptionView", () => {
   it("renders page title and loads subscription list", async () => {
-    hoisted.listSubscriptions.mockResolvedValue([SAMPLE_SUB]);
+    hoisted.listSubscriptions.mockResolvedValue({ items: [SAMPLE_SUB], total: 1, page: 1, size: 10 });
     hoisted.fetchProjects.mockResolvedValue({ items: [], total: 0, page: 1, size: 200 });
 
     const wrapper = mount(SubscriptionView);
@@ -91,7 +102,7 @@ describe("SubscriptionView", () => {
   });
 
   it("superuser can create a subscription via dialog", async () => {
-    hoisted.listSubscriptions.mockResolvedValue([]);
+    hoisted.listSubscriptions.mockResolvedValue({ items: [], total: 0, page: 1, size: 10 });
     hoisted.fetchProjects.mockResolvedValue({ items: [], total: 0, page: 1, size: 200 });
     hoisted.createSubscription.mockResolvedValue({ ...SAMPLE_SUB, id: 12, name: "新订阅" });
 
@@ -114,14 +125,14 @@ describe("SubscriptionView", () => {
   });
 
   it("delete confirms then calls deleteSubscription", async () => {
-    hoisted.listSubscriptions.mockResolvedValue([SAMPLE_SUB]);
+    hoisted.listSubscriptions.mockResolvedValue({ items: [SAMPLE_SUB], total: 1, page: 1, size: 10 });
     hoisted.fetchProjects.mockResolvedValue({ items: [], total: 0, page: 1, size: 200 });
     hoisted.deleteSubscription.mockResolvedValue(undefined);
 
     const wrapper = mount(SubscriptionView);
     await flushPromises();
 
-    clickByText(wrapper, "删除").trigger("click");
+    clickExact(wrapper, "删除").trigger("click");
     await flushPromises();
 
     expect(hoisted.deleteSubscription).toHaveBeenCalledWith(11);
@@ -129,7 +140,7 @@ describe("SubscriptionView", () => {
 
   it("non-superuser hides the view-all toggle", async () => {
     hoisted.authUser.is_superuser = false;
-    hoisted.listSubscriptions.mockResolvedValue([]);
+    hoisted.listSubscriptions.mockResolvedValue({ items: [], total: 0, page: 1, size: 10 });
     hoisted.fetchProjects.mockResolvedValue({ items: [], total: 0, page: 1, size: 200 });
 
     const wrapper = mount(SubscriptionView);

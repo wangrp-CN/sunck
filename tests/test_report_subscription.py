@@ -63,8 +63,46 @@ def test_create_and_list(client, auth_headers):
 
     lst = client.get("/api/v1/subscriptions", headers=auth_headers)
     assert lst.status_code == 200
-    ids = [x["id"] for x in lst.json()["data"]]
+    ids = [x["id"] for x in lst.json()["data"]["items"]]
     assert sid in ids
+
+
+def test_paginated_list_and_batch_delete(client, auth_headers):
+    # 基线总数（admin 自身订阅，可能因其它测试有残留）
+    base = client.get("/api/v1/subscriptions", headers=auth_headers).json()["data"]["total"]
+
+    # 建 3 条订阅（归属 admin）
+    created = []
+    for i in range(3):
+        r = client.post(
+            "/api/v1/subscriptions",
+            headers=auth_headers,
+            json={"name": f"批量_{i}", "days": 30},
+        )
+        assert r.status_code == 200, r.text
+        created.append(r.json()["data"]["id"])
+
+    # 分页：size=2 应返回 2 条，total=base+3
+    p = client.get("/api/v1/subscriptions?page=1&size=2", headers=auth_headers)
+    assert p.status_code == 200, p.text
+    body = p.json()["data"]
+    assert body["total"] == base + 3
+    assert len(body["items"]) == 2
+    assert body["page"] == 1 and body["size"] == 2
+
+    # 批量删除（硬删）
+    bd = client.post(
+        "/api/v1/subscriptions/batch-delete",
+        headers=auth_headers,
+        json={"ids": created},
+    )
+    assert bd.status_code == 200, bd.text
+    res = bd.json()["data"]
+    assert res["deleted"] == 3 and res["total"] == 3 and res["skipped"] == 0
+
+    # 删除后总数恢复到基线
+    after = client.get("/api/v1/subscriptions", headers=auth_headers).json()["data"]
+    assert after["total"] == base
 
 
 def test_update_and_delete(client, auth_headers):
@@ -87,7 +125,7 @@ def test_update_and_delete(client, auth_headers):
     d = client.delete("/api/v1/subscriptions/" + str(sid), headers=auth_headers)
     assert d.status_code == 200
     lst = client.get("/api/v1/subscriptions", headers=auth_headers)
-    assert sid not in [x["id"] for x in lst.json()["data"]]
+    assert sid not in [x["id"] for x in lst.json()["data"]["items"]]
 
 
 def test_invalid_project_id_rejected(client, auth_headers):
@@ -170,7 +208,7 @@ def test_ownership_isolation(client, auth_headers):
 
         # 自己的列表不应包含 admin 的订阅（归属隔离）
         my_list = client.get("/api/v1/subscriptions", headers=vh).json()["data"]
-        my_ids = [x["id"] for x in my_list]
+        my_ids = [x["id"] for x in my_list["items"]]
         assert my_id in my_ids
         assert sid not in my_ids, "不应看到他人的订阅"
 

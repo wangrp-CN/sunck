@@ -167,16 +167,25 @@ onUnmounted(() => {
       <div class="menu-wrap">
         <SideMenu :collapse="collapsed" />
       </div>
-      <button
-        class="collapse-toggle"
-        :title="collapsed ? '展开侧栏' : '收起侧栏'"
-        @click="collapsed = !collapsed"
-      >
-        <el-icon :size="16">
-          <ArrowLeft v-if="!collapsed" />
-          <ArrowRight v-else />
-        </el-icon>
-      </button>
+      <div class="collapse-bar">
+        <button
+          v-if="!collapsed"
+          class="collapse-btn"
+          title="一键收起菜单"
+          @click="collapsed = true"
+        >
+          <el-icon :size="16"><ArrowLeft /></el-icon>
+          <span>一键收起</span>
+        </button>
+        <button
+          v-else
+          class="collapse-btn icon-only"
+          title="一键展开菜单"
+          @click="collapsed = false"
+        >
+          <el-icon :size="18"><ArrowRight /></el-icon>
+        </button>
+      </div>
     </el-aside>
     <el-container>
       <el-header class="header">
@@ -311,22 +320,32 @@ onUnmounted(() => {
   flex-direction: column;
 }
 /* 折叠切换：常驻底部，浅灰底 + 顶部发丝线，契合浅色规范 */
-.collapse-toggle {
+.collapse-bar {
   flex-shrink: 0;
-  height: 40px;
-  border: none;
   border-top: 1px solid #ebeef5;
   background: #f7f8fa;
+}
+.collapse-btn {
+  width: 100%;
+  height: 40px;
+  border: none;
+  background: transparent;
   color: #606266;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 6px;
+  font-size: 13px;
   transition: background 0.15s, color 0.15s;
 }
-.collapse-toggle:hover {
+.collapse-btn:hover {
   background: #eef0f3;
   color: #303133;
+}
+/* 折叠态（窄 64px）仅显示图标，避免文字溢出 */
+.collapse-btn.icon-only {
+  font-size: 0;
 }
 .header {
   display: flex;

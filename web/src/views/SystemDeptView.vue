@@ -1,26 +1,40 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
 import {
+  batchDeleteDepartments,
   createDepartment,
   deleteDepartment,
   fetchDepartments,
+  fetchDepartmentsPage,
   updateDepartment,
 } from "@/api/department";
+import TablePager from "@/components/TablePager.vue";
+import BatchActions from "@/components/BatchActions.vue";
+import { useBatchSelection } from "@/composables/useBatchSelection";
 import { useAuthStore } from "@/stores/auth";
 import type { Department } from "@/types";
 
 const auth = useAuthStore();
+const canDelete = computed(() => auth.hasPermission("dept:delete"));
+
+// 扁平全量（供上级下拉消费，不分页）
+const allDepts = ref<Department[]>([]);
+// 分页表格
 const loading = ref(false);
-const depts = ref<Department[]>([]);
+const tableData = ref<Department[]>([]);
+const total = ref(0);
+const page = ref(1);
+const size = ref(10);
+const keyword = ref("");
 
 const deptMap = computed(() => {
   const m: Record<number, string> = {};
-  depts.value.forEach((d) => (m[d.id] = d.name));
+  allDepts.value.forEach((d) => (m[d.id] = d.name));
   return m;
 });
 const deptOptions = computed(() => [
   { label: "（根 / 无上级）", value: 0 },
-  ...depts.value.map((d) => ({ label: d.name, value: d.id })),
+  ...allDepts.value.map((d) => ({ label: d.name, value: d.id })),
 ]);
 
 const dialogVisible = ref(false);
@@ -89,6 +103,7 @@ async function submit() {
     }
     dialogVisible.value = false;
     loadDepartments();
+    loadTable();
   } catch {
     // 拦截器已提示
   } finally {
@@ -107,24 +122,74 @@ async function remove(row: Department) {
     await deleteDepartment(row.id);
     ElMessage.success("已删除");
     loadDepartments();
+    loadTable();
   } catch {
     // 拦截器提示
   }
 }
 async function loadDepartments() {
+  // 扁平全量用于下拉，与表格分页互不影响
+  allDepts.value = await fetchDepartments();
+}
+async function loadTable() {
   loading.value = true;
   try {
-    depts.value = await fetchDepartments();
+    const pageData = await fetchDepartmentsPage({
+      page: page.value,
+      size: size.value,
+      keyword: keyword.value || undefined,
+    });
+    tableData.value = pageData.items;
+    total.value = pageData.total;
+  } catch {
+    // 拦截器统一提示
   } finally {
     loading.value = false;
   }
 }
-onMounted(loadDepartments);
+function handleSearch() {
+  page.value = 1;
+  loadTable();
+}
+function handleReset() {
+  keyword.value = "";
+  page.value = 1;
+  loadTable();
+}
+
+// ---- 批量选择 / 批量删除（统一交互）----
+const {
+  tableRef,
+  selectedRows,
+  batchDeleting,
+  onSelectionChange,
+  clearSelection,
+  onBatchDelete,
+} = useBatchSelection({
+  deleteApi: batchDeleteDepartments,
+  reload: () => loadTable(),
+  label: "部门",
+});
+
+onMounted(async () => {
+  await loadDepartments();
+  loadTable();
+});
 </script>
 
 <template>
   <div class="page">
     <div class="tool-bar">
+      <el-input
+        v-model="keyword"
+        placeholder="按名称/编码搜索"
+        clearable
+        class="search-input"
+        @keyup.enter="handleSearch"
+        @clear="handleReset"
+      />
+      <el-button type="primary" @click="handleSearch">搜索</el-button>
+      <el-button @click="handleReset">重置</el-button>
       <el-button
         v-if="auth.hasPermission('dept:add')"
         type="success"
@@ -133,7 +198,32 @@ onMounted(loadDepartments);
       >
     </div>
 
-    <el-table v-loading="loading" :data="depts" border stripe row-key="id">
+    <BatchActions
+      v-if="canDelete"
+      :selected="selectedRows.length"
+      :loading="batchDeleting"
+      @batch-delete="onBatchDelete"
+      @clear="clearSelection"
+    />
+    <el-table
+      v-loading="loading"
+      :data="tableData"
+      border
+      stripe
+      row-key="id"
+      ref="tableRef"
+      @selection-change="onSelectionChange"
+    >
+      <el-table-column
+        v-if="canDelete"
+        type="selection"
+        width="48"
+        :reserve-selection="true"
+        fixed="left"
+      />
+      <el-table-column label="序号" width="64" align="center">
+        <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+      </el-table-column>
       <el-table-column prop="name" label="名称" width="180" />
       <el-table-column prop="code" label="编码" width="160" />
       <el-table-column label="上级" width="160">
@@ -170,6 +260,16 @@ onMounted(loadDepartments);
         </template>
       </el-table-column>
     </el-table>
+
+    <div class="pager">
+      <TablePager
+        v-model:page="page"
+        v-model:size="size"
+        :total="total"
+        :selected="selectedRows.length"
+        @change="loadTable"
+      />
+    </div>
 
     <el-dialog
       v-model="dialogVisible"
@@ -227,6 +327,18 @@ onMounted(loadDepartments);
   padding: 4px;
 }
 .tool-bar {
+  display: flex;
+  gap: 8px;
   margin-bottom: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.search-input {
+  width: 220px;
+}
+.pager {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

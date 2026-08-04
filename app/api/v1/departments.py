@@ -6,7 +6,7 @@
 """
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -14,7 +14,14 @@ from app.core.deps import require_permissions
 from app.core.exceptions import BusinessError
 from app.core.responses import ApiResponse
 from app.model.system import Department, User
-from app.schema.department import DepartmentCreate, DepartmentOut, DepartmentTree, DepartmentUpdate
+from app.schema.common import IdList
+from app.schema.department import (
+    DepartmentCreate,
+    DepartmentOut,
+    DepartmentPage,
+    DepartmentTree,
+    DepartmentUpdate,
+)
 
 router = APIRouter(tags=["部门管理"])
 
@@ -40,6 +47,69 @@ def list_departments(
         stmt = stmt.where(Department.name.ilike(kw) | Department.code.ilike(kw))
     rows = db.scalars(stmt.order_by(Department.sort, Department.id)).all()
     return ApiResponse.success([_dept_out(d) for d in rows], message="查询成功")
+
+
+@router.get(
+    "/page",
+    response_model=ApiResponse[DepartmentPage],
+    summary="部门列表(分页)",
+    dependencies=[Depends(require_permissions("dept:list"))],
+)
+def list_departments_page(
+    db: Session = Depends(get_db),
+    keyword: str | None = None,
+    page: int = 1,
+    size: int = 10,
+) -> ApiResponse:
+    """分页查询部门，供部门管理页使用（保留 /departments 扁平端点供下拉消费）。"""
+    stmt = select(Department).where(Department.is_deleted.is_(False))
+    if keyword:
+        kw = f"%{keyword}%"
+        stmt = stmt.where(Department.name.ilike(kw) | Department.code.ilike(kw))
+    total = db.scalar(select(func.count()).select_from(stmt.subquery()))
+    rows = db.scalars(
+        stmt.order_by(Department.sort, Department.id).offset((page - 1) * size).limit(size)
+    ).all()
+    return ApiResponse.success(
+        DepartmentPage(
+            items=[_dept_out(d) for d in rows],
+            total=total or 0,
+            page=page,
+            size=size,
+        ),
+        message="查询成功",
+    )
+
+
+@router.post(
+    "/batch-delete",
+    response_model=ApiResponse,
+    summary="批量删除部门(软删,跳过含子部门/有用户)",
+    dependencies=[Depends(require_permissions("dept:delete"))],
+)
+def batch_delete_departments(items: IdList, db: Session = Depends(get_db)) -> ApiResponse:
+    """批量软删：跳过含子部门或仍有用户的部门（与单条删除保护一致）；返回删除与跳过条数。"""
+    deleted = 0
+    for did in items.ids:
+        dept = db.get(Department, did)
+        if dept is None or dept.is_deleted:
+            continue
+        if db.scalar(
+            select(Department.id).where(
+                Department.parent_id == did, Department.is_deleted.is_(False)
+            )
+        ):
+            continue
+        if db.scalar(select(User.id).where(User.dept_id == did, User.is_deleted.is_(False))):
+            continue
+        dept.is_deleted = True
+        deleted += 1
+    db.commit()
+    total = len(items.ids)
+    return ApiResponse.success(
+        data={"deleted": deleted, "total": total, "skipped": total - deleted},
+        message=f"已删除 {deleted} 条",
+    )
 
 
 @router.get(

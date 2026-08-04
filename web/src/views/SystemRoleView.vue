@@ -3,19 +3,30 @@ import { computed, onMounted, reactive, ref } from "vue";
 import {
   assignRoleDepartments,
   assignRolePermissions,
+  batchDeleteRoles,
   createRole,
   deleteRole,
-  listRoles,
+  listRolesPage,
   updateRole,
 } from "@/api/role";
 import { listPermissions } from "@/api/permission";
 import { fetchDepartments } from "@/api/department";
+import TablePager from "@/components/TablePager.vue";
+import BatchActions from "@/components/BatchActions.vue";
+import { useBatchSelection } from "@/composables/useBatchSelection";
 import { useAuthStore } from "@/stores/auth";
 import type { Department, Permission, Role } from "@/types";
 
 const auth = useAuthStore();
+const canDelete = computed(() => auth.hasPermission("role:delete"));
+
 const loading = ref(false);
-const roles = ref<Role[]>([]);
+const tableData = ref<Role[]>([]);
+const total = ref(0);
+const page = ref(1);
+const size = ref(10);
+const keyword = ref("");
+
 const permissions = ref<Permission[]>([]);
 const depts = ref<Department[]>([]);
 
@@ -169,10 +180,27 @@ async function remove(row: Role) {
 async function loadRoles() {
   loading.value = true;
   try {
-    roles.value = await listRoles();
+    const pageData = await listRolesPage({
+      page: page.value,
+      size: size.value,
+      keyword: keyword.value || undefined,
+    });
+    tableData.value = pageData.items;
+    total.value = pageData.total;
+  } catch {
+    // 拦截器统一提示
   } finally {
     loading.value = false;
   }
+}
+function handleSearch() {
+  page.value = 1;
+  loadRoles();
+}
+function handleReset() {
+  keyword.value = "";
+  page.value = 1;
+  loadRoles();
 }
 async function loadPermissions() {
   permissions.value = await listPermissions();
@@ -180,6 +208,20 @@ async function loadPermissions() {
 async function loadDepartments() {
   depts.value = await fetchDepartments();
 }
+
+// ---- 批量选择 / 批量删除（统一交互）----
+const {
+  tableRef,
+  selectedRows,
+  batchDeleting,
+  onSelectionChange,
+  clearSelection,
+  onBatchDelete,
+} = useBatchSelection({
+  deleteApi: batchDeleteRoles,
+  reload: () => loadRoles(),
+  label: "角色",
+});
 
 onMounted(async () => {
   await Promise.all([loadPermissions(), loadDepartments()]);
@@ -190,6 +232,16 @@ onMounted(async () => {
 <template>
   <div class="page">
     <div class="tool-bar">
+      <el-input
+        v-model="keyword"
+        placeholder="按名称/编码搜索"
+        clearable
+        class="search-input"
+        @keyup.enter="handleSearch"
+        @clear="handleReset"
+      />
+      <el-button type="primary" @click="handleSearch">搜索</el-button>
+      <el-button @click="handleReset">重置</el-button>
       <el-button
         v-if="auth.hasPermission('role:add')"
         type="success"
@@ -198,7 +250,32 @@ onMounted(async () => {
       >
     </div>
 
-    <el-table v-loading="loading" :data="roles" border stripe>
+    <BatchActions
+      v-if="canDelete"
+      :selected="selectedRows.length"
+      :loading="batchDeleting"
+      @batch-delete="onBatchDelete"
+      @clear="clearSelection"
+    />
+    <el-table
+      v-loading="loading"
+      :data="tableData"
+      border
+      stripe
+      row-key="id"
+      ref="tableRef"
+      @selection-change="onSelectionChange"
+    >
+      <el-table-column
+        v-if="canDelete"
+        type="selection"
+        width="48"
+        :reserve-selection="true"
+        fixed="left"
+      />
+      <el-table-column label="序号" width="64" align="center">
+        <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+      </el-table-column>
       <el-table-column prop="name" label="名称" width="160" />
       <el-table-column prop="code" label="编码" width="160" />
       <el-table-column label="数据范围" width="130">
@@ -257,6 +334,16 @@ onMounted(async () => {
         </template>
       </el-table-column>
     </el-table>
+
+    <div class="pager">
+      <TablePager
+        v-model:page="page"
+        v-model:size="size"
+        :total="total"
+        :selected="selectedRows.length"
+        @change="loadRoles"
+      />
+    </div>
 
     <!-- 新建/编辑 -->
     <el-dialog
@@ -355,7 +442,19 @@ onMounted(async () => {
   padding: 4px;
 }
 .tool-bar {
+  display: flex;
+  gap: 8px;
   margin-bottom: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.search-input {
+  width: 220px;
+}
+.pager {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
 }
 .perm-module {
   margin-bottom: 14px;

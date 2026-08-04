@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import { Bell, Download, Refresh, Setting } from "@element-plus/icons-vue";
 import { useAuthStore } from "@/stores/auth";
 import {
+  batchDeleteSubscriptions,
   createSubscription,
   deleteSubscription,
   downloadSubscription,
@@ -13,6 +14,9 @@ import {
   type SubscriptionCreate,
 } from "@/api/subscriptions";
 import { fetchProjects } from "@/api/project";
+import TablePager from "@/components/TablePager.vue";
+import BatchActions from "@/components/BatchActions.vue";
+import { useBatchSelection } from "@/composables/useBatchSelection";
 import type { Project } from "@/types";
 
 const auth = useAuthStore();
@@ -31,6 +35,9 @@ const CHANNEL_LABELS: Record<string, string> = {
 const loading = ref(false);
 const loadingList = ref(false);
 const list = ref<ReportSubscription[]>([]);
+const total = ref(0);
+const page = ref(1);
+const size = ref(10);
 const viewAll = ref(false);
 const projectMap = reactive<Record<number, string>>({});
 
@@ -108,7 +115,13 @@ async function loadProjects() {
 async function loadList() {
   loadingList.value = true;
   try {
-    list.value = await listSubscriptions(isSuper.value && viewAll.value);
+    const pageData = await listSubscriptions({
+      page: page.value,
+      size: size.value,
+      all: isSuper.value && viewAll.value,
+    });
+    list.value = pageData.items;
+    total.value = pageData.total;
   } catch (e: any) {
     ElMessage.error(e?.message || "加载订阅列表失败");
   } finally {
@@ -246,6 +259,25 @@ async function onToggleEnabled(s: ReportSubscription, val: boolean) {
   }
 }
 
+// ---- 批量选择 / 批量删除（统一交互）----
+const {
+  tableRef,
+  selectedRows,
+  batchDeleting,
+  onSelectionChange,
+  clearSelection,
+  onBatchDelete,
+} = useBatchSelection({
+  deleteApi: batchDeleteSubscriptions,
+  reload: () => loadList(),
+  label: "订阅",
+});
+
+function handleViewAllChange() {
+  page.value = 1;
+  loadList();
+}
+
 onMounted(refresh);
 </script>
 
@@ -264,7 +296,7 @@ onMounted(refresh);
         v-model="viewAll"
         active-text="查看全部"
         inline-prompt
-        @change="loadList"
+        @change="handleViewAllChange"
       />
     </div>
 
@@ -274,12 +306,30 @@ onMounted(refresh);
       <span class="muted">调度由服务端每小时扫描（命中发送的北京时刻即生成）</span>
     </div>
 
+    <BatchActions
+      :selected="selectedRows.length"
+      :loading="batchDeleting"
+      @batch-delete="onBatchDelete"
+      @clear="clearSelection"
+    />
     <el-card shadow="never" class="card">
       <el-table
         :data="list"
         v-loading="loadingList"
+        row-key="id"
+        ref="tableRef"
+        @selection-change="onSelectionChange"
         empty-text="暂无订阅，点击「新建订阅」开始"
       >
+        <el-table-column
+          type="selection"
+          width="48"
+          :reserve-selection="true"
+          fixed="left"
+        />
+        <el-table-column label="序号" width="64" align="center">
+          <template #default="{ $index }">{{ (page - 1) * size + $index + 1 }}</template>
+        </el-table-column>
         <el-table-column prop="name" label="名称" min-width="140" />
         <el-table-column label="格式" width="80">
           <template #default="{ row }">
@@ -334,6 +384,15 @@ onMounted(refresh);
           </template>
         </el-table-column>
       </el-table>
+      <div class="pager">
+        <TablePager
+          v-model:page="page"
+          v-model:size="size"
+          :total="total"
+          :selected="selectedRows.length"
+          @change="loadList"
+        />
+      </div>
     </el-card>
 
     <!-- 新建 / 编辑 -->
@@ -458,6 +517,11 @@ onMounted(refresh);
 }
 .card {
   margin-bottom: 16px;
+}
+.pager {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
 }
 .suffix {
   margin-left: 6px;

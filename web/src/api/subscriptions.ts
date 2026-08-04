@@ -2,6 +2,7 @@
 import { ElMessage } from "element-plus";
 import request from "@/utils/request";
 import { http } from "@/utils/request";
+import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
 export type SubFrequency = "daily" | "weekly" | "monthly";
 export type SubFormat = "excel" | "pdf";
@@ -27,6 +28,14 @@ export interface ReportSubscription {
   updated_at: string | null;
 }
 
+// 订阅分页结果
+export interface SubscriptionPage {
+  items: ReportSubscription[];
+  total: number;
+  page: number;
+  size: number;
+}
+
 export interface SubscriptionCreate {
   name: string;
   fmt?: SubFormat;
@@ -50,13 +59,26 @@ export interface TriggerResult {
   filename: string;
 }
 
-// 列表（超管传 all=true 看全部）
-export function listSubscriptions(all?: boolean): Promise<ReportSubscription[]> {
-  return http<ReportSubscription[]>({
+// 列表（分页；超管传 all=true 看全部）
+export function listSubscriptions(params: {
+  page: number;
+  size: number;
+  all?: boolean;
+}): Promise<SubscriptionPage> {
+  return http<SubscriptionPage>({
     url: "/v1/subscriptions",
     method: "GET",
-    params: all ? { all: true } : undefined,
+    params: {
+      page: params.page,
+      size: params.size,
+      ...(params.all ? { all: true } : {}),
+    },
   });
+}
+
+// 批量删除订阅
+export function batchDeleteSubscriptions(ids: number[]): Promise<BatchDeleteResult> {
+  return batchDelete("/v1/subscriptions/batch-delete", ids);
 }
 
 export function createSubscription(payload: SubscriptionCreate): Promise<ReportSubscription> {

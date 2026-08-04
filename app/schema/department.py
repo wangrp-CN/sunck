@@ -47,4 +47,13 @@ class DepartmentTree(DepartmentOut):
     children: list["DepartmentTree"] = Field(default_factory=list, description="下级部门")
 
 
+class DepartmentPage(BaseModel):
+    """部门分页结果。"""
+
+    items: list[DepartmentOut]
+    total: int
+    page: int
+    size: int
+
+
 DepartmentTree.model_rebuild()

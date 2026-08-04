@@ -4,6 +4,8 @@
 测试会向开发库写入/清理专用测试账号（test_ 前缀），不影响种子数据。
 """
 
+import secrets
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -143,3 +145,52 @@ def test_refresh_token(client):
     r = client.post(BASE + "/refresh", json={"refresh_token": data["refresh_token"]})
     assert r.status_code == 200
     assert r.json()["data"]["access_token"]
+
+
+def test_roles_page_and_batch_delete(client):
+    token = _admin_token(client)
+    h = {"Authorization": f"Bearer {token}"}
+    created: list[int] = []
+
+    try:
+        # 建两个非系统角色（编码带随机前缀，避免与历史残留冲突）
+        for i in range(2):
+            suffix = secrets.token_hex(3)
+            r = client.post(
+                BASE + "/roles",
+                headers=h,
+                json={
+                    "name": f"批量角色_{suffix}_{i}",
+                    "code": f"batch_role_{suffix}_{i}",
+                    "data_scope": 4,
+                },
+            )
+            assert r.status_code == 200, r.text
+            created.append(r.json()["data"]["id"])
+
+        # 分页端点（保留 /roles 扁平端点供下拉消费）
+        p = client.get(BASE + "/roles/page?page=1&size=2", headers=h)
+        assert p.status_code == 200, p.text
+        body = p.json()["data"]
+        assert body["page"] == 1 and body["size"] == 2
+        assert len(body["items"]) == 2
+        assert body["total"] >= 2
+
+        # 找一个系统内置角色，批量删除时应被跳过
+        flat = client.get(BASE + "/roles", headers=h).json()["data"]
+        sys_role = next((x for x in flat if x["is_system"]), None)
+        payload = list(created) + ([sys_role["id"]] if sys_role else [])
+        bd = client.post(BASE + "/roles/batch-delete", headers=h, json={"ids": payload})
+        assert bd.status_code == 200, bd.text
+        res = bd.json()["data"]
+        assert res["deleted"] == 2
+        assert res["skipped"] == (1 if sys_role else 0)
+        assert res["total"] == len(payload)
+    finally:
+        # 清理本次创建的自定义角色（系统角色不可删，已自动跳过）
+        if created:
+            client.post(
+                BASE + "/roles/batch-delete",
+                headers=h,
+                json={"ids": created},
+            )

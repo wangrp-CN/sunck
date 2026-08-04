@@ -47,6 +47,7 @@ from app.schema.auth import (
     RoleCreateRequest,
     RoleDeptAssign,
     RoleOut,
+    RolePage,
     RolePermissionAssign,
     RoleUpdateRequest,
     TokenResponse,
@@ -394,6 +395,61 @@ def list_roles(db: Session = Depends(get_db)) -> ApiResponse:
     """返回全部角色及其权限编码。"""
     roles = db.scalars(select(Role).where(Role.is_deleted.is_(False))).all()
     return ApiResponse.success([_role_out(r, db) for r in roles], message="查询成功")
+
+
+@router.get(
+    "/roles/page",
+    response_model=ApiResponse[RolePage],
+    summary="角色列表(分页)",
+    dependencies=[Depends(require_permissions("role:list"))],
+)
+def list_roles_page(
+    db: Session = Depends(get_db),
+    keyword: str | None = None,
+    page: int = 1,
+    size: int = 10,
+) -> ApiResponse:
+    """分页查询角色，供角色管理页使用（保留 /roles 扁平端点供下拉消费）。"""
+    stmt = select(Role).where(Role.is_deleted.is_(False))
+    if keyword:
+        kw = f"%{keyword}%"
+        stmt = stmt.where(or_(Role.name.ilike(kw), Role.code.ilike(kw)))
+    total = db.scalar(select(func.count()).select_from(stmt.subquery()))
+    rows = db.scalars(stmt.order_by(Role.id.desc()).offset((page - 1) * size).limit(size)).all()
+    return ApiResponse.success(
+        RolePage(
+            items=[_role_out(r, db) for r in rows],
+            total=total or 0,
+            page=page,
+            size=size,
+        ),
+        message="查询成功",
+    )
+
+
+@router.post(
+    "/roles/batch-delete",
+    response_model=ApiResponse,
+    summary="批量删除角色(软删,跳过内置)",
+    dependencies=[Depends(require_permissions("role:delete"))],
+)
+def batch_delete_roles(items: IdList, db: Session = Depends(get_db)) -> ApiResponse:
+    """批量软删：跳过系统内置角色与已删除记录；返回删除条数与跳过条数。"""
+    deleted = 0
+    for rid in items.ids:
+        role = db.get(Role, rid)
+        if role is None or role.is_deleted:
+            continue
+        if role.is_system:
+            continue
+        role.is_deleted = True
+        deleted += 1
+    db.commit()
+    total = len(items.ids)
+    return ApiResponse.success(
+        data={"deleted": deleted, "total": total, "skipped": total - deleted},
+        message=f"已删除 {deleted} 条",
+    )
 
 
 @router.post(

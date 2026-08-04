@@ -136,6 +136,13 @@ export interface Department {
   created_at: string | null;
 }
 
+export interface DepartmentPage {
+  items: Department[];
+  total: number;
+  page: number;
+  size: number;
+}
+
 // ===================== 设备管理 =====================
 export type DeviceType = "locate" | "anti_intrusion" | "train_approach";
 
@@ -724,6 +731,13 @@ export interface Role {
   status: boolean;
   permission_codes: string[];
   dept_ids: number[];
+}
+
+export interface RolePage {
+  items: Role[];
+  total: number;
+  page: number;
+  size: number;
 }
 
 export interface RoleCreate {
