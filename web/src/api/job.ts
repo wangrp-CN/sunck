@@ -7,12 +7,15 @@ import type {
   WorkPlanUpdate,
 } from "@/types";
 
-// 列表（关键词/项目/状态 过滤）
+// 列表（关键词/项目/状态/启动 过滤 + 排序；默认创建时间倒序）
 export function fetchJobs(params?: {
   keyword?: string;
   project_id?: number;
   status?: string;
+  is_start?: boolean;
   is_template?: boolean;
+  sort_by?: string;
+  order?: "asc" | "desc";
   page?: number;
   size?: number;
 }): Promise<WorkPlanPage> {

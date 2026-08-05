@@ -32,6 +32,34 @@ class WorkPlanRule(BaseModel):
     dwell_time: int | None = None
 
 
+class PersonBindingIn(BaseModel):
+    """第二步·人员及设备：一行 = 人员 + 其定位设备。"""
+
+    person_id: int
+    device_no: str | None = None
+
+
+class MachineBindingIn(BaseModel):
+    """第二步·大型机械：一行 = 大机 + 防护/驾驶人员 + 三类车载设备。"""
+
+    machine_id: int
+    guard_person_id: int | None = None
+    driver_person_id: int | None = None
+    arm_device_no: str | None = None
+    body_device_no: str | None = None
+    voice_device_no: str | None = None
+
+
+class FenceRuleIn(BaseModel):
+    """第三步·电子围栏：一行 = 围栏 + 该围栏的规则四要素。"""
+
+    fence_id: int
+    monitor_target: str | None = None
+    trigger_condition: str | None = None
+    time_range: str | None = None
+    dwell_time: int | None = 0
+
+
 class WorkPlanCreate(BaseModel):
     project_id: int | None = None
     name: str = Field(..., description="计划名称")
@@ -46,6 +74,10 @@ class WorkPlanCreate(BaseModel):
     machine_ids: list[int] = Field(default_factory=list)
     device_bindings: list[DeviceBinding] = Field(default_factory=list)
     fence_ids: list[int] = Field(default_factory=list)
+    # 结构化绑定（原型三步向导）；给出时优先于上面的 *_ids 简写
+    person_bindings: list[PersonBindingIn] | None = None
+    machine_bindings: list[MachineBindingIn] | None = None
+    fence_rules: list[FenceRuleIn] | None = None
 
 
 class WorkPlanUpdate(BaseModel):
@@ -62,6 +94,9 @@ class WorkPlanUpdate(BaseModel):
     machine_ids: list[int] | None = None
     device_bindings: list[DeviceBinding] | None = None
     fence_ids: list[int] | None = None
+    person_bindings: list[PersonBindingIn] | None = None
+    machine_bindings: list[MachineBindingIn] | None = None
+    fence_rules: list[FenceRuleIn] | None = None
 
 
 class BoundPerson(BaseModel):
@@ -83,6 +118,45 @@ class BoundDevice(BaseModel):
 class BoundFence(BaseModel):
     id: int
     name: str | None = None
+
+
+class PersonBindingOut(BaseModel):
+    """人员绑定明细（含回显名称/编号，对应原型第二步人员表四列）。"""
+
+    person_id: int
+    person_name: str | None = None
+    person_no: str | None = None
+    device_no: str | None = None
+    device_name: str | None = None
+
+
+class MachineBindingOut(BaseModel):
+    """大机绑定明细（对应原型第二步大机表六列）。"""
+
+    machine_id: int
+    machine_no: str | None = None
+    machine_type: str | None = None
+    guard_person_id: int | None = None
+    guard_person_name: str | None = None
+    driver_person_id: int | None = None
+    driver_person_name: str | None = None
+    arm_device_no: str | None = None
+    arm_device_name: str | None = None
+    body_device_no: str | None = None
+    body_device_name: str | None = None
+    voice_device_no: str | None = None
+    voice_device_name: str | None = None
+
+
+class FenceRuleOut(BaseModel):
+    """围栏规则明细（对应原型第三步围栏表五列）。"""
+
+    fence_id: int
+    fence_name: str | None = None
+    monitor_target: str | None = None
+    trigger_condition: str | None = None
+    time_range: str | None = None
+    dwell_time: int | None = None
 
 
 class WorkPlanOut(BaseModel):
@@ -109,6 +183,10 @@ class WorkPlanOut(BaseModel):
     machines: list[BoundMachine] = Field(default_factory=list)
     devices: list[BoundDevice] = Field(default_factory=list)
     fences: list[BoundFence] = Field(default_factory=list)
+    # 结构化绑定明细（原型三步向导回显）
+    person_bindings: list[PersonBindingOut] = Field(default_factory=list)
+    machine_bindings: list[MachineBindingOut] = Field(default_factory=list)
+    fence_rules: list[FenceRuleOut] = Field(default_factory=list)
 
     @field_serializer("plan_start", "plan_end", "actual_start", "actual_end")
     def _serialize_plan_dt(self, v: datetime | None) -> str | None:

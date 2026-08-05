@@ -439,6 +439,51 @@ export interface BoundFence {
   name: string | null;
 }
 
+/** 第二步·人员及设备：一行 = 人员 + 其定位设备 */
+export interface PersonBindingIn {
+  person_id: number;
+  device_no?: string | null;
+}
+
+export interface PersonBindingOut extends PersonBindingIn {
+  person_name?: string | null;
+  person_no?: string | null;
+  device_name?: string | null;
+}
+
+/** 第二步·大型机械：一行 = 大机 + 防护/驾驶人员 + 三类车载设备 */
+export interface MachineBindingIn {
+  machine_id: number;
+  guard_person_id?: number | null;
+  driver_person_id?: number | null;
+  arm_device_no?: string | null;
+  body_device_no?: string | null;
+  voice_device_no?: string | null;
+}
+
+export interface MachineBindingOut extends MachineBindingIn {
+  machine_no?: string | null;
+  machine_type?: string | null;
+  guard_person_name?: string | null;
+  driver_person_name?: string | null;
+  arm_device_name?: string | null;
+  body_device_name?: string | null;
+  voice_device_name?: string | null;
+}
+
+/** 第三步·电子围栏：一行 = 围栏 + 规则四要素 */
+export interface FenceRuleIn {
+  fence_id: number;
+  monitor_target?: string | null;
+  trigger_condition?: string | null;
+  time_range?: string | null;
+  dwell_time?: number | null;
+}
+
+export interface FenceRuleOut extends FenceRuleIn {
+  fence_name?: string | null;
+}
+
 export interface WorkPlan {
   id: number;
   project_id: number | null;
@@ -459,6 +504,9 @@ export interface WorkPlan {
   machines?: BoundMachine[];
   devices?: BoundDevice[];
   fences?: BoundFence[];
+  person_bindings?: PersonBindingOut[];
+  machine_bindings?: MachineBindingOut[];
+  fence_rules?: FenceRuleOut[];
 }
 
 export interface WorkPlanPage {
@@ -480,6 +528,9 @@ export interface WorkPlanCreate {
   machine_ids?: number[];
   device_bindings?: DeviceBinding[];
   fence_ids?: number[];
+  person_bindings?: PersonBindingIn[];
+  machine_bindings?: MachineBindingIn[];
+  fence_rules?: FenceRuleIn[];
 }
 
 export interface WorkPlanUpdate {
@@ -496,6 +547,9 @@ export interface WorkPlanUpdate {
   machine_ids?: number[];
   device_bindings?: DeviceBinding[];
   fence_ids?: number[];
+  person_bindings?: PersonBindingIn[];
+  machine_bindings?: MachineBindingIn[];
+  fence_rules?: FenceRuleIn[];
 }
 
 // ===================== 巡检打卡（P3·⑨） =====================

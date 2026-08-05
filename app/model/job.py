@@ -7,7 +7,7 @@ v2 增强：新增 plan_start/plan_end 结构化时间窗（用于规则引擎�
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.model.base import Base, CreatorMixin, SoftDeleteMixin, TimestampMixin
@@ -56,6 +56,8 @@ class WorkPlan(Base, TimestampMixin, CreatorMixin, SoftDeleteMixin):
 
 
 class WorkPlanPerson(Base):
+    """计划绑定人员：原型「第二步·人员及设备」一行 = 人员 + 其定位设备。"""
+
     __tablename__ = "work_plan_person"
 
     plan_id: Mapped[int] = mapped_column(
@@ -64,9 +66,15 @@ class WorkPlanPerson(Base):
     person_id: Mapped[int] = mapped_column(
         ForeignKey("person.id", ondelete="CASCADE"), primary_key=True
     )
+    # 该人员在本计划中佩戴的定位设备（原型：定位设备名 + 设备编号）
+    device_no: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="人员定位设备编号"
+    )
 
 
 class WorkPlanMachine(Base):
+    """计划绑定大机：原型「第二步·大型机械」一行 = 大机 + 防护/驾驶人员 + 三类车载设备。"""
+
     __tablename__ = "work_plan_machine"
 
     plan_id: Mapped[int] = mapped_column(
@@ -74,6 +82,21 @@ class WorkPlanMachine(Base):
     )
     machine_id: Mapped[int] = mapped_column(
         ForeignKey("machine.id", ondelete="CASCADE"), primary_key=True
+    )
+    guard_person_id: Mapped[int | None] = mapped_column(
+        ForeignKey("person.id", ondelete="SET NULL"), nullable=True, comment="防护人员"
+    )
+    driver_person_id: Mapped[int | None] = mapped_column(
+        ForeignKey("person.id", ondelete="SET NULL"), nullable=True, comment="驾驶人员"
+    )
+    arm_device_no: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="大机前臂定位设备编号"
+    )
+    body_device_no: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="大机机身定位设备编号"
+    )
+    voice_device_no: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="车载语音设备编号"
     )
 
 
@@ -89,6 +112,13 @@ class WorkPlanDevice(Base):
 
 
 class WorkPlanFence(Base):
+    """计划绑定围栏：原型「第三步」一行 = 围栏 + 该围栏独立的告警规则。
+
+    规则四要素（监控目标/触发条件/时间范围/停留时间）逐围栏配置；
+    ``WorkPlan.rule_json`` 仍保留为「计划级聚合规则」，供规则引擎 v2 判定，
+    由首条围栏规则派生，保证既有判定链路不受影响。
+    """
+
     __tablename__ = "work_plan_fence"
 
     plan_id: Mapped[int] = mapped_column(
@@ -96,4 +126,16 @@ class WorkPlanFence(Base):
     )
     fence_id: Mapped[int] = mapped_column(
         ForeignKey("electronic_fence.id", ondelete="CASCADE"), primary_key=True
+    )
+    monitor_target: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, comment="监控目标(计划内/外 人员/大机)"
+    )
+    trigger_condition: Mapped[str | None] = mapped_column(
+        String(16), nullable=True, comment="触发条件(进入/离开)"
+    )
+    time_range: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, comment="生效时间范围(HH:mm:ss~HH:mm:ss)"
+    )
+    dwell_time: Mapped[int | None] = mapped_column(
+        Integer, nullable=True, default=0, comment="停留时间(秒)"
     )

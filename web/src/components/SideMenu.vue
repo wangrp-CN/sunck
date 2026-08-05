@@ -95,11 +95,16 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
       </el-menu-item>
     </el-sub-menu>
 
-    <!-- ③ 作业管理 -->
-    <el-menu-item index="/jobs">
-      <el-icon><Notebook /></el-icon>
-      <span>作业管理</span>
-    </el-menu-item>
+    <!-- ③ 作业计划管理 -->
+    <el-sub-menu index="/job-group">
+      <template #title>
+        <el-icon><Notebook /></el-icon>
+        <span>作业计划管理</span>
+      </template>
+      <el-menu-item index="/jobs">
+        <span>作业列表</span>
+      </el-menu-item>
+    </el-sub-menu>
 
     <!-- ④ 电子围栏管理 -->
     <el-menu-item index="/fences">
