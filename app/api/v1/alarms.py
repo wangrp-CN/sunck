@@ -259,10 +259,14 @@ def list_alarms(
     alarm_type: str | None = None,
     handle_status: str | None = None,
     alarm_status: str | None = None,
+    device_no: str | None = None,
     page: int = 1,
     size: int = 20,
 ) -> ApiResponse:
-    """按条件分页查询告警（page/size），返回真实总数，施加部门数据隔离。"""
+    """按条件分页查询告警（page/size），返回真实总数，施加部门数据隔离。
+
+    `device_no` 支持按设备编号精确过滤，供「列车接近记录」等场景带条件跳转。
+    """
     total = svc_count_alarms(
         db,
         scope,
@@ -270,6 +274,7 @@ def list_alarms(
         alarm_type=alarm_type,
         handle_status=handle_status,
         alarm_status=alarm_status,
+        device_no=device_no,
     )
     items = svc_list_alarms(
         db,
@@ -278,6 +283,7 @@ def list_alarms(
         alarm_type=alarm_type,
         handle_status=handle_status,
         alarm_status=alarm_status,
+        device_no=device_no,
         page=page,
         size=size,
     )

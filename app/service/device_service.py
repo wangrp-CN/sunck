@@ -64,6 +64,8 @@ def list_devices(db, project_id: int | None = None, device_type: str | None = No
                     "longitude": getattr(r, "longitude", None),
                     "latitude": getattr(r, "latitude", None),
                     "status": r.status,
+                    # 设备方位：仅列车接近告警设备（train_approach）有该字段，其余类型为 None
+                    "direction": getattr(r, "direction", None),
                 }
             )
     return out

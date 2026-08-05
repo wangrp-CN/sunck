@@ -82,6 +82,18 @@ vi.mock("@/api/project", () => ({ fetchProjects: vi.fn() }));
 vi.mock("@/api/person", () => ({ fetchPersons: vi.fn() }));
 vi.mock("@/api/media", () => ({ putAlarmMedia: vi.fn() }));
 vi.mock("@/api/alarm", () => ({
+  ALARM_TYPE_LABELS: {
+    fence_intrusion: "围栏侵入",
+    distance_too_close: "间距过近",
+    device_alarm: "设备告警",
+    train_approach: "列车接近预警",
+    trend_anomaly: "趋势异常",
+    predictive_alert: "预测预警",
+    preventive_alert: "预防式预警",
+  },
+  alarmTypeLabel: (t: string | null | undefined) =>
+    t ? (t as string) : "—",
+  batchHandleAlarms: vi.fn(),
   convertAlarmToHazard: vi.fn(),
   exportAlarmReport: vi.fn(),
   fetchAlarmPeriod: vi.fn(),
@@ -89,6 +101,7 @@ vi.mock("@/api/alarm", () => ({
   fetchAlarmTrend: vi.fn(),
   fetchSnapshotPreview: vi.fn(),
   getAlarmConfig: vi.fn(),
+  getAlarmDispositions: vi.fn(),
   handleAlarm: vi.fn(),
   updateAlarmConfig: vi.fn(),
 }));

@@ -294,7 +294,7 @@ describe("views/JobView.vue", () => {
     await vm.submitWizard();
     await flushPromises();
     expect(vi.mocked(createJob)).toHaveBeenCalledTimes(1);
-    const payload = vi.mocked(createJob).mock.calls[0][0] as Record<string, unknown>;
+    const payload = vi.mocked(createJob).mock.calls[0][0] as unknown as Record<string, unknown>;
     expect(payload.name).toBe("夜间道砟更换");
     expect(payload.is_start).toBe(true);
     expect(payload.person_bindings).toEqual([{ person_id: 11, device_no: "L-01" }]);

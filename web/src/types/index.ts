@@ -1045,6 +1045,8 @@ export interface ProjectDetailDevice {
   lat: number;
   status: string;
   live: boolean;
+  /** 设备方位：仅列车接近告警设备有值 */
+  direction: string | null;
   report_time: string | null;
 }
 

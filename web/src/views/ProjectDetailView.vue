@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage } from "element-plus";
-import { ArrowLeft, ArrowRight, Close, Position } from "@element-plus/icons-vue";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { ArrowLeft, ArrowRight, Bell, Close, Position } from "@element-plus/icons-vue";
 import MapPanel from "@/components/MapPanel.vue";
 import { getProjectDetail } from "@/api/dashboard";
 import { fetchProjects } from "@/api/project";
-import { handleAlarm } from "@/api/alarm";
+import { alarmTypeLabel, handleAlarm } from "@/api/alarm";
+import { useAlarmSound } from "@/composables/useAlarmSound";
 import type {
   ProjectDetailData,
   ProjectDetailAlarm,
@@ -53,6 +54,19 @@ const entityOptions = computed(() => {
   }
 });
 
+// ---- 项目信息栏（原型左上角五字段，过长省略 + hover 全文）----
+const infoItems = computed(() => {
+  const p = detail.value?.project;
+  if (!p) return [];
+  return [
+    { label: "项目简称", value: p.short_name || p.name || "—" },
+    { label: "开工日期", value: fmtDate(p.start_date) },
+    { label: "完工日期", value: fmtDate(p.end_date) },
+    { label: "区间", value: p.section || "—" },
+    { label: "里程", value: p.mileage || "—" },
+  ];
+});
+
 // ---- 详情弹窗 ----
 type PopupType = "person" | "machine" | "device" | "fence" | null;
 const popup = ref<{
@@ -63,6 +77,18 @@ const popup = ref<{
 // ---- 告警面板 ----
 const alarmPanelCollapsed = ref(false);
 const alarmLoading = ref(false);
+/** 待处理告警（后端已按告警时间倒序返回） */
+const alarmList = computed<ProjectDetailAlarm[]>(() => detail.value?.alarms ?? []);
+/** 原型：没有报警信息则不显示当前列表 */
+const hasAlarms = computed(() => alarmList.value.length > 0);
+/** 已知告警 id，用于识别轮询中新到达的告警 */
+const knownAlarmIds = new Set<number>();
+/** 本轮新到达的告警 id（用于高亮） */
+const newAlarmIds = ref<Set<number>>(new Set());
+/** 是否首次加载（首次不触发声音，避免进页面就响） */
+let firstLoad = true;
+/** 报警声音（新告警到达时持续 15s） */
+const { playing: soundPlaying, start: startAlarmSound, stop: stopAlarmSound } = useAlarmSound();
 
 // ---- 地图 ----
 const mapRef = ref<InstanceType<typeof MapPanel> | null>(null);
@@ -96,11 +122,42 @@ async function load() {
       name: f.name,
       geometry_wkt: f.geometry_wkt,
     }));
+
+    detectNewAlarms(data.alarms || []);
   } catch {
     // 拦截器已提示
   } finally {
     loading.value = false;
   }
+}
+
+/**
+ * 识别本轮新到达的待处理告警。
+ * 原型要求：每当系统收到一条新的报警，要弹出当前列表，并且有持续 15s 的报警声音。
+ * 首次加载只建立基线，不触发声音，避免进入页面即响铃。
+ */
+function detectNewAlarms(alarms: ProjectDetailAlarm[]) {
+  const incoming = alarms.map((a) => a.id);
+  if (firstLoad) {
+    incoming.forEach((id) => knownAlarmIds.add(id));
+    firstLoad = false;
+    return;
+  }
+  const fresh = incoming.filter((id) => !knownAlarmIds.has(id));
+  // 已消失的告警（被他人处理）从基线移除，避免 Set 无限增长
+  knownAlarmIds.forEach((id) => {
+    if (!incoming.includes(id)) knownAlarmIds.delete(id);
+  });
+  if (!fresh.length) return;
+  fresh.forEach((id) => knownAlarmIds.add(id));
+  newAlarmIds.value = new Set(fresh);
+  // 弹出（展开）列表 + 响铃
+  alarmPanelCollapsed.value = false;
+  startAlarmSound();
+  // 高亮 15s 后淡出，与声音时长一致
+  window.setTimeout(() => {
+    newAlarmIds.value = new Set();
+  }, 15000);
 }
 
 async function loadProjectOptions() {
@@ -172,6 +229,7 @@ function onSearch() {
             device_no: dv.device_no,
             device_type: dv.device_type,
             device_type_label: dv.device_type_label,
+            direction: dv.direction,
             lng: dv.lng,
             lat: dv.lat,
           },
@@ -231,6 +289,7 @@ function onDeviceClick(payload: { device_no: string; name: string; device_type: 
         device_no: dv.device_no,
         device_type: dv.device_type,
         device_type_label: dv.device_type_label,
+        direction: dv.direction,
         lng: dv.lng,
         lat: dv.lat,
       },
@@ -246,6 +305,7 @@ function onDeviceClick(payload: { device_no: string; name: string; device_type: 
       device_no: dv.device_no,
       device_type: dv.device_type,
       device_type_label: dv.device_type_label,
+      direction: dv.direction,
       lng: dv.lng,
       lat: dv.lat,
     },
@@ -267,16 +327,39 @@ function onFenceClick(payload: { id: number; name: string }) {
 }
 
 // ============ 告警处置 ============
-async function handleAlarmAction(alarm: ProjectDetailAlarm, action: "处理" | "忽略") {
-  const status = action === "处理" ? "已处理" : "已忽略";
+/** 「处理」：按原型跳转告警详情页（告警列表带定位参数），而非就地置为已处理 */
+function gotoAlarmDetail(alarm: ProjectDetailAlarm) {
+  stopAlarmSound();
+  router.push({
+    name: "alarms",
+    query: {
+      alarm_id: String(alarm.id),
+      project_id: String(currentProjectId.value),
+      alarm_type: alarm.alarm_type || undefined,
+    },
+  });
+}
+
+/** 「忽略」：二次确认后置为已忽略，成功即从待处理列表移除 */
+async function ignoreAlarm(alarm: ProjectDetailAlarm) {
+  try {
+    await ElMessageBox.confirm("您确认忽略当前告警？", "提示", {
+      confirmButtonText: "确定",
+      cancelButtonText: "取消",
+      type: "warning",
+    });
+  } catch {
+    return; // 用户取消
+  }
   alarmLoading.value = true;
   try {
-    await handleAlarm(alarm.id, { handle_status: status });
-    ElMessage.success(`告警已${action}`);
-    // 更新本地状态
+    await handleAlarm(alarm.id, { handle_status: "已忽略" });
+    ElMessage.success("告警已忽略");
+    // 列表只展示待处理告警，忽略后立即本地移除，避免等待下一轮轮询
     if (detail.value) {
-      const a = detail.value.alarms.find((x) => x.id === alarm.id);
-      if (a) a.handle_status = status;
+      detail.value.alarms = detail.value.alarms.filter((x) => x.id !== alarm.id);
+      knownAlarmIds.delete(alarm.id);
+      if (!detail.value.alarms.length) stopAlarmSound();
     }
   } catch {
     // 拦截器已提示
@@ -300,8 +383,20 @@ function viewTrack(deviceNo: string | undefined) {
 }
 
 // ============ 列车接近记录 ============
+/**
+ * 原型：点击进入列车接近报警报表，并将当前搜索条件带入，查看该设备的列车接近记录。
+ */
 function viewTrainRecords(deviceNo: string) {
-  ElMessage.info(`设备 ${deviceNo} 的列车接近记录功能开发中`);
+  if (!deviceNo) return;
+  stopAlarmSound();
+  router.push({
+    name: "alarms",
+    query: {
+      device_no: deviceNo,
+      alarm_type: "train_approach",
+      project_id: String(currentProjectId.value),
+    },
+  });
 }
 
 // ============ 项目切换 ============
@@ -354,6 +449,11 @@ watch(
       currentProjectId.value = Number(newId);
       popup.value = null;
       searchEntityId.value = null;
+      // 切换项目时重置告警基线与声音，避免把新项目的存量告警误判为「新到达」
+      knownAlarmIds.clear();
+      newAlarmIds.value = new Set();
+      firstLoad = true;
+      stopAlarmSound();
       load();
     }
   },
@@ -397,27 +497,18 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- 项目信息栏 -->
+    <!-- 项目信息栏：字段过长以省略号截断，鼠标移入展示完整内容（原型要求） -->
     <div class="info-bar" v-if="detail">
-      <span class="info-item">
-        <span class="info-label">项目简称：</span>
-        <span class="info-value">{{ detail.project.short_name || detail.project.name }}</span>
-      </span>
-      <span class="info-item">
-        <span class="info-label">开工日期：</span>
-        <span class="info-value">{{ fmtDate(detail.project.start_date) }}</span>
-      </span>
-      <span class="info-item">
-        <span class="info-label">完工日期：</span>
-        <span class="info-value">{{ fmtDate(detail.project.end_date) }}</span>
-      </span>
-      <span class="info-item">
-        <span class="info-label">区间：</span>
-        <span class="info-value">{{ detail.project.section || "—" }}</span>
-      </span>
-      <span class="info-item">
-        <span class="info-label">里程：</span>
-        <span class="info-value">{{ detail.project.mileage || "—" }}</span>
+      <span v-for="item in infoItems" :key="item.label" class="info-item">
+        <span class="info-label">{{ item.label }}：</span>
+        <el-tooltip
+          :content="item.value"
+          placement="bottom-start"
+          :show-after="200"
+          effect="dark"
+        >
+          <span class="info-value">{{ item.value }}</span>
+        </el-tooltip>
       </span>
     </div>
 
@@ -521,7 +612,12 @@ onBeforeUnmount(() => {
                 <div class="popup-row"><span class="pr-label">设备编号：</span>{{ popup.data.device_no }}</div>
                 <div class="popup-row"><span class="pr-label">设备类型：</span>{{ popup.data.device_type_label }}</div>
                 <div class="popup-row"><span class="pr-label">坐标：</span>{{ fmtCoord(popup.data.lng, popup.data.lat) }}</div>
-                <div class="popup-row"><span class="pr-label">设备方位：</span>{{ popup.data.device_type === 'train_approach' ? '上行' : '—' }}</div>
+                <div
+                  v-if="popup.data.device_type === 'train_approach'"
+                  class="popup-row"
+                >
+                  <span class="pr-label">设备方位：</span>{{ popup.data.direction || "—" }}
+                </div>
                 <div class="popup-actions">
                   <el-button
                     v-if="popup.data.device_type === 'train_approach'"
@@ -554,17 +650,32 @@ onBeforeUnmount(() => {
         </transition>
       </div>
 
-      <!-- 告警信息面板（右侧可折叠） -->
+      <!-- 告警信息面板（右侧可折叠）：无待处理告警时整体不显示（原型要求） -->
       <transition name="panel-slide">
-        <div v-show="!alarmPanelCollapsed" class="alarm-panel">
+        <div v-if="hasAlarms" v-show="!alarmPanelCollapsed" class="alarm-panel">
           <div class="alarm-header">
-            <span class="alarm-title">告警信息</span>
-            <el-button
-              :icon="ArrowRight"
-              size="small"
-              circle
-              @click="alarmPanelCollapsed = true"
-            />
+            <span class="alarm-title">
+              告警信息
+              <span class="alarm-count">{{ alarmList.length }}</span>
+            </span>
+            <div class="alarm-header-actions">
+              <el-button
+                v-if="soundPlaying"
+                size="small"
+                type="danger"
+                link
+                :icon="Bell"
+                @click="stopAlarmSound"
+              >
+                静音
+              </el-button>
+              <el-button
+                :icon="ArrowRight"
+                size="small"
+                circle
+                @click="alarmPanelCollapsed = true"
+              />
+            </div>
           </div>
           <div class="alarm-table-wrap" v-loading="alarmLoading">
             <table class="alarm-table">
@@ -577,23 +688,21 @@ onBeforeUnmount(() => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="a in detail?.alarms || []" :key="a.id" :class="{ handled: a.handle_status !== '待处理' }">
+                <tr v-for="a in alarmList" :key="a.id" :class="{ 'row-new': newAlarmIds.has(a.id) }">
                   <td class="col-type">
                     <span class="alarm-level-dot" :style="{ background: alarmLevelColor(a.alarm_level) }"></span>
-                    {{ a.alarm_type || "—" }}
+                    {{ alarmTypeLabel(a.alarm_type) }}
                   </td>
-                  <td class="col-info">{{ a.alarm_info || "—" }}</td>
+                  <td class="col-info">
+                    <el-tooltip :content="a.alarm_info || '—'" placement="left" :show-after="300">
+                      <span class="info-ellipsis">{{ a.alarm_info || "—" }}</span>
+                    </el-tooltip>
+                  </td>
                   <td class="col-time">{{ fmtDateTime(a.alarm_time) }}</td>
                   <td class="col-action">
-                    <template v-if="a.handle_status === '待处理'">
-                      <el-button size="small" type="primary" link @click="handleAlarmAction(a, '处理')">处理</el-button>
-                      <el-button size="small" type="info" link @click="handleAlarmAction(a, '忽略')">忽略</el-button>
-                    </template>
-                    <span v-else class="handled-tag">{{ a.handle_status }}</span>
+                    <el-button size="small" type="primary" link @click="gotoAlarmDetail(a)">处理</el-button>
+                    <el-button size="small" type="info" link @click="ignoreAlarm(a)">忽略</el-button>
                   </td>
-                </tr>
-                <tr v-if="!detail?.alarms?.length">
-                  <td colspan="4" class="empty-row">暂无告警信息</td>
                 </tr>
               </tbody>
             </table>
@@ -601,12 +710,18 @@ onBeforeUnmount(() => {
         </div>
       </transition>
 
-      <!-- 展开按钮（折叠时显示） -->
+      <!-- 展开按钮（折叠时显示；无待处理告警时同样不显示） -->
       <transition name="panel-slide">
-        <div v-show="alarmPanelCollapsed" class="alarm-panel-collapsed" @click="alarmPanelCollapsed = false">
+        <div
+          v-if="hasAlarms"
+          v-show="alarmPanelCollapsed"
+          class="alarm-panel-collapsed"
+          :class="{ blinking: soundPlaying }"
+          @click="alarmPanelCollapsed = false"
+        >
           <el-icon :size="20"><ArrowLeft /></el-icon>
           <span class="collapsed-text">告警信息</span>
-          <span class="collapsed-count" v-if="detail?.alarms?.length">{{ detail.alarms.length }}</span>
+          <span class="collapsed-count">{{ alarmList.length }}</span>
         </div>
       </transition>
     </div>
@@ -648,15 +763,28 @@ onBeforeUnmount(() => {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 .info-item {
+  display: flex;
+  align-items: center;
   font-size: 14px;
-  white-space: nowrap;
+  min-width: 0;
+  /* 均分可用宽度，任一字段过长时自身截断而不挤压其它字段 */
+  flex: 1 1 180px;
+  max-width: 320px;
 }
 .info-label {
   color: #909399;
+  white-space: nowrap;
+  flex: none;
 }
 .info-value {
   color: #303133;
   font-weight: 500;
+  /* 超过一行用省略号，配合 el-tooltip 悬浮展示全文 */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  cursor: default;
 }
 
 /* 搜索区域 */
@@ -760,9 +888,30 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid #ebeef5;
 }
 .alarm-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 14px;
   font-weight: 600;
   color: #303133;
+}
+.alarm-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: #f56c6c;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.alarm-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .alarm-table-wrap {
   flex: 1;
@@ -798,15 +947,30 @@ onBeforeUnmount(() => {
 .alarm-table tbody tr:hover {
   background: #f5f7fa;
 }
-.alarm-table tr.handled {
-  opacity: 0.6;
+/* 新到达告警：短暂高亮，与 15s 声音提示同步 */
+.alarm-table tr.row-new {
+  animation: row-flash 1.2s ease-in-out infinite;
+}
+@keyframes row-flash {
+  0%,
+  100% {
+    background: #fef0f0;
+  }
+  50% {
+    background: #fde2e2;
+  }
 }
 .col-type {
   white-space: nowrap;
 }
 .col-info {
   max-width: 140px;
-  word-break: break-all;
+}
+.info-ellipsis {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .col-time {
   white-space: nowrap;
@@ -828,11 +992,6 @@ onBeforeUnmount(() => {
   font-size: 12px;
   color: #909399;
 }
-.empty-row {
-  text-align: center;
-  color: #c0c4cc;
-  padding: 20px;
-}
 
 /* 折叠态 */
 .alarm-panel-collapsed {
@@ -850,6 +1009,19 @@ onBeforeUnmount(() => {
 }
 .alarm-panel-collapsed:hover {
   background: #f5f7fa;
+}
+/* 有新告警且正在响铃时，折叠条闪烁提示 */
+.alarm-panel-collapsed.blinking {
+  animation: collapsed-flash 1s ease-in-out infinite;
+}
+@keyframes collapsed-flash {
+  0%,
+  100% {
+    background: #fff;
+  }
+  50% {
+    background: #fde2e2;
+  }
 }
 .collapsed-text {
   writing-mode: vertical-rl;

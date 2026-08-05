@@ -722,7 +722,8 @@ def project_detail(
 
     按当前用户部门数据范围隔离；项目不在范围内返回 404。
     设备数据合并实时位置（gcj02）与配置坐标（wgs84 回退），供前端地图直接打点。
-    告警仅返回该项目的最近 50 条（按时间倒序），与原型「仅显示当前项目告警」一致。
+    告警仅返回该项目「待处理」的最近 50 条（按告警时间倒序），
+    与原型「列表仅展示当前项目待处理的告警信息」一致。
     """
     _cached = get_cached_json(current_user.id, request.url.path, request.url.query)
     if _cached is not None:
@@ -757,6 +758,7 @@ def project_detail(
                     "lat": glat,
                     "status": live.status,
                     "live": True,
+                    "direction": d.get("direction"),
                     "report_time": live.report_time.isoformat() if live.report_time else None,
                 }
             )
@@ -772,6 +774,7 @@ def project_detail(
                     "lat": glat,
                     "status": d["status"],
                     "live": False,
+                    "direction": d.get("direction"),
                     "report_time": None,
                 }
             )
@@ -869,10 +872,11 @@ def project_detail(
             }
         )
 
-    # --- 最近告警（仅当前项目，50 条）---
+    # --- 待处理告警（仅当前项目，按告警时间倒序，50 条）---
+    # 原型要求：右上角列表「仅展示当前项目待处理的告警信息」，处理/忽略后即从列表消失。
     alarm_rows = db.scalars(
         select(Alarm)
-        .where(Alarm.project_id == project_id)
+        .where(Alarm.project_id == project_id, Alarm.handle_status == "待处理")
         .order_by(Alarm.alarm_time.desc().nullslast())
         .limit(50)
     ).all()

@@ -8,6 +8,23 @@ import type {
   AlarmHandleRequest,
 } from "@/types";
 
+// 告警类型 → 中文标签（与后端 constants.ALARM_TYPE_* 对齐，多视图共用）
+export const ALARM_TYPE_LABELS: Record<string, string> = {
+  fence_intrusion: "围栏侵入",
+  distance_too_close: "间距过近",
+  device_alarm: "设备告警",
+  train_approach: "列车接近预警",
+  trend_anomaly: "趋势异常",
+  predictive_alert: "预测预警",
+  preventive_alert: "预防式预警",
+};
+
+/** 告警类型标签，未知类型原样回显 */
+export function alarmTypeLabel(t: string | null | undefined): string {
+  if (!t) return "—";
+  return ALARM_TYPE_LABELS[t] || t;
+}
+
 // 处置告警（处理/忽略/确认/已消警）
 export function handleAlarm(
   id: number,

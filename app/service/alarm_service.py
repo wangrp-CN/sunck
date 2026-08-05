@@ -317,6 +317,7 @@ def _alarm_list_stmt(
     alarm_type: str | None = None,
     handle_status: str | None = None,
     alarm_status: str | None = None,
+    device_no: str | None = None,
 ):
     """构建告警列表/计数共用的过滤后查询（含部门数据隔离），供 list/count 复用。"""
     stmt = select(Alarm)
@@ -329,6 +330,8 @@ def _alarm_list_stmt(
         stmt = stmt.where(Alarm.handle_status == handle_status)
     if alarm_status is not None:
         stmt = stmt.where(Alarm.alarm_status == alarm_status)
+    if device_no:
+        stmt = stmt.where(Alarm.device_no == device_no)
     return stmt
 
 
@@ -493,6 +496,7 @@ def count_alarms(
     alarm_type: str | None = None,
     handle_status: str | None = None,
     alarm_status: str | None = None,
+    device_no: str | None = None,
 ) -> int:
     """在同一过滤 + 部门隔离下返回告警**真实总数**（供分页 total）。"""
     stmt = _alarm_list_stmt(
@@ -501,6 +505,7 @@ def count_alarms(
         alarm_type=alarm_type,
         handle_status=handle_status,
         alarm_status=alarm_status,
+        device_no=device_no,
     )
     return db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
 
@@ -512,6 +517,7 @@ def list_alarms(
     alarm_type: str | None = None,
     handle_status: str | None = None,
     alarm_status: str | None = None,
+    device_no: str | None = None,
     page: int = 1,
     size: int = 20,
 ) -> list[dict]:
@@ -524,6 +530,7 @@ def list_alarms(
         alarm_type=alarm_type,
         handle_status=handle_status,
         alarm_status=alarm_status,
+        device_no=device_no,
     )
     stmt = (
         stmt.order_by(Alarm.alarm_time.desc().nullslast(), Alarm.id.desc())
