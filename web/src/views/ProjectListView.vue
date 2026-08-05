@@ -33,7 +33,7 @@ const loading = ref(false);
 const tableData = ref<Project[]>([]);
 const total = ref(0);
 const page = ref(1);
-const size = ref(20);
+const size = ref(10);
 
 // 部门字典：id -> name（列表单元格展示归属部门名称）
 const deptMap = ref<Map<number, string>>(new Map());

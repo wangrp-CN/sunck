@@ -47,7 +47,7 @@ def list_projects(
     end_date_to: date | None = None,
     status: str | None = None,
     page: int = 1,
-    size: int = 20,
+    size: int = 10,
 ) -> ApiResponse:
     """分页查询项目。
 
