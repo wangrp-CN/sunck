@@ -117,6 +117,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "对比大屏" },
       },
       {
+        path: "projects/:id/detail",
+        name: "project-detail",
+        component: () => import("@/views/ProjectDetailView.vue"),
+        meta: { title: "项目详情" },
+      },
+      {
         path: "intelligence/correlation",
         name: "intelligence-correlation",
         component: () => import("@/views/AlarmCorrelationView.vue"),
@@ -229,6 +235,18 @@ const routes: RouteRecordRaw[] = [
         name: "system-departments",
         component: () => import("@/views/SystemDeptView.vue"),
         meta: { title: "部门管理" },
+      },
+      {
+        path: "system/menus",
+        name: "system-menus",
+        component: () => import("@/views/SystemMenuView.vue"),
+        meta: { title: "菜单管理" },
+      },
+      {
+        path: "system/logs",
+        name: "system-logs",
+        component: () => import("@/views/SystemLogView.vue"),
+        meta: { title: "日志管理" },
       },
     ],
   },

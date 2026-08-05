@@ -1034,3 +1034,77 @@ export interface RecentAlarm {
   alarm_time: string | null;
   project_id: number | null;
 }
+
+// ===================== 项目详情大屏 =====================
+export interface ProjectDetailDevice {
+  device_no: string;
+  name: string;
+  device_type: string;
+  device_type_label: string;
+  lng: number;
+  lat: number;
+  status: string;
+  live: boolean;
+  report_time: string | null;
+}
+
+export interface ProjectDetailFence {
+  id: number;
+  name: string;
+  fence_type: string | null;
+  geometry_wkt: string | null;
+  enabled: boolean;
+}
+
+export interface ProjectDetailPerson {
+  id: number;
+  person_no: string;
+  name: string;
+  person_type: string | null;
+  device_no: string | null;
+}
+
+export interface ProjectDetailMachine {
+  id: number;
+  machine_no: string;
+  machine_type: string | null;
+  spec_model: string | null;
+  description: string | null;
+  guard_person_name: string | null;
+  lng: number | null;
+  lat: number | null;
+  track_device_no: string | null;
+}
+
+export interface ProjectDetailAlarm {
+  id: number;
+  alarm_type: string | null;
+  device_type: string | null;
+  device_name: string | null;
+  device_no: string | null;
+  alarm_level: string | null;
+  alarm_info: string | null;
+  alarm_status: string | null;
+  handle_status: string | null;
+  fence_name: string | null;
+  alarm_time: string | null;
+}
+
+export interface ProjectDetailData {
+  project: {
+    id: number;
+    name: string;
+    short_name: string | null;
+    start_date: string | null;
+    end_date: string | null;
+    section: string | null;
+    mileage: string | null;
+    coordinate: string | null;
+    status: string;
+  };
+  devices: ProjectDetailDevice[];
+  fences: ProjectDetailFence[];
+  persons: ProjectDetailPerson[];
+  machines: ProjectDetailMachine[];
+  alarms: ProjectDetailAlarm[];
+}

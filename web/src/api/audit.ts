@@ -55,3 +55,14 @@ export function fetchAuditMeta(): Promise<AuditMeta> {
     method: "GET",
   });
 }
+
+/** 导出审计日志为 CSV 文件 */
+export function exportAuditLogs(params: Omit<AuditListParams, "page" | "size"> = {}): void {
+  const query = new URLSearchParams();
+  if (params.module) query.set("module", params.module);
+  if (params.action) query.set("action", params.action);
+  if (params.username) query.set("username", params.username);
+  if (params.start) query.set("start", params.start);
+  if (params.end) query.set("end", params.end);
+  window.open(`/api/v1/audit-logs/export?${query.toString()}`, "_blank");
+}

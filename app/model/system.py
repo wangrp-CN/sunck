@@ -234,6 +234,19 @@ class Permission(Base, TimestampMixin, SoftDeleteMixin):
     icon: Mapped[str | None] = mapped_column(String(64), nullable=True, comment="图标")
     sort: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="排序")
     status: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, comment="是否启用")
+    redirect: Mapped[str | None] = mapped_column(String(200), nullable=True, comment="默认跳转地址")
+    is_hidden: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, comment="是否隐藏路由"
+    )
+    is_cache: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, comment="是否缓存路由(KeepAlive)"
+    )
+    is_affix: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, comment="是否聚合路由"
+    )
+    is_external: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, comment="是否外链(外部打开)"
+    )
     remark: Mapped[str | None] = mapped_column(String(255), nullable=True, comment="备注")
 
     roles: Mapped[list["Role"]] = relationship(

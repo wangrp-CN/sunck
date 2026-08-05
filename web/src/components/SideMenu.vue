@@ -244,6 +244,14 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
         <el-icon><OfficeBuilding /></el-icon>
         <span>部门管理</span>
       </el-menu-item>
+      <el-menu-item index="/system/menus">
+        <el-icon><Switch /></el-icon>
+        <span>菜单管理</span>
+      </el-menu-item>
+      <el-menu-item index="/system/logs">
+        <el-icon><Files /></el-icon>
+        <span>日志管理</span>
+      </el-menu-item>
       <el-menu-item index="/dicts">
         <el-icon><Collection /></el-icon>
         <span>数据字典</span>

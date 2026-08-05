@@ -25,6 +25,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: "ready"): void;
   (e: "fence-click", payload: { id: number; name: string }): void;
+  (e: "device-click", payload: { device_no: string; name: string; device_type: string }): void;
   // 围栏绘制完成：返回 GCJ-02 顶点序列（至少 3 点），由父组件转换为 WGS-84 WKT 落库
   (e: "fence-draw", payload: { points: [number, number][] }): void;
 }>();
@@ -163,6 +164,9 @@ function renderDevices() {
         direction: "top",
         offset: new AMap.Pixel(0, -8),
       },
+    });
+    marker.on("click", () => {
+      emit("device-click", { device_no: d.device_no, name: d.name, device_type: d.device_type });
     });
     map.add(marker);
     markerMap.set(d.device_no, marker);
@@ -987,7 +991,8 @@ defineExpose({
         </g>
 
         <!-- 设备点（类型图标 + 实时脉冲环 + 名称底纹） -->
-        <g v-for="d in deviceMarks" :key="d.device_no" class="dev-g" :class="{ live: d.live }">
+        <g v-for="d in deviceMarks" :key="d.device_no" class="dev-g" :class="{ live: d.live }"
+          @click="d.pr ? emit('device-click', { device_no: d.device_no, name: d.name, device_type: d.device_type }) : undefined">
           <template v-if="d.pr">
             <circle v-if="d.live" :cx="d.pr.x" :cy="d.pr.y" r="16" fill="none" stroke="#52c41a"
               stroke-width="3" class="dev-halo" />

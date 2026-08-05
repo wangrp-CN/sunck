@@ -26,10 +26,12 @@ from app.api.v1 import (
     intelligence,
     jobs,
     knowledge,
+    logs,
     machines,
     map_assets,
     map_drawings,
     media,
+    menus,
     metrics,
     notifications,
     persons,
@@ -72,6 +74,8 @@ api_router.include_router(videos.router, prefix="/v1/videos", tags=["视频AI"])
 api_router.include_router(metrics.router, prefix="/v1/metrics", tags=["指标快照"])
 api_router.include_router(commands.router, prefix="/v1/commands", tags=["指令下发"])
 api_router.include_router(forecasts.router, prefix="/v1/forecasts", tags=["风险预测"])
+api_router.include_router(menus.router, prefix="/v1/menus", tags=["菜单管理"])
+api_router.include_router(logs.router, prefix="/v1/logs", tags=["系统日志"])
 api_router.include_router(intelligence.router, prefix="", tags=["智能核心"])
 api_router.include_router(subscriptions.router, prefix="", tags=["报告订阅"])
 api_router.include_router(reports.router, prefix="/v1", tags=["报表导出"])

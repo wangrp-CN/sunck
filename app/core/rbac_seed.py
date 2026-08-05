@@ -46,6 +46,11 @@ _CHILDREN = {
         "map:add",
         "map:edit",
         "map:delete",
+        "menu:list",
+        "menu:add",
+        "menu:edit",
+        "menu:delete",
+        "system_log:list",
     ],
     "project": ["project:list", "project:add", "project:edit", "project:delete"],
     "device": [
