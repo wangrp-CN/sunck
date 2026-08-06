@@ -42,6 +42,7 @@ from app.service.alarm_service import (
     query_alarms_for_report,
     situation_summary,
     summarize_preventive,
+    to_alarm_out,
     update_alarm_media,
 )
 from app.service.alarm_service import (
@@ -991,3 +992,29 @@ def alarm_snapshot_preview(
     )
     payload = build_snapshot_payload(gran, period_keys, period_rows, summary, meta, project_names)
     return ApiResponse(data=payload)
+
+
+# ---------------------------------------------------------------------------
+# 单条告警详情（大屏·告警详情页）
+# 注意：路径参数 "/{alarm_id}" 会贪婪匹配任意字符串，必须注册在所有字面量子路径
+# （/config、/report、/period、/export、/situation、/preventive-summary 等）之后，
+# 否则会把 GET /v1/alarms/report 之类请求吞掉并抛 422。切勿上移此端点。
+# ---------------------------------------------------------------------------
+@router.get(
+    "/{alarm_id}",
+    summary="告警详情（大屏·告警详情页）",
+    response_model=ApiResponse,
+    dependencies=[Depends(require_permissions("alarm:list"))],
+)
+def get_alarm_detail(
+    alarm_id: int,
+    db: Session = Depends(get_db),
+    scope: DataScope = Depends(get_data_scope),
+) -> ApiResponse:
+    """返回单条告警完整详情（含 project_name / created_at），施加部门数据隔离。"""
+    stmt = select(Alarm).where(Alarm.id == alarm_id)
+    stmt = apply_data_scope(stmt, Alarm, scope)
+    alarm = db.scalar(stmt)
+    if alarm is None:
+        raise HTTPException(status_code=404, detail="告警不存在")
+    return ApiResponse.success(data=to_alarm_out(alarm))

@@ -9,8 +9,9 @@ import logging
 from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import func, literal, select, update
+from sqlalchemy import func, inspect, literal, select, update
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 from app.config import settings
 from app.core.constants import (
@@ -290,9 +291,18 @@ def _parse_media(media: Any) -> list[str]:
 
 def to_alarm_out(alarm: Alarm) -> dict[str, Any]:
     """序列化为对外/WebSocket 字典。"""
+    # project 关系在 detached 实例（实时管道/后台任务序列化）上会触发懒加载失败，
+    # 仅在实例仍绑定 Session 时安全取 project_name。
+    project_name: str | None = None
+    try:
+        if inspect(alarm).session is not None and alarm.project is not None:
+            project_name = alarm.project.name
+    except DetachedInstanceError:
+        project_name = None
     return {
         "id": alarm.id,
         "project_id": alarm.project_id,
+        "project_name": project_name,
         "alarm_type": alarm.alarm_type,
         "device_type": alarm.device_type,
         "device_name": alarm.device_name,
@@ -308,6 +318,7 @@ def to_alarm_out(alarm: Alarm) -> dict[str, Any]:
         "hazard_id": alarm.hazard_id,
         "suppressed_count": alarm.suppressed_count or 0,
         "alarm_time": alarm.alarm_time.isoformat() if alarm.alarm_time else None,
+        "created_at": alarm.created_at.isoformat() if alarm.created_at else None,
     }
 
 

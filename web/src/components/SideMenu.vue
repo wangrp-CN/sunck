@@ -47,6 +47,11 @@ const activeMenu = computed(() => {
   if (route.path === "/alarms" && route.query.alarm_type) {
     return route.fullPath;
   }
+  // 告警详情页：菜单指向无 id 的 /alarms/detail，进入后会 replace 成
+  // /alarms/{id}/detail，需回落到菜单 index 才能保持高亮
+  if (/^\/alarms\/\d+\/detail$/.test(route.path)) {
+    return "/alarms/detail";
+  }
   return route.path;
 });
 // 移动端点击菜单项后由父组件关闭抽屉
@@ -79,6 +84,10 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
       <el-menu-item index="/projects/detail">
         <el-icon><DataBoard /></el-icon>
         <span>项目详情页</span>
+      </el-menu-item>
+      <el-menu-item index="/alarms/detail">
+        <el-icon><Warning /></el-icon>
+        <span>告警详情页</span>
       </el-menu-item>
     </el-sub-menu>
 

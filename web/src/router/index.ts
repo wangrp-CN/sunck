@@ -158,6 +158,21 @@ const routes: RouteRecordRaw[] = [
         component: () => import("@/views/AlarmView.vue"),
         meta: { title: "告警管理" },
       },
+      // 告警详情页（大屏子菜单）：无 id 入口供菜单直达，进入后定位最新待处理
+      // 告警并 replace 到带 id 路由；两条路由复用同一组件。
+      // 注意 "alarms/detail" 必须在 "alarms/:id/detail" 之前，否则会被当作 id。
+      {
+        path: "alarms/detail",
+        name: "alarm-detail-entry",
+        component: () => import("@/views/AlarmDetailView.vue"),
+        meta: { title: "告警详情" },
+      },
+      {
+        path: "alarms/:id/detail",
+        name: "alarm-detail",
+        component: () => import("@/views/AlarmDetailView.vue"),
+        meta: { title: "告警详情" },
+      },
       {
         path: "dispatch",
         name: "dispatch",

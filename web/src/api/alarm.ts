@@ -37,6 +37,39 @@ export function handleAlarm(
   });
 }
 
+/**
+ * 单条告警详情（大屏·告警详情页）。
+ *
+ * 比列表多出 `project_name` / `created_at`，页面顶部「项目名称」直接取用，
+ * 无需再请求项目接口。后端端点：GET /v1/alarms/{id}（权限 alarm:list + 数据隔离）。
+ */
+export function getAlarmDetail(id: number): Promise<AlarmDetail> {
+  return http<AlarmDetail>({
+    url: `/v1/alarms/${id}`,
+    method: "GET",
+  });
+}
+
+/** 告警详情（在列表 Alarm 基础上补充详情端点独有字段） */
+export interface AlarmDetail extends Alarm {
+  project_name?: string | null;
+  created_at?: string | null;
+}
+
+/**
+ * 最新一条告警（告警详情页无 id 入口用：菜单直接进入时定位到最近一条待处理告警）。
+ * 优先取「待处理」，没有则回退取全部中最新的一条；都没有返回 null。
+ */
+export function getLatestAlarm(): Promise<Alarm | null> {
+  const query = (handle_status?: string) =>
+    http<{ total: number; items: Alarm[]; page: number; size: number }>({
+      url: "/v1/alarms",
+      method: "GET",
+      params: { handle_status, page: 1, size: 1 },
+    }).then((page) => page.items?.[0] ?? null);
+  return query("待处理").then((row) => row ?? query());
+}
+
 // 告警处置记录列表（处置效果闭环）
 export function getAlarmDispositions(
   id: number,
