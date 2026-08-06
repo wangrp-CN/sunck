@@ -21,7 +21,6 @@ from app.core.data_scope import DataScope, apply_data_scope
 from app.core.database import get_read_db
 from app.core.deps import get_current_user, get_data_scope, require_permissions
 from app.core.exceptions import BusinessError
-from app.core.geo import wgs84_to_gcj02
 from app.core.responses import ApiResponse
 from app.core.scoring import project_risk_score
 from app.model.alarm import Alarm
@@ -31,7 +30,7 @@ from app.model.device import (
     TrainApproachDevice,
 )
 from app.model.fence import ElectronicFence
-from app.model.job import WorkPlan, WorkPlanFence, WorkPlanMachine
+from app.model.job import WorkPlan, WorkPlanFence
 from app.model.person import Machine, Person
 from app.model.project import Project
 from app.model.realtime import DeviceLocation
@@ -40,7 +39,6 @@ from app.service.alarm_service import (
     _period_key,
     aggregate_alarms_sql,
 )
-from app.service.device_service import list_devices
 from app.service.effectiveness_export import (
     disposition_header,
     generate_effectiveness_report,
@@ -703,220 +701,3 @@ def effectiveness_project_trend_image(
     if png is None:
         raise BusinessError("该项目在所选窗口内无足够数据生成趋势图", code=404)
     return StreamingResponse(iter([png]), media_type="image/png")
-
-
-@router.get(
-    "/project-detail/{project_id}",
-    summary="项目详情大屏（单项目全景）",
-    response_model=ApiResponse,
-    dependencies=[Depends(require_permissions("dashboard:view"))],
-)
-def project_detail(
-    request: Request,
-    project_id: int,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_read_db),
-    scope: DataScope = Depends(get_data_scope),
-) -> ApiResponse:
-    """返回项目详情大屏所需全部数据：项目信息 + 设备/围栏/人员/机械 + 最近告警。
-
-    按当前用户部门数据范围隔离；项目不在范围内返回 404。
-    设备数据合并实时位置（gcj02）与配置坐标（wgs84 回退），供前端地图直接打点。
-    告警仅返回该项目「待处理」的最近 50 条（按告警时间倒序），
-    与原型「列表仅展示当前项目待处理的告警信息」一致。
-    """
-    _cached = get_cached_json(current_user.id, request.url.path, request.url.query)
-    if _cached is not None:
-        return ApiResponse(**_cached)
-
-    # --- 项目基本信息（数据范围隔离）---
-    proj_stmt = apply_data_scope(
-        select(Project).where(Project.id == project_id, Project.is_deleted.is_(False)),
-        Project,
-        scope,
-    )
-    project = db.scalars(proj_stmt).first()
-    if project is None:
-        raise BusinessError("项目不存在或无权访问", code=404)
-
-    # --- 设备：合并实时位置 + 配置坐标 ---
-    dev_rows = list_devices(db, project_id=project_id)
-    loc_rows = latest_locations(db, project_id=project_id)
-    live_map: dict[str, DeviceLocation] = {r.device_no: r for r in loc_rows}
-    devices = []
-    for d in dev_rows:
-        live = live_map.get(d["device_no"])
-        if live and live.longitude is not None and live.latitude is not None:
-            glng, glat = wgs84_to_gcj02(live.longitude, live.latitude)
-            devices.append(
-                {
-                    "device_no": d["device_no"],
-                    "name": live.device_name or d["name"],
-                    "device_type": d["device_type"],
-                    "device_type_label": d["device_type_label"],
-                    "lng": glng,
-                    "lat": glat,
-                    "status": live.status,
-                    "live": True,
-                    "direction": d.get("direction"),
-                    "report_time": live.report_time.isoformat() if live.report_time else None,
-                }
-            )
-        elif d.get("longitude") is not None and d.get("latitude") is not None:
-            glng, glat = wgs84_to_gcj02(d["longitude"], d["latitude"])
-            devices.append(
-                {
-                    "device_no": d["device_no"],
-                    "name": d["name"],
-                    "device_type": d["device_type"],
-                    "device_type_label": d["device_type_label"],
-                    "lng": glng,
-                    "lat": glat,
-                    "status": d["status"],
-                    "live": False,
-                    "direction": d.get("direction"),
-                    "report_time": None,
-                }
-            )
-
-    # --- 围栏 ---
-    fence_rows = db.scalars(
-        select(ElectronicFence).where(
-            ElectronicFence.project_id == project_id,
-            ElectronicFence.is_deleted.is_(False),
-        )
-    ).all()
-    fences = [
-        {
-            "id": f.id,
-            "name": f.name,
-            "fence_type": f.fence_type,
-            "geometry_wkt": f.geometry_wkt,
-            "enabled": f.enabled,
-        }
-        for f in fence_rows
-    ]
-
-    # --- 人员 ---
-    person_rows = db.scalars(
-        select(Person).where(
-            Person.project_id == project_id,
-            Person.is_deleted.is_(False),
-        )
-    ).all()
-    persons = [
-        {
-            "id": p.id,
-            "person_no": p.person_no,
-            "name": p.name,
-            "person_type": p.person_type,
-            "device_no": p.device_no,
-        }
-        for p in person_rows
-    ]
-
-    # --- 机械：补充防护人员姓名 + 坐标（来自作业计划机械绑定的 arm/body 定位设备）---
-    machine_rows = db.scalars(
-        select(Machine).where(
-            Machine.project_id == project_id,
-            Machine.is_deleted.is_(False),
-        )
-    ).all()
-    machine_ids = [m.id for m in machine_rows]
-    wpm_rows: list = []
-    if machine_ids:
-        wpm_rows = db.scalars(
-            select(WorkPlanMachine)
-            .join(WorkPlan, WorkPlan.id == WorkPlanMachine.plan_id)
-            .where(
-                WorkPlanMachine.machine_id.in_(machine_ids),
-                WorkPlan.is_deleted.is_(False),
-            )
-        ).all()
-    # 防护人员姓名映射
-    guard_person_ids = {w.guard_person_id for w in wpm_rows if w.guard_person_id}
-    guard_names: dict = {}
-    if guard_person_ids:
-        guard_names = {
-            p.id: p.name for p in db.scalars(select(Person).where(Person.id.in_(guard_person_ids)))
-        }
-    # 设备坐标（已转 gcj02）：machine_id -> (lng, lat, 轨迹设备号)
-    dev_coord: dict = {d["device_no"]: (d["lng"], d["lat"]) for d in devices}
-    wpm_by_machine: dict = {}
-    for w in wpm_rows:
-        wpm_by_machine.setdefault(w.machine_id, w)
-
-    machines = []
-    for m in machine_rows:
-        wpm = wpm_by_machine.get(m.id)
-        guard_name = guard_names.get(wpm.guard_person_id) if wpm and wpm.guard_person_id else None
-        coord = None
-        track_no = None
-        if wpm:
-            for no in (wpm.arm_device_no, wpm.body_device_no):
-                if no and no in dev_coord:
-                    coord = dev_coord[no]
-                    track_no = no
-                    break
-        machines.append(
-            {
-                "id": m.id,
-                "machine_no": m.machine_no,
-                "machine_type": m.machine_type,
-                "spec_model": m.spec_model,
-                "description": m.description,
-                "guard_person_name": guard_name,
-                "lng": coord[0] if coord else None,
-                "lat": coord[1] if coord else None,
-                "track_device_no": track_no,
-            }
-        )
-
-    # --- 待处理告警（仅当前项目，按告警时间倒序，50 条）---
-    # 原型要求：右上角列表「仅展示当前项目待处理的告警信息」，处理/忽略后即从列表消失。
-    alarm_rows = db.scalars(
-        select(Alarm)
-        .where(Alarm.project_id == project_id, Alarm.handle_status == "待处理")
-        .order_by(Alarm.alarm_time.desc().nullslast())
-        .limit(50)
-    ).all()
-    alarms = [
-        {
-            "id": a.id,
-            "alarm_type": a.alarm_type,
-            "device_type": a.device_type,
-            "device_name": a.device_name,
-            "device_no": a.device_no,
-            "alarm_level": a.alarm_level,
-            "alarm_info": a.alarm_info,
-            "alarm_status": a.alarm_status,
-            "handle_status": a.handle_status,
-            "fence_name": a.fence_name,
-            "alarm_time": a.alarm_time.isoformat() if a.alarm_time else None,
-        }
-        for a in alarm_rows
-    ]
-
-    resp = ApiResponse.success(
-        data={
-            "project": {
-                "id": project.id,
-                "name": project.name,
-                "short_name": project.short_name,
-                "start_date": project.start_date.isoformat() if project.start_date else None,
-                "end_date": project.end_date.isoformat() if project.end_date else None,
-                "section": project.section,
-                "mileage": project.mileage,
-                "coordinate": project.coordinate,
-                "status": project.status,
-            },
-            "devices": devices,
-            "fences": fences,
-            "persons": persons,
-            "machines": machines,
-            "alarms": alarms,
-        },
-        message="查询成功",
-    )
-    set_cached_json(current_user.id, request.url.path, request.url.query, resp.model_dump())
-    return resp

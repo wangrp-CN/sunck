@@ -98,8 +98,6 @@ export function fetchAlarms(params?: {
   alarm_type?: string;
   handle_status?: string;
   alarm_status?: string;
-  /** 按设备编号精确过滤（供「列车接近记录」等带条件跳转场景） */
-  device_no?: string;
   page?: number;
   size?: number;
 }): Promise<ListResult<AlarmItem>> {

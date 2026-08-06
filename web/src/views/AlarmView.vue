@@ -121,8 +121,6 @@ const filters = reactive({
   alarm_type: "" as string,
   handle_status: "" as string,
   alarm_status: "" as string,
-  // 由「列车接近记录」等入口带入的设备编号过滤（不在筛选表单中展示，以标签形式提示）
-  device_no: "" as string,
 });
 // 报表/导出共享的时间范围（[start, end]，ISO 字符串）
 const timeRange = ref<[string, string] | null>(null);
@@ -185,7 +183,6 @@ async function loadAlarms() {
       alarm_type: filters.alarm_type || undefined,
       handle_status: filters.handle_status || undefined,
       alarm_status: filters.alarm_status || undefined,
-      device_no: filters.device_no || undefined,
       page: page.value,
       size: size.value,
     });
@@ -245,15 +242,7 @@ function resetFilters() {
   filters.alarm_type = "";
   filters.handle_status = "";
   filters.alarm_status = "";
-  filters.device_no = "";
   timeRange.value = null;
-  page.value = 1;
-  loadAlarms();
-}
-
-// 清除由外部入口带入的设备编号过滤
-function clearDeviceFilter() {
-  filters.device_no = "";
   page.value = 1;
   loadAlarms();
 }
@@ -822,18 +811,13 @@ function levelTag(level: string | null): "" | "danger" | "warning" | "info" {
 }
 
 onMounted(async () => {
-  // 从大屏卡片 / 项目详情大屏跳转而来时，预置筛选条件，直达明细列表
+  // 从大屏卡片跳转而来时，预置告警类型筛选，直达明细列表
   const q = route.query || {};
   const presetType = q.alarm_type;
   if (typeof presetType === "string" && presetType) {
     filters.alarm_type = presetType;
   }
-  // 项目详情大屏「列车接近记录」带入的设备编号
-  const presetDeviceNo = q.device_no;
-  if (typeof presetDeviceNo === "string" && presetDeviceNo) {
-    filters.device_no = presetDeviceNo;
-  }
-  // 项目详情大屏带入的项目
+  // 从大屏卡片跳转而来时，预置项目筛选
   const presetProjectId = q.project_id;
   if (typeof presetProjectId === "string" && presetProjectId) {
     const pid = Number(presetProjectId);
@@ -849,17 +833,6 @@ onMounted(async () => {
   await loadProjects();
   await loadPersons();
   await loadAlarms();
-  // 项目详情大屏「处理」带入的告警 id：直接展开该告警的处置详情
-  const presetAlarmId = q.alarm_id;
-  if (typeof presetAlarmId === "string" && presetAlarmId) {
-    const aid = Number(presetAlarmId);
-    const target = list.value.find((a: any) => a.id === aid);
-    if (target) {
-      openHandle(target);
-    } else if (!Number.isNaN(aid)) {
-      ElMessage.warning("该告警不在当前列表中，请调整筛选条件后重试");
-    }
-  }
   await loadMapData();
   await loadTrend();
   void loadStorm();
@@ -919,11 +892,6 @@ watch([filters, timeRange, trendGranularity], scheduleTrend, { deep: true });
             end-placeholder="结束"
             style="width: 340px" format="YYYY年MM月DD日 HH:mm"
           />
-        </el-form-item>
-        <el-form-item v-if="filters.device_no">
-          <el-tag type="warning" closable @close="clearDeviceFilter">
-            设备：{{ filters.device_no }}
-          </el-tag>
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="applyFilters">查询</el-button>
