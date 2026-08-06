@@ -81,6 +81,10 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
         <el-icon><VideoPlay /></el-icon>
         <span>设备轨迹页</span>
       </el-menu-item>
+      <el-menu-item index="/projects/detail">
+        <el-icon><DataBoard /></el-icon>
+        <span>项目详情页</span>
+      </el-menu-item>
     </el-sub-menu>
 
     <!-- ② 项目管理 -->

@@ -20,7 +20,10 @@ type CategoryKey = "all" | "person" | "machine" | "device" | "fence";
 
 const route = useRoute();
 const router = useRouter();
-const projectId = computed(() => Number(route.params.id));
+const projectId = computed<number | null>(() => {
+  const raw = route.params.id;
+  return raw !== undefined ? Number(raw) : null;
+});
 
 const loading = ref(false);
 const detail = ref<ProjectDetailData | null>(null);
@@ -236,9 +239,30 @@ async function ignoreAlarmRow(alarm: any) {
   ElMessage.success("告警已忽略");
 }
 
+// ---------- 无 id 时默认首个项目 ----------
+// 菜单入口不带项目 id，进入后自动取项目列表第一个作为默认项目（顶部下拉可切换）。
+async function ensureProject() {
+  if (projectId.value != null) return;
+  try {
+    const page = await fetchProjects({ page: 1, size: 1000 });
+    const first = (page.items || [])[0];
+    if (first) {
+      router.replace({ name: "project-detail", params: { id: first.id } });
+      return;
+    }
+  } catch {
+    /* ignore */
+  }
+  ElMessage.warning("暂无可查看的项目");
+}
+
 // ---------- 加载 + 自动刷新 ----------
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 async function loadDetail() {
+  if (projectId.value == null) {
+    await ensureProject();
+    return;
+  }
   loading.value = true;
   try {
     const data = await getProjectDetail(projectId.value);

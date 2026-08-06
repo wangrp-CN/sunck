@@ -3,11 +3,13 @@ import { mount, flushPromises } from "@vue/test-utils";
 import { ref } from "vue";
 import { ElMessageBox, ElMessage } from "element-plus";
 
+const routeState = vi.hoisted(() => ({ params: { id: "1" } as Record<string, any> }));
 const push = vi.fn();
+const replace = vi.fn();
 
 vi.mock("vue-router", () => ({
-  useRoute: () => ({ params: { id: "1" }, query: {} }),
-  useRouter: () => ({ push }),
+  useRoute: () => ({ params: routeState.params, query: {} }),
+  useRouter: () => ({ push, replace }),
 }));
 
 vi.mock("@/components/MapPanel.vue", () => ({
@@ -123,11 +125,13 @@ import { getProjectDetail } from "@/api/dashboard";
 describe("ProjectDetailView", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    routeState.params = { id: "1" };
     (getProjectDetail as any).mockResolvedValue(JSON.parse(JSON.stringify(fixture)));
     (ElMessageBox as any).prompt = vi.fn().mockResolvedValue({ value: "处置说明" });
     (ElMessageBox as any).confirm = vi.fn().mockResolvedValue(true);
     (ElMessage as any).success = vi.fn();
     push.mockClear();
+    replace.mockClear();
   });
 
   async function mountView() {
@@ -231,5 +235,12 @@ describe("ProjectDetailView", () => {
     await flushPromises();
     expect((getTrainApproachRecords as any).mock.calls.length).toBe(1);
     expect((getTrainApproachRecords as any).mock.calls[0][0]).toEqual({ device_no: "TA1", project_id: 1 });
+  });
+
+  it("无 id 进入时默认跳转首个项目", async () => {
+    routeState.params = {};
+    await mountView();
+    await flushPromises();
+    expect(replace).toHaveBeenCalledWith({ name: "project-detail", params: { id: 1 } });
   });
 });

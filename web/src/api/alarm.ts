@@ -50,7 +50,7 @@ export function getAlarmDispositions(
 // 列车接近记录（项目详情大屏·设备弹窗「列车接近记录」自包含查询，不影响其他模块）
 export function getTrainApproachRecords(params: {
   device_no: string;
-  project_id: number;
+  project_id: number | null;
   handle_status?: string;
 }): Promise<Alarm[]> {
   return http<{ total: number; items: Alarm[]; page: number; size: number }>({
