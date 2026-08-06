@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
+import { Monitor } from "@element-plus/icons-vue";
 import MapPanel from "@/components/MapPanel.vue";
 import { getProjectDetail } from "@/api/dashboard";
 import type { ProjectDetailData } from "@/types";
@@ -330,7 +331,7 @@ onUnmounted(() => {
   <div v-loading="loading" class="dashboard project-detail">
     <!-- 顶部工具条 -->
     <div class="dash-toolbar">
-      <el-button text :icon="'Monitor'" @click="router.push({ name: 'dashboard' })">进入智能监控平台</el-button>
+      <el-button text :icon="Monitor" @click="router.push({ name: 'dashboard' })">进入智能监控平台</el-button>
       <el-button text :icon="'ArrowLeft'" @click="router.push({ name: 'projects' })">返回</el-button>
       <span class="dash-title">项目详情</span>
       <div class="spacer" />
