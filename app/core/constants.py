@@ -38,6 +38,19 @@ ALARM_TYPE_ANOMALY = "trend_anomaly"  # 趋势异常检测告警（智能核心�
 ALARM_TYPE_FORECAST = "predictive_alert"  # 预测性预警（Phase 5 M3：越阈预测回灌告警流）
 ALARM_TYPE_PREVENTIVE = "preventive_alert"  # 预防式预警（预测置信区间越阈提前预警）
 
+# 电子围栏类型（原型《电子围栏列表》查询区与新增/编辑弹窗的下拉可选项）
+# 说明：历史数据里 fence_type 曾用作自由文本（人员/大机/列车），因此仅作为
+# 前端下拉字典与新数据的推荐取值，后端不做强枚举校验，避免旧数据更新失败。
+FENCE_TYPE_NORMAL = "普通防区"
+FENCE_TYPE_WARNING = "预警防区"
+FENCE_TYPE_ALARM = "报警防区"
+
+FENCE_TYPES: tuple[str, ...] = (
+    FENCE_TYPE_NORMAL,
+    FENCE_TYPE_WARNING,
+    FENCE_TYPE_ALARM,
+)
+
 # 设备状态
 DEVICE_STATUS_ONLINE = "在线"
 DEVICE_STATUS_OFFLINE = "离线"

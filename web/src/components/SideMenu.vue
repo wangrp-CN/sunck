@@ -115,10 +115,16 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
     </el-sub-menu>
 
     <!-- ④ 电子围栏管理 -->
-    <el-menu-item index="/fences">
-      <el-icon><LocationFilled /></el-icon>
-      <span>电子围栏管理</span>
-    </el-menu-item>
+    <el-sub-menu index="/fence-group">
+      <template #title>
+        <el-icon><LocationFilled /></el-icon>
+        <span>电子围栏管理</span>
+      </template>
+      <el-menu-item index="/fences/list">
+        <el-icon><LocationFilled /></el-icon>
+        <span>电子围栏列表</span>
+      </el-menu-item>
+    </el-sub-menu>
 
     <!-- ⑤ 设备管理 -->
     <el-sub-menu index="/devices-group">

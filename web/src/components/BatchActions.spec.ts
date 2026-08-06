@@ -47,4 +47,13 @@ describe("BatchActions", () => {
     expect(deleteBtn(wrapper).text()).toBe("批量作废");
     expect(wrapper.find(".extra-action").exists()).toBe(true);
   });
+
+  it("批量删除与清空选择成组靠右，且清空选择为高对比实心按钮", () => {
+    const wrapper = mountBar({ selected: 2 });
+    expect(wrapper.find(".batch-actions__buttons").exists()).toBe(true);
+    const clear = wrapper.find(".batch-actions__clear");
+    // 由 link 改为实心 default，视觉明显且与危险色「批量删除」区分
+    expect(clear.classes().join(" ")).not.toContain("el-button--link");
+    expect(clear.classes().join(" ")).toContain("el-button--default");
+  });
 });

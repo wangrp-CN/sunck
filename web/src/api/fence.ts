@@ -1,13 +1,15 @@
 import { http } from "@/utils/request";
-import type { Fence, FencePage, FenceCreate, FenceUpdate } from "@/types";
+import type {
+  Fence,
+  FencePage,
+  FenceCreate,
+  FenceListParams,
+  FenceUpdate,
+} from "@/types";
 import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
-// 围栏分页列表
-export function fetchFences(params: {
-  keyword?: string;
-  page?: number;
-  size?: number;
-}): Promise<FencePage> {
+// 围栏分页列表（支持项目/名称/类型/启用状态筛选，按创建时间倒序）
+export function fetchFences(params: FenceListParams): Promise<FencePage> {
   return http<FencePage>({
     url: "/v1/fences",
     method: "GET",

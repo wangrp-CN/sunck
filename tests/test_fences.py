@@ -94,6 +94,62 @@ def test_fence_full_crud_by_admin(client, admin_token):
         _cleanup(u)
 
 
+def test_fence_list_filters_and_ordering(client, admin_token):
+    """《电子围栏列表》搜索区：项目/名称/类型/启用 四个筛选 + 创建时间倒序 + project_name。"""
+    u = _uid()
+    try:
+        dept = _make_dept(client, admin_token, u, "A")
+        proj_a = _create_project(client, admin_token, u, dept["id"], "甲")
+        proj_b = _create_project(client, admin_token, u, dept["id"], "乙")
+
+        def _mk(project_id, name, fence_type, enabled):
+            return client.post(
+                "/api/v1/fences",
+                headers=_headers(admin_token),
+                json={
+                    "project_id": project_id,
+                    "name": name,
+                    "description": "描述",
+                    "fence_type": fence_type,
+                    "enabled": enabled,
+                },
+            ).json()["data"]
+
+        f1 = _mk(proj_a["id"], f"F{u}_普通", "普通防区", True)
+        f2 = _mk(proj_a["id"], f"F{u}_预警", "预警防区", False)
+        f3 = _mk(proj_b["id"], f"F{u}_报警", "报警防区", True)
+
+        def _ids(**params):
+            params.setdefault("size", 100)
+            r = client.get("/api/v1/fences", headers=_headers(admin_token), params=params)
+            assert r.status_code == 200, r.text
+            return [it["id"] for it in r.json()["data"]["items"]]
+
+        # 项目筛选
+        got = _ids(project_id=proj_a["id"], name=f"F{u}")
+        assert f1["id"] in got and f2["id"] in got and f3["id"] not in got
+        # 类型筛选
+        assert _ids(name=f"F{u}", fence_type="报警防区") == [f3["id"]]
+        # 启用筛选
+        got = _ids(name=f"F{u}", enabled=False)
+        assert got == [f2["id"]]
+        # 名称左右模糊
+        assert _ids(name="_预警") == [f2["id"]]
+
+        # 创建时间倒序：最后创建的排最前
+        ordered = _ids(name=f"F{u}")
+        assert ordered[0] == f3["id"]
+
+        # 冗余字段：project_name / description / 北京时间 created_at
+        r = client.get(f"/api/v1/fences/{f1['id']}", headers=_headers(admin_token))
+        data = r.json()["data"]
+        assert data["project_name"] == proj_a["name"]
+        assert data["description"] == "描述"
+        assert len(data["created_at"]) == 19 and data["created_at"][4] == "-"
+    finally:
+        _cleanup(u)
+
+
 def test_fence_create_requires_permission(client, admin_token):
     u = _uid()
     try:

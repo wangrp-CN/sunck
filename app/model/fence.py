@@ -15,7 +15,9 @@ class ElectronicFence(Base, TimestampMixin, CreatorMixin, SoftDeleteMixin):
     )
     project: Mapped["Project"] = relationship("Project", lazy="selectin")
     name: Mapped[str] = mapped_column(String(128), comment="围栏名称")
-    # 围栏类型：人员/大机/列车 等（字典维护）
+    # 围栏描述（原型《新增/编辑电子围栏》多行文本框，选填）
+    description: Mapped[str | None] = mapped_column(Text, nullable=True, comment="围栏描述")
+    # 围栏类型：普通防区/预警防区/报警防区（见 constants.FENCE_TYPES）
     fence_type: Mapped[str | None] = mapped_column(String(32), nullable=True, comment="围栏类型")
     enabled: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
     # 几何以 WKT 文本存储（如 POLYGON((...))），判定时使用 shapely/PostGIS

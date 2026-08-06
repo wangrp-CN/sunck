@@ -50,26 +50,28 @@ const emit = defineEmits<{
     <span class="batch-actions__count">
       已选择 <b>{{ selected }}</b> 项
     </span>
+    <!-- 批量删除 / 清空选择 成组靠左，与计数等相邻元素保持适中间距，避免误触且布局协调 -->
+    <div class="batch-actions__buttons">
+      <el-button
+        v-if="showDelete"
+        type="danger"
+        :disabled="selected === 0"
+        :loading="loading"
+        class="batch-actions__delete"
+        @click="emit('batch-delete')"
+      >
+        {{ deleteText }}
+      </el-button>
+      <el-button
+        type="default"
+        :disabled="selected === 0"
+        class="batch-actions__clear"
+        @click="emit('clear')"
+      >
+        {{ clearText }}
+      </el-button>
+    </div>
     <slot />
-    <el-button
-      v-if="showDelete"
-      type="danger"
-      :disabled="selected === 0"
-      :loading="loading"
-      class="batch-actions__delete"
-      @click="emit('batch-delete')"
-    >
-      {{ deleteText }}
-    </el-button>
-    <el-button
-      link
-      type="info"
-      :disabled="selected === 0"
-      class="batch-actions__clear"
-      @click="emit('clear')"
-    >
-      {{ clearText }}
-    </el-button>
   </div>
 </template>
 
@@ -95,7 +97,13 @@ const emit = defineEmits<{
   font-size: 15px;
   margin: 0 2px;
 }
+.batch-actions__buttons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+/* 「清空选择」实心按钮 + 加粗，视觉明显但不与危险色「批量删除」混淆 */
 .batch-actions__clear {
-  margin-left: auto;
+  font-weight: 600;
 }
 </style>

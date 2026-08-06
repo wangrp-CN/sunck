@@ -34,6 +34,9 @@ describe("SideMenu", () => {
     expect(text).toContain("监控大屏");
     expect(text).toContain("视频AI");
     expect(text).toContain("告警管理");
+    // 电子围栏管理为目录，其下挂「电子围栏列表」子菜单
+    expect(text).toContain("电子围栏管理");
+    expect(text).toContain("电子围栏列表");
   });
 
   it("点击菜单项 emit navigate（用于移动端关闭抽屉）", async () => {

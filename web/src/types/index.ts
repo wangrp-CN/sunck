@@ -273,10 +273,18 @@ export interface MachineUpdate {
 }
 
 // ===================== 电子围栏管理 =====================
+/** 围栏类型（原型下拉可选项；历史数据可能为其它自由文本，故用宽松 string 承接） */
+export type FenceType = "普通防区" | "预警防区" | "报警防区";
+
+export const FENCE_TYPES: FenceType[] = ["普通防区", "预警防区", "报警防区"];
+
 export interface Fence {
   id: number;
   project_id: number | null;
+  /** 后端冗余返回的归属项目名称 */
+  project_name: string | null;
   name: string;
+  description: string | null;
   fence_type: string | null;
   enabled: boolean;
   geometry_wkt: string | null;
@@ -291,9 +299,22 @@ export interface FencePage {
   size: number;
 }
 
+/** 围栏列表查询参数（对齐原型《电子围栏列表》搜索区） */
+export interface FenceListParams {
+  /** 名称/类型通用模糊搜索（旧接口兼容参数） */
+  keyword?: string;
+  project_id?: number;
+  name?: string;
+  fence_type?: string;
+  enabled?: boolean;
+  page?: number;
+  size?: number;
+}
+
 export interface FenceCreate {
   project_id: number;
   name: string;
+  description?: string | null;
   fence_type?: string | null;
   enabled?: boolean;
   geometry_wkt?: string | null;
@@ -302,6 +323,7 @@ export interface FenceCreate {
 export interface FenceUpdate {
   project_id?: number;
   name?: string;
+  description?: string | null;
   fence_type?: string | null;
   enabled?: boolean | null;
   geometry_wkt?: string | null;
