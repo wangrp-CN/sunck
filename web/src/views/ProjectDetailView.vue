@@ -16,8 +16,6 @@ interface PopupState {
   kind: PopupKind;
   data: any;
 }
-type CategoryKey = "all" | "person" | "machine" | "device" | "fence";
-
 const route = useRoute();
 const router = useRouter();
 const projectId = computed<number | null>(() => {
@@ -102,26 +100,46 @@ const mapFences = computed<MapFence[]>(() =>
     .map((f) => ({ id: f.id, name: f.name, geometry_wkt: f.geometry_wkt })),
 );
 
-// ---------- 搜索方式 ----------
-const keyword = ref("");
-const activeCategory = ref<CategoryKey>("all");
-const filteredDevices = computed<MapDevice[]>(() => {
-  let list = mapDevices.value;
-  if (activeCategory.value !== "all") {
-    list = list.filter((d) => {
-      if (activeCategory.value === "device") {
-        return d.device_type === "locate" || d.device_type === "anti_intrusion" || d.device_type === "train_approach";
-      }
-      return String(d.device_type) === activeCategory.value;
-    });
+// ---------- 搜索方式（原型：分类下拉 + 取值下拉 → 高亮并展示详情）----------
+type SearchKind = "person" | "machine" | "device" | "fence";
+const searchKind = ref<SearchKind>("person");
+const searchValue = ref<string>("");
+const searchLabels: Record<SearchKind, string> = {
+  person: "人员姓名",
+  machine: "大机编号",
+  device: "设备编号",
+  fence: "电子围栏名称",
+};
+const searchOptions = computed<{ label: string; value: string }[]>(() => {
+  const d = detail.value;
+  if (!d) return [];
+  if (searchKind.value === "person") {
+    return d.persons.map((p: any) => ({ label: `${p.name}（${p.person_no}）`, value: `P-${p.id}` }));
   }
-  const kw = keyword.value.trim().toLowerCase();
-  if (kw) {
-    list = list.filter(
-      (d) => d.name.toLowerCase().includes(kw) || d.device_no.toLowerCase().includes(kw),
-    );
+  if (searchKind.value === "machine") {
+    return d.machines.map((m: any) => ({ label: `${m.machine_no}`, value: `M-${m.id}` }));
   }
-  return list;
+  if (searchKind.value === "device") {
+    return d.devices.map((dv: any) => ({ label: `${dv.name}（${dv.device_no}）`, value: dv.device_no }));
+  }
+  return d.fences.map((f: any) => ({ label: `${f.name}`, value: `F-${f.id}` }));
+});
+function onSearchKindChange() {
+  searchValue.value = "";
+}
+function onSearchSelect(value: string) {
+  if (!value) return;
+  const e = entityByKey.value[value];
+  if (!e) return;
+  popup.value = { visible: true, kind: e.kind, data: e.data };
+  if (e.kind !== "fence") mapRef.value?.focusDevice(value);
+}
+
+// 人员绑定设备名称反查（后端 person 仅返回 device_no，设备名称需从 devices 列表反查）
+const deviceNameMap = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {};
+  for (const d of detail.value?.devices || []) map[d.device_no] = d.name;
+  return map;
 });
 
 // ---------- 浮动详情弹窗 ----------
@@ -312,6 +330,7 @@ onUnmounted(() => {
   <div v-loading="loading" class="dashboard project-detail">
     <!-- 顶部工具条 -->
     <div class="dash-toolbar">
+      <el-button text :icon="'Monitor'" @click="router.push({ name: 'dashboard' })">进入智能监控平台</el-button>
       <el-button text :icon="'ArrowLeft'" @click="router.push({ name: 'projects' })">返回</el-button>
       <span class="dash-title">项目详情</span>
       <div class="spacer" />
@@ -336,24 +355,29 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- 搜索方式 -->
+    <!-- 搜索方式（原型：搜索方式下拉 + 取值下拉，选中后高亮并展示详情）-->
     <div class="search-bar">
       <span class="search-label">搜索方式：</span>
-      <el-input v-model="keyword" placeholder="按名称 / 编号搜索" clearable style="width: 240px" />
-      <el-radio-group v-model="activeCategory" size="small">
-        <el-radio-button label="全部" value="all" />
-        <el-radio-button label="人员" value="person" />
-        <el-radio-button label="大机" value="machine" />
-        <el-radio-button label="设备" value="device" />
-        <el-radio-button label="围栏" value="fence" />
-      </el-radio-group>
+      <el-select v-model="searchKind" style="width: 150px" @change="onSearchKindChange">
+        <el-option v-for="(label, key) in searchLabels" :key="key" :label="label" :value="key" />
+      </el-select>
+      <el-select
+        v-model="searchValue"
+        placeholder="选择具体项"
+        filterable
+        clearable
+        style="width: 260px"
+        @change="onSearchSelect"
+      >
+        <el-option v-for="opt in searchOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+      </el-select>
     </div>
 
     <!-- 地图 + 浮动弹窗 -->
     <div class="map-wrap">
       <MapPanel
         ref="mapRef"
-        :devices="filteredDevices"
+        :devices="mapDevices"
         :fences="mapFences"
         height="100%"
         @device-click="onDeviceClick"
@@ -375,7 +399,7 @@ onUnmounted(() => {
           <template v-if="popup.kind === 'person'">
             <div class="popup-row"><span>人员姓名：</span><b>{{ popup.data.name }}</b></div>
             <div class="popup-row"><span>人员编号：</span><b>{{ popup.data.person_no }}</b></div>
-            <div class="popup-row"><span>设备名称：</span><b>{{ popup.data.device_no || '—' }}</b></div>
+            <div class="popup-row"><span>设备名称：</span><b>{{ deviceNameMap[popup.data.device_no] || popup.data.device_no || '—' }}</b></div>
             <div class="popup-row"><span>设备编号：</span><b>{{ popup.data.device_no || '—' }}</b></div>
             <div class="popup-row"><span>坐标：</span><b>{{ popup.data.lng }}，{{ popup.data.lat }}</b></div>
             <div class="popup-row"><span>人员类型：</span><b>{{ popup.data.person_type || '—' }}</b></div>
@@ -392,13 +416,12 @@ onUnmounted(() => {
             <el-button type="primary" plain size="small" :disabled="!currentTrackNo" @click="viewTrack">查看轨迹</el-button>
           </template>
 
-          <!-- 设备 -->
+          <!-- 设备（原型 u109：列车接近设备含「设备方位+列车接近记录」；u135 普通设备仅名称/编号/坐标）-->
           <template v-else-if="popup.kind === 'device'">
             <div class="popup-row"><span>设备名称：</span><b>{{ popup.data.name }}</b></div>
             <div class="popup-row"><span>设备编号：</span><b>{{ popup.data.device_no }}</b></div>
             <div class="popup-row"><span>坐标：</span><b>{{ popup.data.lng }}，{{ popup.data.lat }}</b></div>
             <div v-if="popup.data.direction" class="popup-row"><span>设备方位：</span><b>{{ popup.data.direction }}</b></div>
-            <el-button type="primary" plain size="small" @click="viewTrack">查看轨迹</el-button>
             <el-button
               v-if="popup.data.device_type === 'train_approach'"
               type="warning"
@@ -423,7 +446,7 @@ onUnmounted(() => {
     <transition name="fade">
       <div v-if="hasAlarms" class="alarm-panel" :class="{ collapsed: alarmPanelCollapsed }">
         <div class="alarm-header" @click="toggleAlarmPanel">
-          <span class="alarm-title">待处理告警</span>
+          <span class="alarm-title">告警信息</span>
           <span class="alarm-count">{{ alarmList.length }}</span>
           <span class="alarm-collapse-icon">{{ alarmPanelCollapsed ? "展开" : "收起" }}</span>
         </div>
