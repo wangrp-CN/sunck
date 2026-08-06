@@ -111,12 +111,6 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "设备健康" },
       },
       {
-        path: "projects/compare",
-        name: "projects-compare",
-        component: () => import("@/views/ProjectCompareView.vue"),
-        meta: { title: "对比大屏" },
-      },
-      {
         path: "projects/detail",
         name: "project-detail-entry",
         component: () => import("@/views/ProjectDetailView.vue"),

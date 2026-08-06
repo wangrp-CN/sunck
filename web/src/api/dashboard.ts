@@ -2,7 +2,6 @@ import request, { http } from "@/utils/request";
 import type {
   DashboardStats,
   RecentAlarm,
-  ProjectCompareResp,
   Effectiveness,
   ProjectDetailData,
 } from "@/types";
@@ -29,15 +28,6 @@ export function getRecentAlarms(
     url: "/v1/dashboard/recent-alarms",
     method: "GET",
     params: { limit },
-  });
-}
-
-// 多项目横向对比大屏（P3·⑪）：按风险分降序
-export function getProjectCompare(days = 7): Promise<ProjectCompareResp> {
-  return http<ProjectCompareResp>({
-    url: "/v1/dashboard/project-compare",
-    method: "GET",
-    params: { days },
   });
 }
 

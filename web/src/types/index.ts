@@ -707,29 +707,6 @@ export interface DeviceHealthResp {
   items: DeviceHealthItem[];
 }
 
-// ===================== 对比大屏（P3·⑪） =====================
-export interface ProjectCompareItem {
-  project_id: number;
-  project_name: string;
-  device_count: number;
-  person_count: number;
-  machine_count: number;
-  fence_count: number;
-  active_plan_count: number;
-  alarm_count: number;
-  unhandled_alarm_count: number;
-  open_hazard_count: number;
-  overdue_hazard_count: number;
-  risk_score: number;
-  risk_index?: number;
-  risk_level?: string | null;
-}
-
-export interface ProjectCompareResp {
-  window_days: number;
-  items: ProjectCompareItem[];
-}
-
 // ===================== 系统管理：用户 =====================
 export interface SysUser {
   id: number;

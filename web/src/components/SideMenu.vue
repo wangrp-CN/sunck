@@ -8,7 +8,6 @@ import {
   DataBoard,
   Position,
   Folder,
-  TrendCharts,
   MagicStick,
   Bell,
   Connection,
@@ -72,10 +71,6 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
       <el-menu-item index="/dashboard">
         <el-icon><DataBoard /></el-icon>
         <span>监控大屏</span>
-      </el-menu-item>
-      <el-menu-item index="/projects/compare">
-        <el-icon><TrendCharts /></el-icon>
-        <span>对比大屏</span>
       </el-menu-item>
       <el-menu-item index="/track">
         <el-icon><VideoPlay /></el-icon>
