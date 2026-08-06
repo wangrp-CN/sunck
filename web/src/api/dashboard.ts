@@ -4,6 +4,7 @@ import type {
   RecentAlarm,
   ProjectCompareResp,
   Effectiveness,
+  ProjectDetailData,
 } from "@/types";
 import type { Granularity } from "@/api/alarm";
 
@@ -85,4 +86,12 @@ export function getProjectTrendImage(params: {
       responseType: "blob",
     })
     .then((r) => r.data as Blob);
+}
+
+// 项目详情大屏（单项目全景：项目信息 + 设备/围栏/人员/机械 + 最近待处理告警）
+export function getProjectDetail(projectId: number): Promise<ProjectDetailData> {
+  return http<ProjectDetailData>({
+    url: `/v1/dashboard/project-detail/${projectId}`,
+    method: "GET",
+  });
 }

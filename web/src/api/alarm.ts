@@ -47,6 +47,26 @@ export function getAlarmDispositions(
   });
 }
 
+// 列车接近记录（项目详情大屏·设备弹窗「列车接近记录」自包含查询，不影响其他模块）
+export function getTrainApproachRecords(params: {
+  device_no: string;
+  project_id: number;
+  handle_status?: string;
+}): Promise<Alarm[]> {
+  return http<{ total: number; items: Alarm[]; page: number; size: number }>({
+    url: "/v1/alarms",
+    method: "GET",
+    params: {
+      device_no: params.device_no,
+      alarm_type: "train_approach",
+      project_id: params.project_id,
+      handle_status: params.handle_status,
+      page: 1,
+      size: 50,
+    },
+  }).then((page) => page.items);
+}
+
 // 告警一键转隐患（监测→治理闭环）
 export interface AlarmToHazardRequest {
   title?: string;

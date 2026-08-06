@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
 import { type FormInstance, type FormRules, ElMessage, ElMessageBox } from "element-plus";
 import { useAuthStore } from "@/stores/auth";
 import {
@@ -23,6 +24,11 @@ import BatchActions from "@/components/BatchActions.vue";
 import { useBatchSelection } from "@/composables/useBatchSelection";
 
 const auth = useAuthStore();
+const router = useRouter();
+
+function gotoDetail(id: number) {
+  router.push({ name: "project-detail", params: { id } });
+}
 
 // 权限门控（后端仍会二次校验）；使用 hasPermission 以兼容超管（超管 permission_codes 可能为空）
 const canAdd = computed(() => auth.hasPermission("project:add"));
@@ -405,6 +411,7 @@ const {
       <el-table-column label="操作" width="240" fixed="right">
         <template #default="{ row }">
           <el-button link type="info" @click="openView(row)">查看</el-button>
+          <el-button link type="success" @click="gotoDetail(row.id)">详情大屏</el-button>
           <el-button v-if="canEdit" link type="primary" @click="openEdit(row)">编辑</el-button>
           <el-button v-if="canDelete" link type="danger" @click="handleDelete(row)">删除</el-button>
         </template>

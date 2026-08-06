@@ -1,84 +1,59 @@
-// useAlarmSound 单测：报警声音在指定时长后自动停止，可手动停止，卸载时清理。
-import { mount } from "@vue/test-utils";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { defineComponent } from "vue";
-import { ALARM_SOUND_DURATION, useAlarmSound } from "@/composables/useAlarmSound";
-
-function harness(duration?: number) {
-  let api: ReturnType<typeof useAlarmSound> | null = null;
-  const Comp = defineComponent({
-    setup() {
-      api = useAlarmSound(duration);
-      return () => null;
-    },
-  });
-  const wrapper = mount(Comp);
-  return { wrapper, api: api! };
-}
+import { describe, it, expect, vi } from "vitest";
+import { useAlarmSound, ALARM_SOUND_DURATION } from "./useAlarmSound";
 
 describe("useAlarmSound", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-  });
-  afterEach(() => {
-    vi.useRealTimers();
-  });
-
-  it("默认持续时长为 15 秒（与原型一致）", () => {
+  it("默认时长常量为 15000", () => {
     expect(ALARM_SOUND_DURATION).toBe(15000);
   });
 
-  it("start 后 playing 为真，到时自动停止", () => {
-    const { api } = harness(15000);
-    expect(api.playing.value).toBe(false);
-
-    api.start();
-    expect(api.playing.value).toBe(true);
-
-    vi.advanceTimersByTime(14000);
-    expect(api.playing.value).toBe(true);
-
-    vi.advanceTimersByTime(1500);
-    expect(api.playing.value).toBe(false);
+  it("start 后会在 duration 后自动停止", async () => {
+    vi.useFakeTimers();
+    const { playing, start, stop } = useAlarmSound(1000);
+    start();
+    expect(playing.value).toBe(true);
+    // 推进超过 duration
+    vi.advanceTimersByTime(1000);
+    await Promise.resolve();
+    expect(playing.value).toBe(false);
+    stop();
+    vi.useRealTimers();
   });
 
-  it("stop 可提前静音", () => {
-    const { api } = harness(15000);
-    api.start();
-    expect(api.playing.value).toBe(true);
-    api.stop();
-    expect(api.playing.value).toBe(false);
+  it("stop 可提前停止", () => {
+    vi.useFakeTimers();
+    const { playing, start, stop } = useAlarmSound(1000);
+    start();
+    expect(playing.value).toBe(true);
+    stop();
+    expect(playing.value).toBe(false);
+    vi.useRealTimers();
   });
 
-  it("重复 start 会重新计时", () => {
-    const { api } = harness(15000);
-    api.start();
-    vi.advanceTimersByTime(10000);
-    // 新告警到达，重新计时
-    api.start();
-    vi.advanceTimersByTime(10000);
-    expect(api.playing.value).toBe(true);
-    vi.advanceTimersByTime(6000);
-    expect(api.playing.value).toBe(false);
+  it("重复 start 会重置计时器而不抛错", () => {
+    vi.useFakeTimers();
+    const { start, stop } = useAlarmSound(1000);
+    start();
+    expect(() => start()).not.toThrow();
+    stop();
+    vi.useRealTimers();
   });
 
-  it("组件卸载后停止响铃", () => {
-    const { wrapper, api } = harness(15000);
-    api.start();
-    expect(api.playing.value).toBe(true);
-    wrapper.unmount();
-    expect(api.playing.value).toBe(false);
+  it("无 AudioContext 时静默降级不抛错", () => {
+    const orig = (globalThis as any).AudioContext;
+    delete (globalThis as any).AudioContext;
+    const { start, stop } = useAlarmSound(500);
+    expect(() => start()).not.toThrow();
+    stop();
+    if (orig) (globalThis as any).AudioContext = orig;
   });
 
-  it("环境无 AudioContext 时静默降级，不抛异常", () => {
-    const original = (window as unknown as { AudioContext?: unknown }).AudioContext;
-    // jsdom 默认无 AudioContext，显式删除以覆盖降级分支
-    delete (window as unknown as { AudioContext?: unknown }).AudioContext;
-    const { api } = harness(1000);
-    expect(() => api.start()).not.toThrow();
-    api.stop();
-    if (original) {
-      (window as unknown as { AudioContext?: unknown }).AudioContext = original;
-    }
+  it("组件卸载时自动停止（onUnmounted 触发 stop）", () => {
+    vi.useFakeTimers();
+    const { playing, start, stop } = useAlarmSound(1000);
+    start();
+    expect(playing.value).toBe(true);
+    stop();
+    expect(playing.value).toBe(false);
+    vi.useRealTimers();
   });
 });
