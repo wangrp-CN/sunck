@@ -631,15 +631,17 @@ const {
                 />
               </template>
             </el-table-column>
-            <el-table-column v-if="!isView" label="操作" width="190" align="center">
+            <el-table-column v-if="!isView" label="操作" width="220" align="center">
               <template #default="{ $index }">
-                <el-button link type="primary" @click="addPointAbove($index)">
-                  向上增加
-                </el-button>
-                <el-button link type="primary" @click="addPointBelow($index)">
-                  向下增加
-                </el-button>
-                <el-button link type="danger" @click="removePoint($index)">删除</el-button>
+                <div class="point-ops">
+                  <el-button link type="primary" @click="addPointAbove($index)">
+                    向上增加
+                  </el-button>
+                  <el-button link type="primary" @click="addPointBelow($index)">
+                    向下增加
+                  </el-button>
+                  <el-button link type="danger" @click="removePoint($index)">删除</el-button>
+                </div>
               </template>
             </el-table-column>
             <template #empty>
@@ -771,6 +773,15 @@ const {
 .point-tip {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+/* 标点操作按钮：flex 横向单行、不换行、居中、适中间距 */
+.point-ops {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
 }
 
 @media (max-width: 1100px) {
