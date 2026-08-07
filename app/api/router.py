@@ -42,6 +42,7 @@ from app.api.v1 import (
     realtime,
     reports,
     subscriptions,
+    train_approach_devices,
     videos,
 )
 
@@ -59,6 +60,11 @@ api_router.include_router(
     anti_intrusion_devices.router,
     prefix="/v1/anti-intrusion-devices",
     tags=["大机防侵限设备"],
+)
+api_router.include_router(
+    train_approach_devices.router,
+    prefix="/v1/train-approach-devices",
+    tags=["列车接近报警设备"],
 )
 api_router.include_router(alarms.router, prefix="/v1/alarms", tags=["告警管理"])
 api_router.include_router(dispositions.router, prefix="/v1/dispositions", tags=["告警处置"])

@@ -68,6 +68,10 @@ _CHILDREN = {
         "anti_intrusion_device:add",
         "anti_intrusion_device:edit",
         "anti_intrusion_device:delete",
+        "train_approach_device:list",
+        "train_approach_device:add",
+        "train_approach_device:edit",
+        "train_approach_device:delete",
     ],
     "person": ["person:list", "person:add", "person:edit", "person:delete"],
     "machine": ["machine:list", "machine:add", "machine:edit", "machine:delete"],
@@ -90,6 +94,43 @@ _CHILDREN = {
     "duty": ["duty:list", "duty:manage"],
     "forecast": ["forecast:view"],
 }
+
+# 子菜单（按钮/接口权限）显示名：将 code 末段动作映射为中文，与父级中文模块名对齐。
+# 仅用于 type=3 的展示 name；权限判定始终依赖 code（不受影响）。
+_ACTION_LABELS = {
+    "list": "列表",
+    "add": "新增",
+    "edit": "编辑",
+    "delete": "删除",
+    "view": "查看",
+    "handle": "处理",
+    "config": "配置",
+    "manage": "管理",
+    "command": "指令",
+    "assign": "分配",
+    "create": "创建",
+    "subscribe": "订阅",
+    "playbook": "预案",
+    "knowledge": "知识库",
+    "threshold": "阈值",
+    "correlation": "关联",
+    "dispatch": "派单",
+    "duty": "值班",
+    "report": "报表",
+    "log": "日志",
+    "forecast": "预测",
+    "compare": "对比",
+    "center": "中心",
+    "subscription": "订阅",
+    "policy": "策略",
+}
+
+
+def _resolve_child_name(child_code: str) -> str:
+    """按钮/接口权限的显示名：末段动作映射为中文；未命中则回退原值（保持幂等）。"""
+    suffix = child_code.split(":")[-1]
+    return _ACTION_LABELS.get(suffix, suffix)
+
 
 # 角色 -> 权限编码集合
 _ROLES = {
@@ -129,6 +170,10 @@ _ROLES = {
             "anti_intrusion_device:add",
             "anti_intrusion_device:edit",
             "anti_intrusion_device:delete",
+            "train_approach_device:list",
+            "train_approach_device:add",
+            "train_approach_device:edit",
+            "train_approach_device:delete",
             "alarm:list",
             "alarm:view",
             "alarm:handle",
@@ -179,6 +224,9 @@ _ROLES = {
             "anti_intrusion_device:list",
             "anti_intrusion_device:edit",
             "anti_intrusion_device:delete",
+            "train_approach_device:list",
+            "train_approach_device:edit",
+            "train_approach_device:delete",
             "job:list",
             "dashboard:view",
             "dispatch:list",
@@ -203,6 +251,7 @@ _ROLES = {
             "device:list",
             "locate_device:list",
             "anti_intrusion_device:list",
+            "train_approach_device:list",
             "dashboard:view",
             "dispatch:list",
         },
@@ -250,7 +299,7 @@ def seed_rbac(db=None) -> dict:
                 all_codes.append(child_code)
                 if db.scalar(select_perm(child_code)) is None:
                     perm = Permission(
-                        name=child_code.split(":")[-1],
+                        name=_resolve_child_name(child_code),
                         code=child_code,
                         type=3,
                         parent_id=parent.id,

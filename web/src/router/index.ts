@@ -81,6 +81,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "大机防侵限设备列表" },
       },
       {
+        path: "devices/train-approach",
+        name: "devices-train-approach",
+        component: () => import("@/views/TrainApproachDeviceListView.vue"),
+        meta: { title: "列车接近报警设备列表" },
+      },
+      {
         path: "persons",
         name: "persons",
         component: () => import("@/views/PersonView.vue"),

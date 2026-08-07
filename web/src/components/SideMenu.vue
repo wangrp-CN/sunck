@@ -26,6 +26,7 @@ import {
   VideoPlay,
   LocationFilled,
   Tools,
+  List,
   Avatar,
   OfficeBuilding,
   Collection,
@@ -67,15 +68,15 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
     class="menu"
     @select="emit('navigate')"
   >
-    <!-- ① 大屏 -->
+    <!-- ① 监控大屏（与后端模块名对齐） -->
     <el-sub-menu index="/dashboard-group">
       <template #title>
         <el-icon><DataLine /></el-icon>
-        <span>大屏</span>
+        <span>监控大屏</span>
       </template>
       <el-menu-item index="/dashboard">
         <el-icon><DataBoard /></el-icon>
-        <span>监控大屏</span>
+        <span>大屏首页</span>
       </el-menu-item>
       <el-menu-item index="/track">
         <el-icon><VideoPlay /></el-icon>
@@ -103,22 +104,23 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
       </el-menu-item>
     </el-sub-menu>
 
-    <!-- ③ 作业计划管理 -->
+    <!-- ③ 作业计划（与后端模块名对齐） -->
     <el-sub-menu index="/job-group">
       <template #title>
         <el-icon><Notebook /></el-icon>
-        <span>作业计划管理</span>
+        <span>作业计划</span>
       </template>
       <el-menu-item index="/jobs">
+        <el-icon><List /></el-icon>
         <span>作业列表</span>
       </el-menu-item>
     </el-sub-menu>
 
-    <!-- ④ 电子围栏管理 -->
+    <!-- ④ 电子围栏（与后端模块名对齐） -->
     <el-sub-menu index="/fence-group">
       <template #title>
         <el-icon><LocationFilled /></el-icon>
-        <span>电子围栏管理</span>
+        <span>电子围栏</span>
       </template>
       <el-menu-item index="/fences/list">
         <el-icon><LocationFilled /></el-icon>
@@ -156,6 +158,10 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
         <el-icon><Warning /></el-icon>
         <span>大机防侵限设备列表</span>
       </el-menu-item>
+      <el-menu-item index="/devices/train-approach">
+        <el-icon><Bell /></el-icon>
+        <span>列车接近报警设备列表</span>
+      </el-menu-item>
       <el-menu-item index="/realtime">
         <el-icon><Position /></el-icon>
         <span>实时监控</span>
@@ -166,23 +172,31 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
       </el-menu-item>
     </el-sub-menu>
 
-    <!-- ⑥ 人员机械管理 -->
-    <el-sub-menu index="/person-machine-group">
+    <!-- ⑥ 人员管理（与后端 person 模块对齐；巡检归属人员侧） -->
+    <el-sub-menu index="/person-group">
       <template #title>
         <el-icon><User /></el-icon>
-        <span>人员机械管理</span>
+        <span>人员管理</span>
       </template>
       <el-menu-item index="/persons">
         <el-icon><User /></el-icon>
         <span>人员管理</span>
       </el-menu-item>
-      <el-menu-item index="/machines">
-        <el-icon><Tools /></el-icon>
-        <span>机械管理</span>
-      </el-menu-item>
       <el-menu-item index="/inspections">
         <el-icon><Compass /></el-icon>
         <span>巡检打卡</span>
+      </el-menu-item>
+    </el-sub-menu>
+
+    <!-- ⑥-2 机械管理（与后端 machine 模块对齐） -->
+    <el-sub-menu index="/machine-group">
+      <template #title>
+        <el-icon><Tools /></el-icon>
+        <span>机械管理</span>
+      </template>
+      <el-menu-item index="/machines">
+        <el-icon><Tools /></el-icon>
+        <span>机械管理</span>
       </el-menu-item>
     </el-sub-menu>
 
@@ -338,7 +352,7 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
   border-radius: 8px;
   color: #5b6675;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 400;
   letter-spacing: 0.3px;
   /* 白底侧栏：模块以「略深面板 + 柔和投影」区分，无分割线 */
   background: rgba(0, 0, 0, 0.03);
@@ -365,34 +379,52 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
   font-size: 18px;
 }
 
-/* 内联子项：缩进、弱化字号，与一级形成层级落差 */
+/* 内联子项：与父级分组(.el-sub-menu__title)视觉样式【完全一致】——
+   同一字号(14px)/字重(600)/颜色(#5b6675)/字间距(0.3px)/字体，
+   同一高度(46px)/圆角(8px)/面板(rgba(0,0,0,.03)+柔和投影)。
+   层级差异仅由 padding-left 缩进体现，菜单名称样式在父子层级间零差异。
+   对齐公式：子项盒子左缘在父级 margin 内(10px)，+ padding-left 20px = 30px，
+   与父级标题图标/名称左缘(10+20)重合 → 子项名称与父级名称左对齐。
+   左 margin 保持 0 以保留该缩进（上下/右与父级一致）。 */
 .menu :deep(.el-menu--inline) {
   background: transparent;
   padding: 2px 0;
 }
 .menu :deep(.el-menu--inline .el-menu-item) {
-  height: 40px;
-  line-height: 40px;
-  margin: 2px 10px 2px 0;
-  padding-left: 54px !important;
-  border-left: 2px solid transparent;
-  border-radius: 0 8px 8px 0;
-  color: #909399;
-  font-size: 13px;
+  height: 46px;
+  line-height: 46px;
+  margin: 6px 10px 6px 0;
+  padding-left: 20px !important;
+  border-radius: 8px;
+  color: #5b6675;
+  background: rgba(0, 0, 0, 0.03);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  font-size: 14px;
   font-weight: 400;
+  letter-spacing: 0.3px;
 }
 .menu :deep(.el-menu--inline .el-menu-item):hover {
   color: #1890ff;
   background: rgba(24, 144, 255, 0.08);
 }
 
-/* 激活态：左侧品牌色高亮条 + 浅蓝底 + 加粗（白底可读，符合浅色规范） */
+/* 激活态：左侧品牌色高亮条 + 浅蓝底（靠颜色/高亮条区分，不靠字重，保持全菜单字重一致） */
 .menu :deep(.el-menu--inline .el-menu-item.is-active),
 .menu :deep(.el-menu > .el-menu-item.is-active) {
   color: #1890ff;
-  font-weight: 600;
+  font-weight: 400;
   background: rgba(24, 144, 255, 0.1);
   border-left: 3px solid #1890ff;
+}
+
+/* 菜单名称字重【单一来源·全局统一】：父级(.el-sub-menu__title) 与 子级(.el-menu-item)
+   在任意层级（顶层 / 内联 / 嵌套子分组标题）均使用同一 font-weight(400)，
+   彻底消除子菜单相对父级加粗的视觉差异，保证整棵菜单字体粗细完全一致。
+   嵌套子分组标题（如「告警配置」「地图维护」）此前未被顶层选择器覆盖、沿用 EP 默认，
+   此处一并归一，避免子项(600)比该父级标题(默认 normal)粗的问题。 */
+.menu :deep(.el-sub-menu__title),
+.menu :deep(.el-menu-item) {
+  font-weight: 400;
 }
 .menu :deep(.el-menu--inline .el-menu-item.is-active .el-icon) {
   color: #1890ff;

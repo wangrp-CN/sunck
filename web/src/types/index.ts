@@ -331,6 +331,69 @@ export interface AntiIntrusionDeviceUpdate {
   status?: string;
 }
 
+// ===================== 列车接近报警设备列表 =====================
+/** 设备状态（原型下拉可选项，与人机定位/大机防侵限设备一致） */
+export const TRAIN_APPROACH_DEVICE_STATUSES: string[] = ["在线", "不在线", "低电量"];
+/** 设备方位（新增/编辑表单固定下拉，必填且仅限这两项，不允许手动输入） */
+export const TRAIN_APPROACH_DEVICE_DIRECTIONS: string[] = ["上行", "下行"];
+
+export interface TrainApproachDevice {
+  id: number;
+  project_id: number | null;
+  /** 后端冗余返回的归属项目名称 */
+  project_name: string | null;
+  name: string;
+  device_no: string;
+  sn: string | null;
+  /** 设备方位（新增/编辑表单必填下拉：上行/下行；历史数据可能为 null） */
+  direction: string | null;
+  /** 经度（WGS-84，与设备/隐患一致；展示层如需地图再转 GCJ-02） */
+  longitude: number | null;
+  latitude: number | null;
+  status: string;
+  created_by: number | null;
+  created_at: string | null;
+}
+
+export interface TrainApproachDevicePage {
+  items: TrainApproachDevice[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+/** 列表查询参数（对齐原型《列车接近报警设备列表》搜索区） */
+export interface TrainApproachDeviceListParams {
+  project_id?: number | null;
+  name?: string;
+  device_no?: string;
+  status?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface TrainApproachDeviceCreate {
+  project_id: number;
+  name: string;
+  device_no: string;
+  sn?: string | null;
+  direction?: string | null;
+  longitude?: number | null;
+  latitude?: number | null;
+  status?: string;
+}
+
+export interface TrainApproachDeviceUpdate {
+  project_id?: number;
+  name?: string;
+  device_no?: string;
+  sn?: string | null;
+  direction?: string | null;
+  longitude?: number | null;
+  latitude?: number | null;
+  status?: string;
+}
+
 // ===================== 人员管理 =====================
 export interface Person {
   id: number;

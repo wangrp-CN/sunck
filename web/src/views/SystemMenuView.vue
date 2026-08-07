@@ -404,7 +404,7 @@ onMounted(async () => {
       />
       <el-table-column label="菜单名称" min-width="200" prop="name">
         <template #default="{ row }">
-          <span class="menu-name">
+          <span class="menu-name" :class="{ 'menu-name--parent': row.type === 1 }">
             <span>{{ row.name }}</span>
           </span>
         </template>
@@ -634,6 +634,15 @@ onMounted(async () => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* 父级与子级统一字体/字号/字重/字间距与对齐，层级仅靠树缩进 + 类型标签区分 */
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: 0.2px;
+  color: #303133;
+}
+/* 父级(目录)略加粗以强化分组归属，但文本排版与子级保持一致 */
+.menu-name--parent {
+  font-weight: 600;
 }
 .menu-icon {
   color: #606266;
