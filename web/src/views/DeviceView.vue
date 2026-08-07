@@ -18,10 +18,12 @@ import { fetchProjects } from "@/api/project";
 import type {
   Device,
   DeviceCreate,
+  DeviceFunction,
   DeviceType,
   DeviceUpdate,
   Project,
 } from "@/types";
+import { DEVICE_FUNCTIONS } from "@/types";
 import AttachmentManager from "@/components/AttachmentManager.vue";
 import TablePager from "@/components/TablePager.vue";
 import { batchDeleteDevices } from "@/api/device";
@@ -94,6 +96,15 @@ function deviceTypeLabel(t: string): string {
 function deviceTypeTag(t: string): "" | "success" | "warning" | "info" {
   return deviceTypeMeta[t]?.tag ?? "";
 }
+
+/** 设备功能下拉：固定三选项；编辑历史自由文本值时追加为可选项以保留原值 */
+const functionOptions = computed<string[]>(() => {
+  const opts = [...DEVICE_FUNCTIONS] as string[];
+  if (form.function && !DEVICE_FUNCTIONS.includes(form.function as DeviceFunction)) {
+    opts.push(form.function);
+  }
+  return opts;
+});
 function projectName(id: number | null): string {
   if (id == null) return "—";
   return projectMap.value.get(id) ?? `ID:${id}`;
@@ -174,6 +185,7 @@ const rules: FormRules = {
   project_id: [{ required: true, message: "请选择归属项目", trigger: "change" }],
   name: [{ required: true, message: "请输入设备名称", trigger: "blur" }],
   device_no: [{ required: true, message: "请输入设备编号", trigger: "blur" }],
+  function: [{ required: true, message: "请选择设备功能", trigger: "change" }],
 };
 
 function openCreate() {
@@ -449,8 +461,8 @@ const {
         <el-form-item label="设备编号" prop="device_no">
           <el-input v-model="form.device_no" placeholder="唯一编号" />
         </el-form-item>
-        <el-form-item label="SN码">
-          <el-input v-model="form.sn" placeholder="设备SN码（可选）" />
+        <el-form-item label="设备SN码">
+          <el-input v-model="form.sn" placeholder="请输入设备SN码" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="form.status" class="full">
@@ -459,8 +471,10 @@ const {
             <el-option label="低电量" value="低电量" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="form.device_type === 'locate'" label="功能">
-          <el-input v-model="form.function" placeholder="设备功能描述" />
+        <el-form-item v-if="form.device_type === 'locate'" label="功能" prop="function">
+          <el-select v-model="form.function" placeholder="请选择设备功能" class="full">
+            <el-option v-for="f in functionOptions" :key="f" :label="f" :value="f" />
+          </el-select>
         </el-form-item>
         <template v-if="form.device_type !== 'locate'">
           <el-form-item label="经度">

@@ -71,6 +71,47 @@ ALARM_LEVEL_TO_HAZARD_LEVEL: dict[str, str] = {
 NORMAL_STATUSES = {DEVICE_STATUS_ONLINE, DEVICE_STATUS_OFFLINE, DEVICE_STATUS_LOW_BATTERY}
 
 # ---------------------------------------------------------------------------
+# 人机定位设备（原型《人机定位设备列表》专属子类型与状态）
+# 说明：locate_device.device_type 为自由文本列（模型 LocateDevice）；下列仅作为
+#       前端下拉字典与新数据的推荐取值，后端不做强枚举校验，历史种子数据
+#       （如「人员手持机」）仍可被列表正常展示。
+# ---------------------------------------------------------------------------
+LOCATE_DEVICE_TYPE_HANDHELD = "人员手持机定位设备"
+LOCATE_DEVICE_TYPE_BADGE = "人员工牌定位设备"
+LOCATE_DEVICE_TYPE_BAND = "人员手环定位设备"
+LOCATE_DEVICE_TYPE_MACHINE = "大机机械定位设备"
+
+LOCATE_DEVICE_TYPES: tuple[str, ...] = (
+    LOCATE_DEVICE_TYPE_HANDHELD,
+    LOCATE_DEVICE_TYPE_BADGE,
+    LOCATE_DEVICE_TYPE_BAND,
+    LOCATE_DEVICE_TYPE_MACHINE,
+)
+
+LOCATE_DEVICE_STATUS_ONLINE = "在线"
+LOCATE_DEVICE_STATUS_OFFLINE = "不在线"
+LOCATE_DEVICE_STATUS_LOW_BATTERY = "低电量"
+
+LOCATE_DEVICE_STATUSES: tuple[str, ...] = (
+    LOCATE_DEVICE_STATUS_ONLINE,
+    LOCATE_DEVICE_STATUS_OFFLINE,
+    LOCATE_DEVICE_STATUS_LOW_BATTERY,
+)
+
+# 设备功能（人机定位类设备：定位 / 告警 / 定位和告警）
+# 说明：function 列为自由文本，下列仅作为前端下拉推荐取值与新数据的取值集合，
+#       后端不做强枚举校验，历史自由文本值在编辑时作为额外可选项保留。
+DEVICE_FUNCTION_LOCATE = "定位"
+DEVICE_FUNCTION_ALARM = "告警"
+DEVICE_FUNCTION_LOCATE_ALARM = "定位和告警"
+
+DEVICE_FUNCTIONS: tuple[str, ...] = (
+    DEVICE_FUNCTION_LOCATE,
+    DEVICE_FUNCTION_ALARM,
+    DEVICE_FUNCTION_LOCATE_ALARM,
+)
+
+# ---------------------------------------------------------------------------
 # 隐患治理闭环（Hazard）
 # ---------------------------------------------------------------------------
 # 隐患等级（按严重程度降序）

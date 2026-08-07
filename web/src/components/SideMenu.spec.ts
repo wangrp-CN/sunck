@@ -37,6 +37,28 @@ describe("SideMenu", () => {
     // 电子围栏管理为目录，其下挂「电子围栏列表」子菜单
     expect(text).toContain("电子围栏管理");
     expect(text).toContain("电子围栏列表");
+    // 设备管理目录下的三类设备清单
+    expect(text).toContain("设备管理");
+    expect(text).toContain("人机定位设备列表");
+    expect(text).toContain("大机防侵限设备列表");
+  });
+
+  it("大机防侵限设备列表菜单指向 /devices/anti-intrusion", () => {
+    const wrapper = mount(SideMenu, {
+      global: {
+        stubs: {
+          "el-icon": { template: "<i><slot /></i>" },
+          "el-menu": menuStub,
+          "el-menu-item": itemStub,
+          "el-sub-menu": subStub,
+        },
+      },
+    });
+    const hit = wrapper
+      .findAllComponents(itemStub)
+      .find((c) => c.text().includes("大机防侵限设备列表"));
+    expect(hit).toBeTruthy();
+    expect(hit!.props("index")).toBe("/devices/anti-intrusion");
   });
 
   it("点击菜单项 emit navigate（用于移动端关闭抽屉）", async () => {

@@ -148,6 +148,14 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
         <el-icon><Promotion /></el-icon>
         <span>指令下发记录</span>
       </el-menu-item>
+      <el-menu-item index="/devices/locate">
+        <el-icon><LocationFilled /></el-icon>
+        <span>人机定位设备列表</span>
+      </el-menu-item>
+      <el-menu-item index="/devices/anti-intrusion">
+        <el-icon><Warning /></el-icon>
+        <span>大机防侵限设备列表</span>
+      </el-menu-item>
       <el-menu-item index="/realtime">
         <el-icon><Position /></el-icon>
         <span>实时监控</span>

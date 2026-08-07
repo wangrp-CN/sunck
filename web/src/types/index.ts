@@ -195,6 +195,142 @@ export interface DeviceUpdate {
   direction?: string | null;
 }
 
+// 设备功能可选项（人机定位类设备：定位 / 告警 / 定位和告警）
+export type DeviceFunction = "定位" | "告警" | "定位和告警";
+export const DEVICE_FUNCTIONS: DeviceFunction[] = [
+  "定位",
+  "告警",
+  "定位和告警",
+];
+
+// ===================== 人机定位设备列表 =====================
+/** 设备类型（原型下拉可选项；历史数据可能为其它自由文本，故用宽松 string 承接） */
+export type LocateDeviceType =
+  | "人员手持机定位设备"
+  | "人员工牌定位设备"
+  | "人员手环定位设备"
+  | "大机机械定位设备";
+
+export const LOCATE_DEVICE_TYPES: LocateDeviceType[] = [
+  "人员手持机定位设备",
+  "人员工牌定位设备",
+  "人员手环定位设备",
+  "大机机械定位设备",
+];
+
+/** 设备状态（原型下拉可选项，区别于通用设备状态的「离线」） */
+export const LOCATE_DEVICE_STATUSES: string[] = ["在线", "不在线", "低电量"];
+
+export interface LocateDevice {
+  id: number;
+  project_id: number | null;
+  /** 后端冗余返回的归属项目名称 */
+  project_name: string | null;
+  name: string;
+  device_no: string;
+  device_type: string | null;
+  function: string | null;
+  sn: string | null;
+  status: string;
+  created_by: number | null;
+  created_at: string | null;
+}
+
+export interface LocateDevicePage {
+  items: LocateDevice[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+/** 列表查询参数（对齐原型《人机定位设备列表》搜索区） */
+export interface LocateDeviceListParams {
+  project_id?: number | null;
+  name?: string;
+  device_type?: string;
+  device_no?: string;
+  status?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface LocateDeviceCreate {
+  project_id: number;
+  name: string;
+  device_no: string;
+  device_type?: string | null;
+  function?: string | null;
+  sn?: string | null;
+  status?: string;
+}
+
+export interface LocateDeviceUpdate {
+  project_id?: number;
+  name?: string;
+  device_no?: string;
+  device_type?: string | null;
+  function?: string | null;
+  sn?: string | null;
+  status?: string;
+}
+
+// ===================== 大机防侵限设备列表 =====================
+/** 设备状态（原型下拉可选项，与人机定位设备一致） */
+export const ANTI_INTRUSION_DEVICE_STATUSES: string[] = ["在线", "不在线", "低电量"];
+
+export interface AntiIntrusionDevice {
+  id: number;
+  project_id: number | null;
+  /** 后端冗余返回的归属项目名称 */
+  project_name: string | null;
+  name: string;
+  device_no: string;
+  sn: string | null;
+  /** 经度（WGS-84，与设备/隐患一致；展示层如需地图再转 GCJ-02） */
+  longitude: number | null;
+  latitude: number | null;
+  status: string;
+  created_by: number | null;
+  created_at: string | null;
+}
+
+export interface AntiIntrusionDevicePage {
+  items: AntiIntrusionDevice[];
+  total: number;
+  page: number;
+  size: number;
+}
+
+/** 列表查询参数（对齐原型《大机防侵限设备列表》搜索区） */
+export interface AntiIntrusionDeviceListParams {
+  project_id?: number | null;
+  name?: string;
+  device_no?: string;
+  status?: string;
+  page?: number;
+  size?: number;
+}
+
+export interface AntiIntrusionDeviceCreate {
+  project_id: number;
+  name: string;
+  device_no: string;
+  sn?: string | null;
+  longitude?: number | null;
+  latitude?: number | null;
+  status?: string;
+}
+
+export interface AntiIntrusionDeviceUpdate {
+  project_id?: number;
+  name?: string;
+  device_no?: string;
+  sn?: string | null;
+  longitude?: number | null;
+  latitude?: number | null;
+  status?: string;
+}
+
 // ===================== 人员管理 =====================
 export interface Person {
   id: number;

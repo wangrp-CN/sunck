@@ -69,6 +69,18 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "指令下发记录" },
       },
       {
+        path: "devices/locate",
+        name: "devices-locate",
+        component: () => import("@/views/LocateDeviceListView.vue"),
+        meta: { title: "人机定位设备列表" },
+      },
+      {
+        path: "devices/anti-intrusion",
+        name: "devices-anti-intrusion",
+        component: () => import("@/views/AntiIntrusionDeviceListView.vue"),
+        meta: { title: "大机防侵限设备列表" },
+      },
+      {
         path: "persons",
         name: "persons",
         component: () => import("@/views/PersonView.vue"),

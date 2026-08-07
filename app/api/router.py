@@ -8,6 +8,7 @@ from fastapi import APIRouter
 from app.api.v1 import (
     alarm_policies,
     alarms,
+    anti_intrusion_devices,
     attachments,
     audit_logs,
     auth,
@@ -26,6 +27,7 @@ from app.api.v1 import (
     intelligence,
     jobs,
     knowledge,
+    locate_devices,
     logs,
     machines,
     map_assets,
@@ -52,6 +54,12 @@ api_router.include_router(persons.router, prefix="/v1/persons", tags=["人员管
 api_router.include_router(machines.router, prefix="/v1/machines", tags=["大型机械"])
 api_router.include_router(fences.router, prefix="/v1/fences", tags=["电子围栏"])
 api_router.include_router(jobs.router, prefix="/v1/jobs", tags=["作业计划"])
+api_router.include_router(locate_devices.router, prefix="/v1/locate-devices", tags=["人机定位设备"])
+api_router.include_router(
+    anti_intrusion_devices.router,
+    prefix="/v1/anti-intrusion-devices",
+    tags=["大机防侵限设备"],
+)
 api_router.include_router(alarms.router, prefix="/v1/alarms", tags=["告警管理"])
 api_router.include_router(dispositions.router, prefix="/v1/dispositions", tags=["告警处置"])
 api_router.include_router(alarm_policies.router, prefix="/v1/alarm-policies", tags=["告警策略"])
