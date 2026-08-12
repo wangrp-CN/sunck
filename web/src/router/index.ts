@@ -22,7 +22,7 @@ const routes: RouteRecordRaw[] = [
         path: "dashboard",
         name: "dashboard",
         component: () => import("@/views/DashboardView.vue"),
-        meta: { title: "监控大屏" },
+        meta: { title: "大屏" },
       },
       {
         path: "realtime",
@@ -90,7 +90,7 @@ const routes: RouteRecordRaw[] = [
         path: "persons",
         name: "persons",
         component: () => import("@/views/PersonView.vue"),
-        meta: { title: "人员管理" },
+        meta: { title: "人员列表" },
       },
       {
         path: "machines",

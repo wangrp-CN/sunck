@@ -32,14 +32,15 @@ describe("SideMenu", () => {
     });
     const text = wrapper.text();
     // ① 分组标签已与后端 Permission 模块名对齐
-    expect(text).toContain("监控大屏");
+    expect(text).toContain("大屏");
     expect(text).toContain("视频AI");
     expect(text).toContain("告警管理");
-    // 作业计划 / 电子围栏 / 人员管理 / 机械管理 均为对齐后的分组名
+    // 作业计划 / 电子围栏 / 人员机械管理(分组) / 人员列表(子菜单) / 机械管理 均为对齐后的分组名
     expect(text).toContain("作业计划");
     expect(text).toContain("电子围栏");
     expect(text).toContain("电子围栏列表");
-    expect(text).toContain("人员管理");
+    expect(text).toContain("人员机械管理");
+    expect(text).toContain("人员列表");
     expect(text).toContain("机械管理");
     // 设备管理目录下的三类设备清单
     expect(text).toContain("设备管理");

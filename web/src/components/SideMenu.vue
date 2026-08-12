@@ -68,11 +68,11 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
     class="menu"
     @select="emit('navigate')"
   >
-    <!-- ① 监控大屏（与后端模块名对齐） -->
+    <!-- ① 大屏（与后端模块名对齐） -->
     <el-sub-menu index="/dashboard-group">
       <template #title>
         <el-icon><DataLine /></el-icon>
-        <span>监控大屏</span>
+        <span>大屏</span>
       </template>
       <el-menu-item index="/dashboard">
         <el-icon><DataBoard /></el-icon>
@@ -172,15 +172,15 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
       </el-menu-item>
     </el-sub-menu>
 
-    <!-- ⑥ 人员管理（与后端 person 模块对齐；巡检归属人员侧） -->
+    <!-- ⑥ 人员机械管理（与后端 person 模块对齐；巡检归属人员侧） -->
     <el-sub-menu index="/person-group">
       <template #title>
         <el-icon><User /></el-icon>
-        <span>人员管理</span>
+        <span>人员机械管理</span>
       </template>
       <el-menu-item index="/persons">
         <el-icon><User /></el-icon>
-        <span>人员管理</span>
+        <span>人员列表</span>
       </el-menu-item>
       <el-menu-item index="/inspections">
         <el-icon><Compass /></el-icon>

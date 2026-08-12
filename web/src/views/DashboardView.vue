@@ -817,7 +817,7 @@ onUnmounted(() => {
   <div v-loading="loading" class="dashboard">
     <!-- 顶部工具条：报表中心入口 + 一键出周报 -->
     <div class="dash-toolbar">
-      <span class="dash-title">监控大屏</span>
+      <span class="dash-title">大屏</span>
       <div class="spacer" />
       <el-button text bg @click="router.push('/intelligence/report-center')">
         <el-icon><Document /></el-icon>
