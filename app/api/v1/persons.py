@@ -1,4 +1,4 @@
-"""人员管理路由（对应需求 §2.8）。
+"""人员机械管理路由（对应需求 §2.8）。
 
 - 列表/详情：person:list 权限 + 数据范围过滤（VIA_PROJECT：经 project.dept_id）。
 - 创建：person:add 权限，自动写入 created_by。
@@ -21,7 +21,7 @@ from app.schema.common import IdList
 from app.schema.person import PersonCreate, PersonOut, PersonPage, PersonUpdate
 from app.service.batch_ops import batch_soft_delete
 
-router = APIRouter(tags=["人员管理"])
+router = APIRouter(tags=["人员机械管理"])
 
 
 @router.get("/ping")
@@ -43,17 +43,32 @@ def list_persons(
     db: Session = Depends(get_db),
     scope: DataScope = Depends(get_data_scope),
     keyword: str | None = None,
+    project_id: int | None = None,
+    name: str | None = None,
+    person_type: str | None = None,
     page: int = 1,
     size: int = 20,
 ) -> ApiResponse:
-    """分页查询人员，并施加数据范围过滤。"""
+    """分页查询人员，并施加数据范围过滤。
+
+    可按归属项目(project_id)、姓名(精确)、人员类型(person_type)过滤；
+    列表按创建时间倒序排列（原型要求）。
+    """
     stmt = select(Person).where(Person.is_deleted.is_(False))
     if keyword:
         kw = f"%{keyword}%"
         stmt = stmt.where(or_(Person.name.ilike(kw), Person.person_no.ilike(kw)))
+    if project_id is not None:
+        stmt = stmt.where(Person.project_id == project_id)
+    if name:
+        stmt = stmt.where(Person.name == name)
+    if person_type:
+        stmt = stmt.where(Person.person_type == person_type)
     stmt = apply_data_scope(stmt, Person, scope)
     total = db.scalar(select(func.count()).select_from(stmt.subquery()))
-    rows = db.scalars(stmt.order_by(Person.id.desc()).offset((page - 1) * size).limit(size)).all()
+    rows = db.scalars(
+        stmt.order_by(Person.created_at.desc()).offset((page - 1) * size).limit(size)
+    ).all()
     return ApiResponse.success(
         PersonPage(
             items=[_person_out(p) for p in rows],
@@ -111,6 +126,7 @@ def create_person(
         gender=req.gender,
         phone=req.phone,
         person_type=req.person_type,
+        icon=req.icon,
         device_no=req.device_no,
         created_by=current.id,
     )

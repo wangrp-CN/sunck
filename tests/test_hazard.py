@@ -187,3 +187,67 @@ def test_hazard_filter_by_level(client, admin_token):
     assert r.status_code == 200
     items = r.json()["data"]["items"]
     assert items and all(i["level"] == "低" for i in items)
+
+
+def test_hazard_create_boundary_and_invalid(client, admin_token):
+    """边界/异常：缺标题、日期格式非法 -> 参数校验失败(422)；空标题被接受。"""
+    H = {"Authorization": f"Bearer {admin_token}"}
+
+    # 异常：缺标题 -> 422
+    r = client.post(API, json={"level": "一般"}, headers=H)
+    assert r.status_code == 200 and r.json()["code"] == 422, r.text
+
+    # 异常：due_at 格式非法 -> 422
+    r = client.post(API, json={"title": _u("日期异常"), "due_at": "不是日期"}, headers=H)
+    assert r.status_code == 200 and r.json()["code"] == 422, r.text
+
+    # 边界：空标题("")按「标题不能为空」业务校验拒绝(400)
+    r = client.post(API, json={"title": ""}, headers=H)
+    assert r.status_code == 200 and r.json()["code"] == 400, r.text
+
+
+def test_hazard_transition_requires_note(client, admin_token):
+    """流转边界：需填说明/意见的动作在缺说明时拒绝(400)。"""
+    h = _post_hazard(client, admin_token, title=_u("需说明链路"))
+    hid = h["id"]
+    H = {"Authorization": f"Bearer {admin_token}"}
+
+    # 待整改 -> 开始整改 -> 整改中
+    r = client.post(f"{API}/{hid}/transition", json={"action": "start_rectify"}, headers=H)
+    assert r.status_code == 200, r.text
+
+    # 整改中 -> 提交整改(缺说明) -> 400
+    r = client.post(f"{API}/{hid}/transition", json={"action": "submit_rectify"}, headers=H)
+    assert r.status_code == 200 and r.json()["code"] == 400, r.text
+    assert "整改说明" in r.json()["message"]
+
+    # 整改中 -> 提交整改(带说明) -> 待复核
+    r = client.post(
+        f"{API}/{hid}/transition", json={"action": "submit_rectify", "note": "已整改"}, headers=H
+    )
+    assert r.status_code == 200 and r.json()["data"]["status"] == "待复核", r.text
+
+    # 待复核 -> 复核通过(缺意见) -> 400
+    r = client.post(f"{API}/{hid}/transition", json={"action": "verify_pass"}, headers=H)
+    assert r.status_code == 200 and r.json()["code"] == 400, r.text
+    assert "复核意见" in r.json()["message"]
+
+
+def test_hazard_reject_requires_reason(client, admin_token):
+    """边界：待整改 -> 驳回(缺原因) 需填写原因(400)。"""
+    h = _post_hazard(client, admin_token, title=_u("驳回需原因"))
+    hid = h["id"]
+    H = {"Authorization": f"Bearer {admin_token}"}
+    r = client.post(f"{API}/{hid}/transition", json={"action": "reject"}, headers=H)
+    assert r.status_code == 200 and r.json()["code"] == 400, r.text
+    assert "原因" in r.json()["message"]
+
+
+def test_hazard_transition_invalid_action(client, admin_token):
+    """异常：非法流转动作 -> 400（动作校验先于状态校验）。"""
+    h = _post_hazard(client, admin_token, title=_u("非法动作"))
+    hid = h["id"]
+    H = {"Authorization": f"Bearer {admin_token}"}
+    r = client.post(f"{API}/{hid}/transition", json={"action": "fly"}, headers=H)
+    assert r.status_code == 200 and r.json()["code"] == 400, r.text
+    assert "非法的流转动作" in r.json()["message"]

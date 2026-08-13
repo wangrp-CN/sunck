@@ -292,3 +292,46 @@ def test_pipeline_lifecycle_auto_end(isolated, monkeypatch):
         assert alarms[0].handle_status == ALARM_STATUS_CLEARED
     finally:
         db.close()
+
+
+# ---------------------------------------------------------------------------
+# 5) 边界 / 异常：不存在 id 幂等、未知设备无活跃、project_id 可空
+# ---------------------------------------------------------------------------
+
+
+def test_end_alarm_by_id_missing(db_session):
+    """对不存在的告警 id 调用应安全返回 False（幂等，不抛异常）。"""
+    assert end_alarm_by_id(db_session, 9_999_999) is False
+
+
+def test_reconcile_no_active_device(db_session):
+    """未知设备无活跃违规 -> 不结束任何告警，活跃集合为空。"""
+    ended = reconcile_active_alarms(db_session, "TEST-BND-NONE", {})
+    assert ended == []
+    assert get_redis_client().hgetall("rule2:active:TEST-BND-NONE") == {}
+
+
+def test_create_alarm_allows_project_none(monkeypatch, db_session):
+    """边界：未关联项目的告警(project_id=None)仍应正常落库。"""
+    fake = MagicMock()
+    fake.set.return_value = True  # 模拟 set(nx=True) 抢占成功 -> 首次创建
+    monkeypatch.setattr("app.service.alarm_service.get_redis_client", lambda: fake)
+    try:
+        out = create_alarm(
+            db_session,
+            alarm_type=ALARM_TYPE_FENCE,
+            device_no="TEST-BND-1",
+            alarm_status=ALARM_STATUS_START,
+            project_id=None,
+        )
+        assert out is not None and isinstance(out, Alarm)
+        assert out.project_id is None
+        db_session.commit()
+        # 去重键须用原子 set(nx=True) 抢占
+        assert fake.set.call_args_list[0].kwargs.get("nx") is True
+    finally:
+        db_session.execute(delete(Alarm).where(Alarm.device_no == "TEST-BND-1"))
+        db_session.commit()
+        r = get_redis_client()
+        for k in r.keys("alarm:dedup:TEST-BND-1:*"):
+            r.delete(k)

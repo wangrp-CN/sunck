@@ -1,4 +1,4 @@
-"""人员管理相关 Schema（请求/响应模型）。"""
+"""人员机械管理相关 Schema（请求/响应模型）。"""
 
 from datetime import datetime
 
@@ -12,6 +12,7 @@ class PersonCreate(BaseModel):
     gender: str | None = Field(None, max_length=8, description="性别")
     phone: str | None = Field(None, max_length=32, description="电话")
     person_type: str | None = Field(None, max_length=32, description="人员类型(防护/施工/管理)")
+    icon: str | None = Field(None, max_length=255, description="人员图标")
     device_no: str | None = Field(None, max_length=64, description="绑定定位设备编号")
 
 
@@ -22,6 +23,7 @@ class PersonUpdate(BaseModel):
     gender: str | None = Field(None, max_length=8, description="性别")
     phone: str | None = Field(None, max_length=32, description="电话")
     person_type: str | None = Field(None, max_length=32, description="人员类型")
+    icon: str | None = Field(None, max_length=255, description="人员图标")
     device_no: str | None = Field(None, max_length=64, description="绑定定位设备编号")
 
 

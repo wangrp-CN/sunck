@@ -5,6 +5,9 @@ import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 // 人员分页列表
 export function fetchPersons(params: {
   keyword?: string;
+  project_id?: number;
+  name?: string;
+  person_type?: string;
   page?: number;
   size?: number;
 }): Promise<PersonPage> {

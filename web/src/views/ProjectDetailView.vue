@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { useProjectStore } from "@/stores/project";
 import { ElMessage, ElMessageBox } from "element-plus";
 import { Monitor } from "@element-plus/icons-vue";
 import MapPanel from "@/components/MapPanel.vue";
@@ -19,6 +20,8 @@ interface PopupState {
 }
 const route = useRoute();
 const router = useRouter();
+// 将「大屏选中的项目」写入全局 store，供人员列表等页默认联动
+const projectStore = useProjectStore();
 const projectId = computed<number | null>(() => {
   const raw = route.params.id;
   return raw !== undefined ? Number(raw) : null;
@@ -316,9 +319,15 @@ watch(
   },
 );
 
+// 当前大屏选中的项目写入全局 store（供人员列表等页默认联动）
+watch(projectId, (id) => {
+  if (id != null) projectStore.setSelectedProject(id);
+});
+
 onMounted(async () => {
   await loadProjects();
   await loadDetail();
+  if (projectId.value != null) projectStore.setSelectedProject(projectId.value);
   startRefresh();
 });
 onUnmounted(() => {
@@ -347,14 +356,14 @@ onUnmounted(() => {
     </div>
 
     <!-- 项目信息栏 -->
-    <div class="info-bar">
+    <el-card class="info-bar" shadow="never">
       <div v-for="item in infoItems" :key="item.label" class="info-item">
         <span class="info-label">{{ item.label }}</span>
         <el-tooltip :content="String(item.value)" placement="top" :disabled="!item.value || String(item.value).length < 12">
           <span class="info-value">{{ item.value }}</span>
         </el-tooltip>
       </div>
-    </div>
+    </el-card>
 
     <!-- 搜索方式（原型：搜索方式下拉 + 取值下拉，选中后高亮并展示详情）-->
     <div class="search-bar">
@@ -387,14 +396,16 @@ onUnmounted(() => {
 
       <!-- 浮动详情弹窗 -->
       <transition name="fade">
-        <div v-if="popup.visible" class="detail-popup">
-          <div class="popup-header">
-            <span v-if="popup.kind === 'device'">设备详情</span>
-            <span v-else-if="popup.kind === 'person'">人员详情</span>
-            <span v-else-if="popup.kind === 'machine'">大机详情</span>
-            <span v-else-if="popup.kind === 'fence'">围栏详情</span>
-            <el-button text :icon="'Close'" class="popup-close" @click="closePopup" />
-          </div>
+        <el-card v-if="popup.visible" class="detail-popup" shadow="never">
+          <template #header>
+            <div class="popup-header">
+              <span v-if="popup.kind === 'device'">设备详情</span>
+              <span v-else-if="popup.kind === 'person'">人员详情</span>
+              <span v-else-if="popup.kind === 'machine'">大机详情</span>
+              <span v-else-if="popup.kind === 'fence'">围栏详情</span>
+              <el-button text :icon="'Close'" class="popup-close" @click="closePopup" />
+            </div>
+          </template>
 
           <!-- 人员 -->
           <template v-if="popup.kind === 'person'">
@@ -439,18 +450,20 @@ onUnmounted(() => {
             <div class="popup-row"><span>围栏编号：</span><b>{{ popup.data.id }}</b></div>
             <div class="popup-row"><span>围栏类型：</span><b>{{ popup.data.fence_type || '—' }}</b></div>
           </template>
-        </div>
+        </el-card>
       </transition>
     </div>
 
     <!-- 告警面板 -->
     <transition name="fade">
-      <div v-if="hasAlarms" class="alarm-panel" :class="{ collapsed: alarmPanelCollapsed }">
-        <div class="alarm-header" @click="toggleAlarmPanel">
-          <span class="alarm-title">告警信息</span>
-          <span class="alarm-count">{{ alarmList.length }}</span>
-          <span class="alarm-collapse-icon">{{ alarmPanelCollapsed ? "展开" : "收起" }}</span>
-        </div>
+      <el-card v-if="hasAlarms" class="alarm-panel" :class="{ collapsed: alarmPanelCollapsed }" shadow="never">
+        <template #header>
+          <div class="alarm-header" @click="toggleAlarmPanel">
+            <span class="alarm-title">告警信息</span>
+            <span class="alarm-count">{{ alarmList.length }}</span>
+            <span class="alarm-collapse-icon">{{ alarmPanelCollapsed ? "展开" : "收起" }}</span>
+          </div>
+        </template>
         <div v-show="!alarmPanelCollapsed" class="alarm-body">
           <table class="alarm-table">
             <thead>
@@ -474,7 +487,7 @@ onUnmounted(() => {
             </tbody>
           </table>
         </div>
-      </div>
+      </el-card>
     </transition>
 
     <!-- 列车接近记录对话框 -->
@@ -492,14 +505,15 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* 系统浅色 Element Plus 主题：与监控大屏(DashboardView)及全站卡片一致。
+   调色板采用 EP 默认浅色值（#303133/#606266/#909399 文字、#ebeef5 边框、
+   #409eff 主色、#f56c6c 危险、#e6a23c 警告），面板复用 el-card shadow=never。 */
 .project-detail {
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 12px;
+  padding: 8px;
   gap: 12px;
-  background: linear-gradient(160deg, #0a1a2f 0%, #0b2238 100%);
-  color: #e6f0fa;
 }
 .dash-toolbar {
   display: flex;
@@ -507,25 +521,24 @@ onUnmounted(() => {
   gap: 12px;
 }
 .dash-title {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
-  color: #e6f0fa;
+  color: #303133;
 }
 .spacer {
   flex: 1;
 }
 .refresh-hint {
   font-size: 12px;
-  color: #8aa6c0;
+  color: #909399;
 }
-.info-bar {
+
+/* 项目信息卡片：el-card 提供白底 + #ebeef5 描边 + 8px 圆角，与系统一致 */
+.info-bar :deep(.el-card__body) {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
   padding: 12px 16px;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(120, 170, 220, 0.18);
-  border-radius: 8px;
 }
 .info-item {
   display: flex;
@@ -534,11 +547,11 @@ onUnmounted(() => {
   min-width: 180px;
 }
 .info-label {
-  color: #8aa6c0;
+  color: #909399;
   font-size: 13px;
 }
 .info-value {
-  color: #e6f0fa;
+  color: #303133;
   font-weight: 600;
   max-width: 220px;
   overflow: hidden;
@@ -552,7 +565,7 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 .search-label {
-  color: #8aa6c0;
+  color: #606266;
   font-size: 13px;
 }
 .map-wrap {
@@ -561,27 +574,30 @@ onUnmounted(() => {
   min-height: 360px;
   border-radius: 8px;
   overflow: hidden;
-  border: 1px solid rgba(120, 170, 220, 0.18);
+  border: 1px solid #ebeef5;
+  background: #fff;
 }
+
+/* 浮动详情弹窗：复用 el-card（白底 + EP 描边 + 轻阴影） */
 .detail-popup {
   position: absolute;
   top: 16px;
   right: 16px;
   width: 280px;
-  background: rgba(13, 32, 54, 0.95);
-  border: 1px solid rgba(120, 170, 220, 0.35);
-  border-radius: 8px;
-  padding: 12px 14px;
-  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
   z-index: 20;
+}
+.detail-popup :deep(.el-card__header) {
+  padding: 10px 14px;
+}
+.detail-popup :deep(.el-card__body) {
+  padding: 12px 14px;
 }
 .popup-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-weight: 600;
-  margin-bottom: 8px;
-  color: #7fd0ff;
+  color: #409eff;
 }
 .popup-close {
   padding: 0;
@@ -592,39 +608,46 @@ onUnmounted(() => {
   gap: 12px;
   font-size: 13px;
   padding: 3px 0;
-  color: #c4d6e8;
+  color: #606266;
 }
 .popup-row b {
-  color: #e6f0fa;
+  color: #303133;
   font-weight: 600;
 }
 .popup-row .el-button {
   margin-top: 8px;
 }
+
+/* 告警面板：el-card 固定高度内滚动，语义化危险色 */
 .alarm-panel {
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid rgba(120, 170, 220, 0.18);
-  border-radius: 8px;
-  max-height: 280px;
   display: flex;
   flex-direction: column;
+  max-height: 280px;
   overflow: hidden;
+}
+.alarm-panel :deep(.el-card__header) {
+  padding: 10px 14px;
+  border-bottom: 1px solid #ebeef5;
+  flex: 0 0 auto;
+}
+.alarm-panel :deep(.el-card__body) {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0;
 }
 .alarm-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
   cursor: pointer;
-  background: rgba(255, 120, 60, 0.12);
-  border-bottom: 1px solid rgba(120, 170, 220, 0.18);
 }
 .alarm-title {
   font-weight: 600;
-  color: #ffb74d;
+  color: #f56c6c;
 }
 .alarm-count {
-  background: #ff6a00;
+  background: #f56c6c;
   color: #fff;
   border-radius: 10px;
   padding: 0 8px;
@@ -632,7 +655,7 @@ onUnmounted(() => {
 }
 .alarm-collapse-icon {
   margin-left: auto;
-  color: #8aa6c0;
+  color: #909399;
   font-size: 12px;
 }
 .alarm-body {
@@ -647,17 +670,17 @@ onUnmounted(() => {
 .alarm-table td {
   text-align: left;
   padding: 8px 12px;
-  border-bottom: 1px solid rgba(120, 170, 220, 0.12);
+  border-bottom: 1px solid #ebeef5;
 }
 .alarm-table th {
-  color: #8aa6c0;
+  color: #606266;
   font-weight: 600;
   position: sticky;
   top: 0;
-  background: #0d2136;
+  background: #f5f7fa;
 }
 .alarm-table td {
-  color: #e6f0fa;
+  color: #303133;
 }
 .alarm-info {
   max-width: 320px;
@@ -674,7 +697,7 @@ onUnmounted(() => {
     background: transparent;
   }
   50% {
-    background: rgba(255, 106, 0, 0.28);
+    background: rgba(245, 108, 108, 0.18);
   }
 }
 .fade-enter-active,
