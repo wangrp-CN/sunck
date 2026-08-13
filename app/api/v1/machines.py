@@ -30,7 +30,9 @@ def ping() -> dict:
 
 
 def _machine_out(m: Machine) -> MachineOut:
-    return MachineOut.model_validate(m)
+    out = MachineOut.model_validate(m)
+    out.project_name = m.project.name if m.project else None
+    return out
 
 
 @router.get(
@@ -43,14 +45,30 @@ def list_machines(
     db: Session = Depends(get_db),
     scope: DataScope = Depends(get_data_scope),
     keyword: str | None = None,
+    project_id: int | None = None,
+    machine_no: str | None = None,
+    machine_type: str | None = None,
     page: int = 1,
     size: int = 20,
 ) -> ApiResponse:
-    """分页查询大型机械，并施加数据范围过滤。"""
+    """分页查询大型机械，并施加数据范围过滤。
+
+    过滤参数：
+    - keyword：大机编号/类型模糊匹配（兼容旧前端）。
+    - project_id：按归属项目精确过滤（原型《大型机械列表》「项目名称」下拉）。
+    - machine_no：大机编号精确匹配（原型「大机编号」文本框）。
+    - machine_type：大机类型精确匹配（原型「大机类型」下拉：挖掘机/打桩机/吊机）。
+    """
     stmt = select(Machine).where(Machine.is_deleted.is_(False))
     if keyword:
         kw = f"%{keyword}%"
         stmt = stmt.where(or_(Machine.machine_no.ilike(kw), Machine.machine_type.ilike(kw)))
+    if project_id is not None:
+        stmt = stmt.where(Machine.project_id == project_id)
+    if machine_no:
+        stmt = stmt.where(Machine.machine_no == machine_no)
+    if machine_type:
+        stmt = stmt.where(Machine.machine_type == machine_type)
     stmt = apply_data_scope(stmt, Machine, scope)
     total = db.scalar(select(func.count()).select_from(stmt.subquery()))
     rows = db.scalars(stmt.order_by(Machine.id.desc()).offset((page - 1) * size).limit(size)).all()

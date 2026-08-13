@@ -18,6 +18,7 @@ import {
   Setting,
   Notebook,
   Compass,
+  Coordinate,
   VideoCamera,
   Warning,
   Monitor,
@@ -185,6 +186,10 @@ const emit = defineEmits<{ (e: "navigate"): void }>();
       <el-menu-item index="/inspections">
         <el-icon><Compass /></el-icon>
         <span>巡检打卡</span>
+      </el-menu-item>
+      <el-menu-item index="/large-machines">
+        <el-icon><Coordinate /></el-icon>
+        <span>大型机械列表</span>
       </el-menu-item>
     </el-sub-menu>
 

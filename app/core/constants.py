@@ -98,6 +98,19 @@ LOCATE_DEVICE_STATUSES: tuple[str, ...] = (
     LOCATE_DEVICE_STATUS_LOW_BATTERY,
 )
 
+# 大型机械（大机）类型（原型《大型机械列表》「大机类型」下拉可选项）。
+# 说明：machine_type 列为自由文本，下列仅作为前端下拉推荐取值与新数据的取值集合，
+#       后端不做强枚举校验，历史自由文本值在编辑时作为额外可选项保留。
+MACHINE_TYPE_EXCAVATOR = "挖掘机"
+MACHINE_TYPE_PILE_DRIVER = "打桩机"
+MACHINE_TYPE_CRANE = "吊机"
+
+MACHINE_TYPES: tuple[str, ...] = (
+    MACHINE_TYPE_EXCAVATOR,
+    MACHINE_TYPE_PILE_DRIVER,
+    MACHINE_TYPE_CRANE,
+)
+
 # 设备功能（人机定位类设备：定位 / 告警 / 定位和告警）
 # 说明：function 列为自由文本，下列仅作为前端下拉推荐取值与新数据的取值集合，
 #       后端不做强枚举校验，历史自由文本值在编辑时作为额外可选项保留。

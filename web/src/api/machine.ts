@@ -1,13 +1,9 @@
 import { http } from "@/utils/request";
-import type { Machine, MachinePage, MachineCreate, MachineUpdate } from "@/types";
+import type { Machine, MachinePage, MachineCreate, MachineUpdate, MachineListParams } from "@/types";
 import { batchDelete, type BatchDeleteResult } from "@/api/batch";
 
-// 机械分页列表
-export function fetchMachines(params: {
-  keyword?: string;
-  page?: number;
-  size?: number;
-}): Promise<MachinePage> {
+// 机械分页列表（支持 项目/编号/类型 精确过滤，对齐原型《大型机械列表》）
+export function fetchMachines(params: MachineListParams): Promise<MachinePage> {
   return http<MachinePage>({
     url: "/v1/machines",
     method: "GET",

@@ -394,7 +394,7 @@ export interface TrainApproachDeviceUpdate {
   status?: string;
 }
 
-// ===================== 人员管理 =====================
+// ===================== 人员机械管理 =====================
 export interface Person {
   id: number;
   project_id: number | null;
@@ -423,6 +423,7 @@ export interface PersonCreate {
   gender?: string | null;
   phone?: string | null;
   person_type?: string | null;
+  icon?: string | null;
   device_no?: string | null;
 }
 
@@ -433,13 +434,19 @@ export interface PersonUpdate {
   gender?: string | null;
   phone?: string | null;
   person_type?: string | null;
+  icon?: string | null;
   device_no?: string | null;
 }
 
 // ===================== 大型机械管理 =====================
+/** 大机类型（原型《大型机械列表》「大机类型」下拉可选项；machine_type 为自由文本，历史值可保留） */
+export const MACHINE_TYPES: string[] = ["挖掘机", "打桩机", "吊机"];
+
 export interface Machine {
   id: number;
   project_id: number | null;
+  /** 后端冗余返回的归属项目名称 */
+  project_name: string | null;
   machine_no: string;
   machine_type: string | null;
   spec_model: string | null;
@@ -453,6 +460,16 @@ export interface MachinePage {
   total: number;
   page: number;
   size: number;
+}
+
+/** 列表查询参数（对齐原型《大型机械列表》搜索区） */
+export interface MachineListParams {
+  keyword?: string;
+  project_id?: number | null;
+  machine_no?: string;
+  machine_type?: string;
+  page?: number;
+  size?: number;
 }
 
 export interface MachineCreate {

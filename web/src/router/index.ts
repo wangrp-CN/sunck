@@ -99,6 +99,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: "机械管理" },
       },
       {
+        path: "large-machines",
+        name: "large-machines",
+        component: () => import("@/views/LargeMachineListView.vue"),
+        meta: { title: "大型机械列表" },
+      },
+      {
         // 电子围栏管理：一级为目录（不渲染页面），子菜单「电子围栏列表」承载列表页，
         // 与项目管理 /projects → /projects/list 的层级约定保持一致。
         path: "fences",

@@ -94,6 +94,61 @@ def test_machine_full_crud_by_admin(client, admin_token):
         _cleanup(u)
 
 
+def test_machine_list_filters(client, admin_token):
+    """列表过滤：project_id 精确、machine_no 精确、machine_type 精确。"""
+    u = _uid()
+    try:
+        dept = _make_dept(client, admin_token, u, "A")
+        proj = _create_project(client, admin_token, u, dept["id"], "项目")
+        h = _headers(admin_token)
+
+        r = client.post(
+            "/api/v1/machines",
+            headers=h,
+            json={"project_id": proj["id"], "machine_no": f"M{u}_EX", "machine_type": "挖掘机"},
+        )
+        assert r.status_code == 200, r.text
+        r = client.post(
+            "/api/v1/machines",
+            headers=h,
+            json={"project_id": proj["id"], "machine_no": f"M{u}_PI", "machine_type": "打桩机"},
+        )
+        assert r.status_code == 200, r.text
+
+        # project_id 精确过滤
+        r = client.get(
+            "/api/v1/machines", headers=h, params={"project_id": proj["id"], "page": 1, "size": 20}
+        )
+        assert r.status_code == 200, r.text
+        items = r.json()["data"]["items"]
+        assert all(it["project_id"] == proj["id"] for it in items)
+
+        # machine_no 精确过滤
+        r = client.get(
+            "/api/v1/machines", headers=h, params={"machine_no": f"M{u}_EX", "page": 1, "size": 20}
+        )
+        assert r.status_code == 200, r.text
+        items = r.json()["data"]["items"]
+        assert len(items) == 1 and items[0]["machine_no"] == f"M{u}_EX"
+
+        # machine_type 精确过滤
+        r = client.get(
+            "/api/v1/machines", headers=h, params={"machine_type": "打桩机", "page": 1, "size": 20}
+        )
+        assert r.status_code == 200, r.text
+        items = r.json()["data"]["items"]
+        assert all(it["machine_type"] == "打桩机" for it in items)
+        assert any(it["machine_no"] == f"M{u}_PI" for it in items)
+
+        # 冗余 project_name 随列表返回
+        r = client.get(
+            "/api/v1/machines", headers=h, params={"machine_no": f"M{u}_EX", "page": 1, "size": 20}
+        )
+        assert r.json()["data"]["items"][0]["project_name"] == proj["name"]
+    finally:
+        _cleanup(u)
+
+
 def test_machine_create_requires_permission(client, admin_token):
     u = _uid()
     try:
@@ -155,5 +210,74 @@ def test_machine_data_isolation_by_dept(client, admin_token):
             json={"project_id": proj_a["id"], "machine_no": f"M{u}_A2"},
         )
         assert r.status_code == 200, r.text
+    finally:
+        _cleanup(u)
+
+
+def test_machine_create_boundary_and_invalid(client, admin_token):
+    """边界值（machine_no 64/65）与异常（缺项目 / 项目不存在）。"""
+    u = _uid()
+    try:
+        dept = _make_dept(client, admin_token, u, "A")
+        proj = _create_project(client, admin_token, u, dept["id"], "项目")
+        h = _headers(admin_token)
+
+        # 边界：machine_no 恰好 64 字符 -> 创建成功
+        r = client.post(
+            "/api/v1/machines",
+            headers=h,
+            json={"project_id": proj["id"], "machine_no": "x" * 64},
+        )
+        assert r.status_code == 200, r.text
+
+        # 边界越界：machine_no 65 字符 -> 参数校验失败（HTTP 200 + code 422）
+        r = client.post(
+            "/api/v1/machines",
+            headers=h,
+            json={"project_id": proj["id"], "machine_no": "x" * 65},
+        )
+        assert r.status_code == 200 and r.json()["code"] == 422, r.text
+
+        # 异常：缺 project_id -> 422
+        r = client.post("/api/v1/machines", headers=h, json={"machine_no": "MNO"})
+        assert r.status_code == 200 and r.json()["code"] == 422, r.text
+
+        # 异常：project_id 不存在 -> 业务错误（HTTP 200 + code 400）
+        r = client.post(
+            "/api/v1/machines",
+            headers=h,
+            json={"project_id": 9_999_999, "machine_no": "MNO2"},
+        )
+        assert r.status_code == 200 and r.json()["code"] == 400, r.text
+    finally:
+        _cleanup(u)
+
+
+def test_machine_batch_delete(client, admin_token):
+    """批量软删：范围内记录删除，不存在 id 计入 skipped。"""
+    u = _uid()
+    try:
+        dept = _make_dept(client, admin_token, u, "A")
+        proj = _create_project(client, admin_token, u, dept["id"], "项目")
+        h = _headers(admin_token)
+        id1 = client.post(
+            "/api/v1/machines",
+            headers=h,
+            json={"project_id": proj["id"], "machine_no": f"M{u}_b1"},
+        ).json()["data"]["id"]
+        id2 = client.post(
+            "/api/v1/machines",
+            headers=h,
+            json={"project_id": proj["id"], "machine_no": f"M{u}_b2"},
+        ).json()["data"]["id"]
+
+        r = client.post(
+            "/api/v1/machines/batch-delete", headers=h, json={"ids": [id1, id2, 9_999_999]}
+        )
+        assert r.status_code == 200, r.text
+        d = r.json()["data"]
+        assert d["deleted"] == 2 and d["total"] == 3 and d["skipped"] == 1, d
+
+        assert client.get(f"/api/v1/machines/{id1}", headers=h).status_code == 404
     finally:
         _cleanup(u)

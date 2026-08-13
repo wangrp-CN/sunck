@@ -41,6 +41,7 @@ describe("SideMenu", () => {
     expect(text).toContain("电子围栏列表");
     expect(text).toContain("人员机械管理");
     expect(text).toContain("人员列表");
+    expect(text).toContain("大型机械列表");
     expect(text).toContain("机械管理");
     // 设备管理目录下的三类设备清单
     expect(text).toContain("设备管理");
@@ -64,6 +65,24 @@ describe("SideMenu", () => {
       .find((c) => c.text().includes("大机防侵限设备列表"));
     expect(hit).toBeTruthy();
     expect(hit!.props("index")).toBe("/devices/anti-intrusion");
+  });
+
+  it("大型机械列表菜单指向 /large-machines", () => {
+    const wrapper = mount(SideMenu, {
+      global: {
+        stubs: {
+          "el-icon": { template: "<i><slot /></i>" },
+          "el-menu": menuStub,
+          "el-menu-item": itemStub,
+          "el-sub-menu": subStub,
+        },
+      },
+    });
+    const hit = wrapper
+      .findAllComponents(itemStub)
+      .find((c) => c.text().includes("大型机械列表"));
+    expect(hit).toBeTruthy();
+    expect(hit!.props("index")).toBe("/large-machines");
   });
 
   it("点击菜单项 emit navigate（用于移动端关闭抽屉）", async () => {
